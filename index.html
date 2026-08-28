@@ -1,0 +1,3297 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Finances">
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjogIkZpbmFuY2VzIiwgInNob3J0X25hbWUiOiAiRmluYW5jZXMiLCAic3RhcnRfdXJsIjogIi4vIiwgImRpc3BsYXkiOiAic3RhbmRhbG9uZSIsICJiYWNrZ3JvdW5kX2NvbG9yIjogIiMwZjExMTUiLCAidGhlbWVfY29sb3IiOiAiIzJmNmZlZCIsICJvcmllbnRhdGlvbiI6ICJhbnkiLCAiaWNvbnMiOiBbeyJzcmMiOiAiZGF0YTppbWFnZS9zdmcreG1sO2Jhc2U2NCxQSE4yWnlCNGJXeHVjejBpYUhSMGNEb3ZMM2QzZHk1M015NXZjbWN2TWpBd01DOXpkbWNpSUhacFpYZENiM2c5SWpBZ01DQXhPVElnTVRreUlqNDhjbVZqZENCM2FXUjBhRDBpTVRreUlpQm9aV2xuYUhROUlqRTVNaUlnY25nOUlqTXlJaUJtYVd4c1BTSWpNVGN4WVRJeElpOCtQSEJoZEdnZ1pEMGlUVE0wSURFek1pQk1OelFnT1RJZ1RERXdOQ0F4TVRnZ1RERTFPQ0EyTUNJZ1ptbHNiRDBpYm05dVpTSWdjM1J5YjJ0bFBTSWpNbVkyWm1Wa0lpQnpkSEp2YTJVdGQybGtkR2c5SWpFeUlpQnpkSEp2YTJVdGJHbHVaV05oY0QwaWNtOTFibVFpSUhOMGNtOXJaUzFzYVc1bGFtOXBiajBpY205MWJtUWlMejQ4WTJseVkyeGxJR040UFNJeE5UZ2lJR041UFNJMk1DSWdjajBpTVRNaUlHWnBiR3c5SWlNeVpqWm1aV1FpTHo0OEwzTjJaejQ9IiwgInNpemVzIjogIjE5MngxOTIiLCAidHlwZSI6ICJpbWFnZS9zdmcreG1sIiwgInB1cnBvc2UiOiAiYW55IG1hc2thYmxlIn1dfQ==">
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgcng9IjMyIiBmaWxsPSIjMTcxYTIxIi8+PHBhdGggZD0iTTM0IDEzMiBMNzQgOTIgTDEwNCAxMTggTDE1OCA2MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMmY2ZmVkIiBzdHJva2Utd2lkdGg9IjEyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48Y2lyY2xlIGN4PSIxNTgiIGN5PSI2MCIgcj0iMTMiIGZpbGw9IiMyZjZmZWQiLz48L3N2Zz4=">
+<title>Finances</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#16181d; --muted:#6b7280; --line:#e3e6ea;
+  --accent:#2f6fed; --pos:#0f9d58; --neg:#d93025; --inv:#8b5cf6; --warn:#b45309;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.1);
+  --radius:10px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme=light]){
+    --bg:#0f1115; --panel:#171a21; --ink:#e6e8ec; --muted:#9aa3af; --line:#262b34;
+    --accent:#6b9bff; --pos:#43c07a; --neg:#f2635a; --inv:#a78bfa; --warn:#e0a33e;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme=dark]{
+  --bg:#0f1115; --panel:#171a21; --ink:#e6e8ec; --muted:#9aa3af; --line:#262b34;
+  --accent:#6b9bff; --pos:#43c07a; --neg:#f2635a; --inv:#a78bfa; --warn:#e0a33e;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+.num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* ---------- shell ---------- */
+header{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:14px;padding:9px 16px;flex-wrap:wrap}
+.brand{font-weight:650;letter-spacing:-.01em;margin-right:4px}
+nav{display:flex;gap:2px;flex:1;flex-wrap:wrap}
+nav button{background:none;border:0;padding:7px 13px;border-radius:8px;color:var(--muted);font-weight:550}
+nav button:hover{background:var(--bg);color:var(--ink)}
+nav button[aria-current=true]{background:var(--accent);color:#fff}
+.tools{display:flex;gap:6px;align-items:center}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 11px;
+  box-shadow:var(--shadow);white-space:nowrap}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08);color:#fff}
+.btn.ghost{box-shadow:none;background:none}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+#status{font-size:12px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#status.dirty{color:var(--warn);font-weight:600}
+main{padding:16px;max-width:1500px;margin:0 auto}
+section[hidden]{display:none}
+
+/* ---------- panels ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:14px;margin-bottom:14px}
+.card h2{margin:0 0 12px;font-size:13px;font-weight:650;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted)}
+.grid{display:grid;gap:14px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:12px 14px;box-shadow:var(--shadow)}
+.kpi .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.kpi .val{font-size:23px;font-weight:640;margin-top:4px;letter-spacing:-.02em}
+.kpi .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.pos{color:var(--pos)} .neg{color:var(--neg)} .invc{color:var(--inv)} .mut{color:var(--muted)}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+  font-weight:600;position:sticky;top:0;background:var(--panel);z-index:1}
+td.r,th.r{text-align:right}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+tr.tot td{font-weight:650;border-top:2px solid var(--line);background:var(--bg)}
+tr.fut td{color:var(--muted);font-style:italic}
+.wrap{white-space:normal;min-width:180px;max-width:340px}
+
+/* ---------- controls ---------- */
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.bar input[type=search],.bar input[type=text],.bar input[type=number],.bar select,.bar input[type=date]{
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+.bar input[type=search]{min-width:220px;flex:1;max-width:360px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px;
+  background:var(--panel);color:var(--muted)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+td select,td input{background:none;border:1px solid transparent;border-radius:6px;padding:2px 4px;width:100%}
+td select:hover,td input:hover{border-color:var(--line)}
+td select:focus,td input:focus{border-color:var(--accent);outline:none;background:var(--panel)}
+.pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
+  border:1px solid var(--line);color:var(--muted)}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+
+/* ---------- mòbil ----------
+   El problema no eren les taules (ja fan scroll dins del seu contenidor) sinó la
+   capçalera: el menú es partia en quatre línies i es menjava 205 px de pantalla. */
+@media (max-width:640px){
+  header{padding:7px 10px;gap:8px;row-gap:6px}
+  .brand{display:none}
+  nav{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto;
+      scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  nav::-webkit-scrollbar{display:none}
+  nav button{padding:8px 12px;white-space:nowrap;flex:0 0 auto}
+  #status{order:1;flex:1;font-size:11px}
+  .tools{order:2}
+  .tools .btn{padding:8px 10px}
+  #status{display:none}
+  main{padding:10px}
+  .card{padding:11px}
+  .kpi .val{font-size:20px}
+  .bar input[type=search]{min-width:100%;max-width:none}
+  .bar select,.bar input{flex:1 1 auto;min-width:0}
+  dialog{max-width:100vw;max-height:100vh;border-radius:0}
+  .dlg-b{max-height:calc(100vh - 128px)}
+  .map{grid-template-columns:1fr;gap:4px 0}
+  .map > label{margin-top:8px;font-size:12px;color:var(--muted)}
+  td select,td input{min-width:110px}
+}
+/* ---------- charts ---------- */
+.chart{width:100%;height:auto;display:block;overflow:visible}
+.chart text{font-size:10px;fill:var(--muted)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:baseline}
+
+/* ---------- dialog ---------- */
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);
+  padding:0;max-width:min(940px,94vw);width:100%;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dlg-h{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:640;
+  display:flex;justify-content:space-between;align-items:center}
+.dlg-b{padding:18px;max-height:66vh;overflow:auto}
+.dlg-f{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+.drop{border:2px dashed var(--line);border-radius:var(--radius);padding:44px;text-align:center;color:var(--muted)}
+.drop.over{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.map{display:grid;grid-template-columns:150px 1fr;gap:9px 12px;align-items:center}
+.map select,.map input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+.note{font-size:12px;color:var(--muted);margin:8px 0 0}
+.warnbox{border:1px solid var(--warn);border-radius:8px;padding:9px 12px;font-size:13px;
+  color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,transparent);margin-bottom:12px}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">Finances</span>
+  <nav>
+    <button data-tab="resum" aria-current="true">Resum</button>
+    <button data-tab="moviments">Moviments</button>
+    <button data-tab="mesos">Mesos</button>
+    <button data-tab="real">Real</button>
+    <button data-tab="cartera">Cartera</button>
+    <button data-tab="rendiment">Rendiment</button>
+    <button data-tab="fire">FIRE</button>
+    <button data-tab="categories">Categories</button>
+  </nav>
+  <span id="status">sense fitxer</span>
+  <div class="tools">
+    <button class="btn" id="bOpen">Obrir</button>
+    <button class="btn" id="bImport" title="Importar un extracte del banc">Importar</button>
+    <button class="btn primary" id="bSave" disabled>Desar</button>
+    <button class="btn" id="bDrive" title="Google Drive">Drive</button>
+    <button class="btn ghost" id="bTheme" title="Tema">◐</button>
+  </div>
+</header>
+
+<main>
+  <section id="tab-resum"></section>
+  <section id="tab-moviments" hidden></section>
+  <section id="tab-mesos" hidden></section>
+  <section id="tab-real" hidden></section>
+  <section id="tab-cartera" hidden></section>
+  <section id="tab-rendiment" hidden></section>
+  <section id="tab-fire" hidden></section>
+  <section id="tab-categories" hidden></section>
+</main>
+
+<dialog id="dlg">
+  <div class="dlg-h"><span id="dlgTitle"></span><button class="btn ghost" id="dlgX">✕</button></div>
+  <div class="dlg-b" id="dlgBody"></div>
+  <div class="dlg-f" id="dlgFoot"></div>
+</dialog>
+
+<input type="file" id="filePick" hidden accept=".json,.csv,.tsv,.txt,.xls,.xlsx">
+
+<script>
+"use strict";
+
+/* ================================================================== *
+ *  Estat                                                             *
+ * ================================================================== */
+const S = {
+  data: null,          // el finances.json sencer
+  handle: null,        // FileSystemFileHandle si el navegador ho suporta
+  dirty: false,
+  tab: "resum",
+  mov: { q:"", account:"", category:"", kind:"", sort:"date", dir:-1, limit:300 },
+  period: { preset:"all", from:"", to:"" },
+  real:   { card:"visa" },
+  cartera:{ evol:"class" },
+  imp: null,           // estat de l'assistent d'importació
+};
+const TODAY = new Date().toISOString().slice(0,10);
+/* Per sota d'aquest ingres mensual la taxa d'estalvi no diu res util
+   (un mes a mig fer amb 26 EUR d'ingressos dona -4.061 %), aixi que s'amaga. */
+const MIN_INCOME_FOR_RATE = 100;
+
+/* ================================================================== *
+ *  Utilitats                                                         *
+ * ================================================================== */
+const $  = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+const el = (t,a={},...kids)=>{
+  const n=document.createElement(t);
+  for(const [k,v] of Object.entries(a)){
+    if(v==null||v===false) continue;
+    if(k==="class") n.className=v;
+    else if(k==="html") n.innerHTML=v;
+    else if(k.startsWith("on")) n.addEventListener(k.slice(2),v);
+    else n.setAttribute(k,v===true?"":v);
+  }
+  for(const k of kids.flat()) if(k!=null) n.append(k.nodeType?k:document.createTextNode(k));
+  return n;
+};
+const NF = new Intl.NumberFormat("ca-ES",{minimumFractionDigits:2,maximumFractionDigits:2});
+const NF0= new Intl.NumberFormat("ca-ES",{maximumFractionDigits:0});
+const eur  = v => (v==null||isNaN(v)) ? "—" : NF.format(v)+" €";
+const eur0 = v => (v==null||isNaN(v)) ? "—" : NF0.format(v)+" €";
+const pct  = v => (v==null||!isFinite(v)) ? "—" : (v*100).toFixed(1).replace(".",",")+" %";
+const MESOS = ["gen","feb","mar","abr","mai","jun","jul","ago","set","oct","nov","des"];
+const mLabel = k => MESOS[+k.slice(5,7)-1] + " " + k.slice(2,4);
+const dCa = s => s ? s.slice(8,10)+"/"+s.slice(5,7)+"/"+s.slice(0,4) : "";
+const sgn = v => v>0 ? "pos" : v<0 ? "neg" : "mut";
+const uid = () => Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+const monthsBetween=(a,b)=>{const o=[];let[y,m]=a.split("-").map(Number);const[Y,M]=b.split("-").map(Number);
+  while(y<Y||(y===Y&&m<=M)){o.push(`${y}-${String(m).padStart(2,"0")}`);if(++m>12){m=1;y++;}}return o;};
+
+let backupTimer=null;
+function markDirty(){
+  S.dirty=true; $("#bSave").disabled=false; $("#bSave").textContent="● Desar"; setStatus();
+  // Xarxa de seguretat: si es tanca el navegador amb feina sense desar, es recupera.
+  clearTimeout(backupTimer);
+  backupTimer=setTimeout(()=>writeBackup(true),1200);
+}
+function writeBackup(dirty){
+  try{
+    localStorage.setItem("finances:backup",JSON.stringify(
+      {savedAt:new Date().toISOString(),dirty,data:S.data}));
+  }catch(e){ console.warn("no s'ha pogut desar la còpia local:",e); }
+}
+function readBackup(){
+  try{
+    const raw=localStorage.getItem("finances:backup");
+    if(!raw) return null;
+    const b=JSON.parse(raw);
+    return b&&b.data ? b : null;      // format antic sense embolcall: s'ignora
+  }catch{ return null; }
+}
+function setStatus(txt){
+  const s=$("#status");
+  if(txt!==undefined){ s.textContent=txt; s.classList.remove("dirty"); return; }
+  if(!S.data){ s.textContent="sense fitxer"; return; }
+  const n=S.data.movements.length;
+  const ro = driveOn() ? " · Drive" : serverWrite ? "" :
+    (!S.handle&&hasFS ? " · només lectura fins al primer Desar" : "");
+  s.textContent=(S.dirty?"● canvis sense desar · ":"")+n+" moviments"+ro;
+  s.classList.toggle("dirty",S.dirty);
+}
+
+/* ================================================================== *
+ *  Persistència: File System Access API + IndexedDB per al handle    *
+ * ================================================================== */
+const idb = {
+  db:null,
+  async open(){
+    if(this.db) return this.db;
+    if(location.protocol==="file:") throw new Error("IndexedDB no disponible a file://");
+    return this.db = await new Promise((res,rej)=>{
+      const r=indexedDB.open("finances",1);
+      r.onupgradeneeded=()=>r.result.createObjectStore("kv");
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+    });
+  },
+  async get(k){ const db=await this.open(); return new Promise(res=>{
+    const r=db.transaction("kv").objectStore("kv").get(k); r.onsuccess=()=>res(r.result); r.onerror=()=>res(null); }); },
+  async set(k,v){ const db=await this.open(); return new Promise(res=>{
+    const t=db.transaction("kv","readwrite"); t.objectStore("kv").put(v,k); t.oncomplete=()=>res(); }); },
+};
+
+/* Chrome exposa showOpenFilePicker a file:// pero llancar-lo hi peta, i IndexedDB
+   tambe hi esta desactivat. Nomes comptem amb l'API si servim per http(s). */
+const hasFS = "showOpenFilePicker" in window && location.protocol !== "file:";
+let serverWrite = false;   // servir.py accepta PUT; python -m http.server, no
+async function checkServer(){
+  if(location.protocol==="file:") return false;
+  try{
+    const r=await fetch("__can_write",{cache:"no-store"});
+    if(!r.ok) return false;
+    serverWrite = !!(await r.json()).write;
+  }catch{ serverWrite=false; }
+  return serverWrite;
+}
+
+async function openFile(){
+  if(hasFS){
+    try{
+      const [h]=await showOpenFilePicker({types:[{description:"Dades de Finances",accept:{"application/json":[".json"]}}]});
+      S.handle=h; await idb.set("handle",h); await loadFromHandle(h);
+    }catch(e){
+      if(e.name==="AbortError") return;
+      console.warn("File System Access ha fallat, es passa al pla B:",e);
+      pickWithInput("data");
+    }
+  } else {
+    pickWithInput("data");
+  }
+}
+function pickWithInput(mode){
+  const i=$("#filePick");
+  i.accept = mode==="data" ? ".json" : ".csv,.tsv,.txt,.xls,.xlsx";
+  i.dataset.mode=mode; i.click();
+}
+/** El finances.json viu al costat de l'HTML: prova de llegir-lo sense demanar res.
+    Nomes dona lectura — per desar cal el permis, que es demana al primer Desar. */
+async function autoLoad(){
+  try{
+    const r=await fetch("finances.json",{cache:"no-store"});
+    if(!r.ok) return false;
+    loadData(await r.json());
+    return true;
+  }catch{ return false; }
+}
+async function loadFromHandle(h){
+  const f=await h.getFile();
+  loadData(JSON.parse(await f.text()));
+  setStatus(); setStatus();
+}
+function loadData(obj){
+  S.data=normalise(obj); S.dirty=false; $("#bSave").disabled=true;
+  render(); setStatus();
+  writeBackup(false);
+}
+async function save(){
+  if(!S.data) return;
+  const txt=JSON.stringify(S.data,null,1);
+  if(driveOn()){
+    try{
+      if(await driveSave()){
+        S.dirty=false; $("#bSave").disabled=true; $("#bSave").textContent="Desar";
+        writeBackup(false); setStatus(); flash("Desat al Drive");
+      }
+      return;
+    }catch(e){ alert("No s'ha pogut desar al Drive: "+e.message); return; }
+  }
+  if(serverWrite){
+    try{
+      const r=await fetch("finances.json",{method:"PUT",body:txt,
+        headers:{"Content-Type":"application/json"}});
+      if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||r.status);
+      S.dirty=false; $("#bSave").disabled=true; $("#bSave").textContent="Desar"; writeBackup(false);
+      setStatus(); flash("Desat al PC");
+      return;
+    }catch(e){ alert("El servidor no ha pogut desar: "+e.message); return; }
+  }
+  if(!S.handle && hasFS){
+    // primer desat: cal que triï el fitxer un cop perquè el navegador en doni permís
+    try{
+      const [h]=await showOpenFilePicker({types:[{description:"Dades de Finances",
+        accept:{"application/json":[".json"]}}]});
+      S.handle=h; await idb.set("handle",h).catch(()=>{});
+    }catch(e){ if(e.name==="AbortError") return; }
+  }
+  if(S.handle){
+    try{
+      const w=await S.handle.createWritable(); await w.write(txt); await w.close();
+      S.dirty=false; $("#bSave").disabled=true; $("#bSave").textContent="Desar"; writeBackup(false);
+      setStatus(); flash("Desat");
+      return;
+    }catch(e){ alert("No s'ha pogut desar al fitxer: "+e.message); }
+  }
+  download("finances.json",txt);
+  S.dirty=false; $("#bSave").disabled=true; $("#bSave").textContent="Desar"; writeBackup(false); setStatus();
+}
+function download(name,txt){
+  const a=el("a",{href:URL.createObjectURL(new Blob([txt],{type:"application/json"})),download:name});
+  document.body.append(a); a.click(); a.remove();
+}
+function flash(msg){ const s=$("#status"); const old=s.textContent; s.textContent=msg;
+  setTimeout(()=>{ if(s.textContent===msg) setStatus(); },1600); }
+
+/* Els dos extractes de Banco Mediolanum: mateixa capçalera a la fila 8 en tots dos casos. */
+const SABADELL=[
+  { name:"Mediolanum · compte", header:7, account:"compte",
+    date:"2", concept:"1", amount:"", debit:"3", credit:"4",
+    balance:"5", category:"", city:"", sign:"auto" },
+  { name:"Mediolanum · targeta", header:7, account:"targeta",
+    date:"0", concept:"1", amount:"4", debit:"", credit:"",
+    balance:"5", category:"", city:"2", sign:"neg" },
+];
+function normalise(o){
+  o.movements ??= []; o.months ??= []; o.plan ??= []; o.categories ??= [];
+  o.rules ??= []; o.accounts ??= []; o.importProfiles ??= [];
+  if(!o.profilesSeeded){ o.importProfiles.push(...SABADELL); o.profilesSeeded=true; }
+  o.assets ??= []; o.snapshots ??= []; o.contributions ??= []; o.portfolioTotals ??= [];
+  for(const a of o.assets){ a.include ??= true; a.contributed ??= 0; }
+  o.fire = Object.assign({},FIRE_DEF,o.fire||{});
+  for(const m of o.movements){
+    m.id ??= uid(); m.tags ??= []; m.planned ??= (m.date>TODAY);
+    m.kind ??= (m.amount>0?"income":"expense");
+  }
+  return o;
+}
+
+/* ================================================================== *
+ *  Google Drive                                                       *
+ *  Mateix patró que el Field Service Log i el Calendari: un sol       *
+ *  client OAuth i l'scope drive.file, que només dona accés als        *
+ *  fitxers que crea aquesta app. Les dades no passen per cap servidor *
+ *  meu ni de ningú: van del navegador al teu Drive.                   *
+ * ================================================================== */
+const CLIENT_ID = "514772123815-ncjsebgvc01t8arftqp8bo43jr4fgneb.apps.googleusercontent.com";
+const SCOPE_DRIVE = "https://www.googleapis.com/auth/drive.file";
+const DRIVE_FOLDER = "Finances";
+const DRIVE_FILE = "finances.json";
+
+const D = { token:null, exp:0, fileId:null, folderId:null, modified:null, email:null };
+
+function saveTok(){
+  try{ localStorage.setItem("finances:tok",
+    JSON.stringify({token:D.token,exp:D.exp,fileId:D.fileId,folderId:D.folderId})); }catch{}
+}
+function loadTok(){
+  try{
+    const t=JSON.parse(localStorage.getItem("finances:tok")||"null");
+    if(!t) return;
+    D.fileId=t.fileId||null; D.folderId=t.folderId||null;
+    if(t.exp>Date.now()){ D.token=t.token; D.exp=t.exp; }
+  }catch{}
+}
+function clearTok(){ D.token=null; D.exp=0; saveTok(); }
+const driveOn = () => !!(D.token && Date.now()<D.exp);
+
+/** Google només accepta com a origen https://… o http://localhost. Una IP de
+    xarxa local per http (http://192.168.1.20:8530) la rebutja sempre, amb un
+    "Error 400: invalid_request" que no diu què passa. Val més dir-ho abans. */
+function driveOriginOK(){
+  const h=location.hostname;
+  if(location.protocol==="https:") return {ok:true};
+  if(h==="localhost"||h==="127.0.0.1"||h==="[::1]") return {ok:true};
+  if(location.protocol==="file:")
+    return {ok:false,motiu:"Has obert l'app amb doble clic (file://). Google no accepta "+
+      "aquest origen. Obre-la amb el servir.cmd o des de l'adreça publicada."};
+  return {ok:false,motiu:"Estàs a "+location.origin+", que és una adreça de xarxa local "+
+    "per http. Google no accepta aquests orígens i no hi ha manera de configurar-ho: "+
+    "només admet https:// o http://localhost. "+
+    "Aquí, per desar, ja tens el servidor: el botó Desar escriu al PC igual. "+
+    "El Drive el pots fer servir des de l'adreça publicada a GitHub Pages, que és https."};
+}
+function loadGIS(){
+  return new Promise(res=>{
+    if(window.google?.accounts) return res();
+    const s=document.createElement("script");
+    s.src="https://accounts.google.com/gsi/client";
+    s.onload=res; s.onerror=res; document.head.append(s);
+  });
+}
+/** Demana permís. Si el navegador bloqueja la finestra emergent, la crida
+    es queda penjada per sempre: per això va contra un rellotge. */
+async function driveLogin(){
+  const o=driveOriginOK();
+  if(!o.ok){ alert("El Drive no es pot connectar des d'aquí. "+o.motiu); return null; }
+  await loadGIS();
+  if(!window.google?.accounts){
+    alert("No s'ha pogut carregar Google. Comprova que tens connexió."); return null;
+  }
+  const obert=new Promise(res=>{
+    google.accounts.oauth2.initTokenClient({
+      client_id:CLIENT_ID, scope:SCOPE_DRIVE,
+      callback:r=>{
+        if(r.error) return res(null);
+        D.token=r.access_token;
+        D.exp=Date.now()+(((r.expires_in||3600)-120)*1000);
+        saveTok(); res(D.token);
+      }
+    }).requestAccessToken({prompt:D.fileId?"":"consent"});
+  });
+  const rellotge=new Promise(res=>setTimeout(()=>res("temps"),25000));
+  const r=await Promise.race([obert,rellotge]);
+  if(r==="temps"){
+    alert("No s'ha completat l'accés. Si el navegador ha blocat la finestra de Google, "+
+      "permet-li les finestres emergents i torna-ho a provar.");
+    return null;
+  }
+  return r;
+}
+async function driveToken(){ return driveOn() ? D.token : await driveLogin(); }
+
+async function dget(url,opt){
+  const r=await fetch(url,{...opt,headers:{Authorization:"Bearer "+D.token,...(opt?.headers||{})}});
+  if(r.status===401){ clearTok(); throw new Error("la sessió de Google ha caducat"); }
+  return r;
+}
+async function driveFind(nom,parent,mime){
+  let q=`name=${JSON.stringify(nom)} and trashed=false`;
+  if(mime) q+=` and mimeType=${JSON.stringify(mime)}`;
+  if(parent) q+=` and ${JSON.stringify(parent)} in parents`;
+  const r=await dget("https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+
+    "&fields=files(id,name,modifiedTime)");
+  if(!r.ok) return null;
+  const d=await r.json();
+  return d.files?.length ? d.files[0] : null;
+}
+/** La carpeta i el fitxer, creant-los si encara no hi són. */
+async function driveEnsure(){
+  if(!D.folderId){
+    const f=await driveFind(DRIVE_FOLDER,null,"application/vnd.google-apps.folder");
+    if(f) D.folderId=f.id;
+    else{
+      const r=await dget("https://www.googleapis.com/drive/v3/files",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name:DRIVE_FOLDER,mimeType:"application/vnd.google-apps.folder"})});
+      D.folderId=(await r.json()).id;
+    }
+  }
+  if(D.fileId){
+    // pot haver estat esborrat des de Drive
+    const r=await dget("https://www.googleapis.com/drive/v3/files/"+D.fileId+
+      "?fields=id,trashed,modifiedTime");
+    if(r.ok){ const d=await r.json(); if(!d.trashed){ D.modified=d.modifiedTime; saveTok(); return true; } }
+    D.fileId=null;
+  }
+  const f=await driveFind(DRIVE_FILE,D.folderId,null);
+  if(f){ D.fileId=f.id; D.modified=f.modifiedTime; saveTok(); return true; }
+  return false;                      // encara no hi ha fitxer: el crearà el primer desat
+}
+async function driveLoad(){
+  if(!await driveToken()) return false;
+  if(!await driveEnsure()) return false;
+  const r=await dget("https://www.googleapis.com/drive/v3/files/"+D.fileId+"?alt=media");
+  if(!r.ok) throw new Error("no s'ha pogut llegir el fitxer del Drive");
+  loadData(await r.json());
+  return true;
+}
+/** Desa al Drive. Abans mira si algú altre l'ha tocat des que el vas carregar:
+    amb el PC i el mòbil oberts alhora, sobreescriure sense mirar és perdre feina. */
+async function driveSave(){
+  if(!await driveToken()) return false;
+  await driveEnsure();
+  const txt=JSON.stringify(S.data,null,1);
+  if(D.fileId){
+    const r=await dget("https://www.googleapis.com/drive/v3/files/"+D.fileId+"?fields=modifiedTime");
+    if(r.ok){
+      const m=(await r.json()).modifiedTime;
+      if(D.modified && m && m!==D.modified){
+        const seguir=confirm(
+          "El fitxer del Drive s'ha modificat des que el vas obrir "+
+          "("+new Date(m).toLocaleString("ca-ES")+"), potser des d'un altre dispositiu.\n\n"+
+          "Si continues, el sobreescriuràs amb el que tens aquí.\n\n"+
+          "Vols continuar?");
+        if(!seguir) return false;
+      }
+    }
+    const up=await dget("https://www.googleapis.com/upload/drive/v3/files/"+D.fileId+
+      "?uploadType=media&fields=modifiedTime",
+      {method:"PATCH",headers:{"Content-Type":"application/json; charset=UTF-8"},body:txt});
+    if(!up.ok) throw new Error("el Drive no ha acceptat el fitxer");
+    D.modified=(await up.json()).modifiedTime;
+  } else {
+    const limit="-------finances"+Date.now();
+    const cos=`--${limit}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`+
+      JSON.stringify({name:DRIVE_FILE,parents:[D.folderId]})+
+      `\r\n--${limit}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`+txt+
+      `\r\n--${limit}--`;
+    const r=await dget("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime",
+      {method:"POST",headers:{"Content-Type":"multipart/related; boundary="+limit},body:cos});
+    if(!r.ok) throw new Error("no s'ha pogut crear el fitxer al Drive");
+    const d=await r.json(); D.fileId=d.id; D.modified=d.modifiedTime;
+  }
+  saveTok();
+  return true;
+}
+/** Puja les dades locals al Drive el primer cop. */
+async function driveFirstUpload(){
+  if(!S.data){ alert("Primer obre les dades."); return; }
+  if(!await driveToken()) return;
+  await driveEnsure();
+  if(D.fileId && !confirm("Al Drive ja hi ha un finances.json. El vols substituir "+
+    "pel que tens obert ara?")) return;
+  try{
+    await driveSave();
+    S.dirty=false; $("#bSave").disabled=true; $("#bSave").textContent="Desar"; writeBackup(false); setStatus();
+    flash("Pujat al Drive");
+    render();
+  }catch(e){ alert("No s'ha pogut pujar: "+e.message); }
+}
+function driveDialog(){
+  const con=driveOn(), org=driveOriginOK();
+  dialog("Google Drive",el("div",{},
+    !org.ok?el("div",{class:"warnbox",style:"white-space:pre-line"},org.motiu):null,
+    el("p",{},con
+      ? "Connectat. Les dades es desen al teu Drive, a la carpeta «"+DRIVE_FOLDER+"»."
+      : "Si el connectes, les dades viuran al teu Google Drive i podràs fer servir "+
+        "l'app des de qualsevol lloc, també des del mòbil, sense tenir el PC engegat."),
+    el("p",{class:"note"},
+      "L'app fa servir el permís mínim de Drive: només veu els fitxers que ella mateixa "+
+      "hi crea. No pot llegir res més del teu Drive. Les dades van del navegador a Google "+
+      "i prou; no passen per cap altre servidor."),
+    con&&D.modified?el("p",{class:"note"},"Última modificació al Drive: "+
+      new Date(D.modified).toLocaleString("ca-ES")):null,
+  ),[
+    con?["Desconnectar","btn",()=>{ clearTok(); closeDialog(); render(); setStatus(); }]:null,
+    con?["Pujar-hi el que tinc ara","btn",async()=>{ closeDialog(); await driveFirstUpload(); }]:null,
+    !con&&org.ok?["Connectar","btn primary",async()=>{
+      closeDialog();
+      if(await driveLogin()){
+        try{
+          const hi=await driveLoad();
+          if(!hi){ await driveFirstUpload(); }
+          else flash("Carregat del Drive");
+        }catch(e){ alert("Connectat, però "+e.message); }
+        render(); setStatus();
+      }
+    }]:null,
+    ["Tancar","btn",closeDialog],
+  ].filter(Boolean));
+}
+
+/* ================================================================== *
+ *  Derivats                                                          *
+ * ================================================================== */
+function transferCats(){
+  return new Set(S.data.categories.filter(c=>c.kind==="transfer").map(c=>c.id));
+}
+function blank(k){ return { month:k, income:0, expense:0, invest:0, maxBalance:null,
+  lastBalance:null, nMov:0, fIncome:null, fExpense:null, fInvest:null }; }
+
+/** Agrega els moviments reals per mes i hi afegeix la previsió. */
+function derive(){
+  const T=transferCats(), map=new Map();
+  const at=k=>{ let e=map.get(k); if(!e) map.set(k,e=blank(k)); return e; };
+  for(const m of S.data.movements){
+    const k=m.date.slice(0,7), e=at(k);
+    if(m.planned){
+      if(m.kind==="transfer"){ if(m.amount<0) e.fInvest=(e.fInvest||0)-m.amount; }
+      else if(m.amount>0) e.fIncome=(e.fIncome||0)+m.amount;
+      else e.fExpense=(e.fExpense||0)-m.amount;
+      continue;
+    }
+    e.nMov++;
+    if(T.has(m.category)){
+      if(m.category==="INVERSIO" && m.amount<0) e.invest+=-m.amount;
+    } else if(m.amount>0) e.income+=m.amount;
+    else e.expense+=-m.amount;
+    if(m.account==="compte" && m.balance!=null){
+      if(e.maxBalance==null||m.balance>e.maxBalance) e.maxBalance=m.balance;
+      e.lastBalance=m.balance;
+    }
+  }
+  for(const mo of S.data.months){
+    const e=at(mo.month);
+    if(mo.forecastExpense!=null)    e.fExpense=(e.fExpense||0)+Math.abs(mo.forecastExpense);
+    if(mo.forecastInvestment!=null) e.fInvest =(e.fInvest ||0)+Math.abs(mo.forecastInvestment);
+    e.note=mo.note||"";
+  }
+  for(const p of S.data.plan){
+    if(!p.planned) continue;
+    const e=at(p.date.slice(0,7)); e.fIncome=(e.fIncome||0)+p.amount;
+  }
+  const rows=[...map.values()]
+    .filter(r=>r.nMov||r.income||r.expense||r.invest||r.fIncome!=null||r.fExpense!=null||r.fInvest!=null)
+    .sort((a,b)=>a.month<b.month?-1:1);
+  let last=null;
+  for(const r of rows){
+    r.saving  = r.income-r.expense;
+    r.rate    = r.income>=MIN_INCOME_FOR_RATE ? r.saving/r.income : null;
+    r.surplus = r.saving-r.invest;
+    r.future  = r.month>TODAY.slice(0,7);
+    r.fSaving = (r.fIncome!=null||r.fExpense!=null) ? (r.fIncome||0)-(r.fExpense||0) : null;
+    if(r.lastBalance!=null) last=r.lastBalance; else r.lastBalance=null;
+    r.carried = last;
+  }
+  return rows;
+}
+function byYear(rows){
+  const m=new Map();
+  for(const r of rows){
+    const y=r.month.slice(0,4);
+    let e=m.get(y); if(!e) m.set(y,e={year:y,income:0,expense:0,invest:0,maxBalance:null,
+      fIncome:0,fExpense:0,fInvest:0,months:0});
+    e.income+=r.income; e.expense+=r.expense; e.invest+=r.invest;
+    e.fIncome+=r.fIncome||0; e.fExpense+=r.fExpense||0; e.fInvest+=r.fInvest||0;
+    if(r.maxBalance!=null&&(e.maxBalance==null||r.maxBalance>e.maxBalance)) e.maxBalance=r.maxBalance;
+    if(r.nMov) e.months++;
+  }
+  for(const e of m.values()){
+    e.saving=e.income-e.expense; e.rate=e.income>=MIN_INCOME_FOR_RATE?e.saving/e.income:null;
+    e.surplus=e.saving-e.invest;
+  }
+  return [...m.values()];
+}
+function currentBalance(){
+  let b=null;
+  for(const m of S.data.movements)
+    if(!m.planned && m.account==="compte" && m.balance!=null) b=m.balance;
+  return b;
+}
+
+/* ================================================================== *
+ *  Període: un sol interval de dates que governa Resum i Moviments    *
+ * ================================================================== */
+const PERIODES=[
+  ["all","Tot l'històric"],
+  ["month","Aquest mes"],
+  ["3m","Últims 3 mesos"],
+  ["6m","Últims 6 mesos"],
+  ["12m","Últims 12 mesos"],
+  ["year","Aquest any"],
+  ["prevyear","L'any passat"],
+  ["custom","Dates concretes…"],
+];
+/** Retorna [des, fins] en ISO. Els presets acaben avui: no compten el que no ha passat. */
+function periodRange(){
+  const p=S.period, m=TODAY.slice(0,7), y=+TODAY.slice(0,4);
+  switch(p.preset){
+    case "month":    return [m+"-01", TODAY];
+    case "3m":       return [addMonths(m,-2)+"-01", TODAY];
+    case "6m":       return [addMonths(m,-5)+"-01", TODAY];
+    case "12m":      return [addMonths(m,-11)+"-01", TODAY];
+    case "year":     return [y+"-01-01", TODAY];
+    case "prevyear": return [(y-1)+"-01-01", (y-1)+"-12-31"];
+    case "custom":   return [p.from||"0000-01-01", p.to||"9999-12-31"];
+    default:         return ["0000-01-01","9999-12-31"];
+  }
+}
+const inPeriod=date=>{ const [a,b]=periodRange(); return date>=a && date<=b; };
+
+function periodBar(){
+  const p=S.period;
+  const dates=el("span",{style:"display:"+(p.preset==="custom"?"inline-flex":"none")+";gap:6px;align-items:center"},
+    el("input",{type:"date",value:p.from,onchange:e=>{p.from=e.target.value;render();}}),
+    el("span",{class:"mut"},"→"),
+    el("input",{type:"date",value:p.to,onchange:e=>{p.to=e.target.value;render();}}));
+  return el("span",{style:"display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap"},
+    sel(p.preset,PERIODES,v=>{
+      p.preset=v;
+      if(v==="custom" && !p.from){            // arrenca amb el que ja es veia
+        const s=periodSpan(); if(s){ p.from=s.from; p.to=s.to; }
+      }
+      render();
+    }),
+    dates);
+}
+/** Primer i últim moviment real dins del període, i quants dies abasten de debò.
+    Les mitjanes es calculen sobre això, no sobre l'interval demanat: si demanes
+    12 mesos i només en tens 3 amb dades, dividir per 12 mentiria. */
+function periodSpan(){
+  const [a,b]=periodRange();
+  let lo=null,hi=null;
+  for(const m of S.data.movements){
+    if(m.planned || m.date<a || m.date>b) continue;
+    if(!lo||m.date<lo) lo=m.date;
+    if(!hi||m.date>hi) hi=m.date;
+  }
+  if(!lo) return null;
+  return {from:lo,to:hi,
+    days:Math.max(1,Math.round((Date.parse(hi)-Date.parse(lo))/86400000)+1)};
+}
+function periodLabel(){
+  const s=periodSpan();
+  if(!s) return "sense moviments en aquest període";
+  const mes=(s.days/30.44).toFixed(s.days>60?0:1).replace(".",",");
+  return dCa(s.from)+" → "+dCa(s.to)+" · "+s.days+" dies ("+mes+" mesos)";
+}
+
+/* ================================================================== *
+ *  Gràfics SVG                                                       *
+ * ================================================================== */
+const SVGNS="http://www.w3.org/2000/svg";
+const sv=(t,a={})=>{const n=document.createElementNS(SVGNS,t);
+  for(const[k,v] of Object.entries(a)) if(v!=null) n.setAttribute(k,v); return n;};
+const tip=(n,txt)=>{const t=sv("title");t.textContent=txt;n.append(t);return n;};
+
+/** `split` = índex de l'últim punt real: a partir d'aquí la línia va discontínua,
+    perquè no es confongui el que ha passat amb el que és una projecció. */
+function lineChart(pts,{h=190,fmt=eur0,color="var(--accent)",fill=true,split=null}={}){
+  const W=1000,P={t:12,r:56,b:22,l:8};
+  const s=sv("svg",{viewBox:`0 0 ${W} ${h}`,class:"chart",preserveAspectRatio:"none"});
+  if(!pts.length) return s;
+  const vals=pts.map(p=>p.v);
+  let lo=Math.min(0,...vals), hi=Math.max(...vals); if(hi===lo) hi=lo+1;
+  const x=i=>P.l+i*(W-P.l-P.r)/Math.max(1,pts.length-1);
+  const y=v=>P.t+(hi-v)*(h-P.t-P.b)/(hi-lo);
+  for(let i=0;i<=4;i++){
+    const v=lo+(hi-lo)*i/4, Y=y(v);
+    s.append(sv("line",{x1:P.l,x2:W-P.r,y1:Y,y2:Y,stroke:"var(--line)","stroke-width":1}));
+    const t=sv("text",{x:W-P.r+6,y:Y+3.5}); t.textContent=fmt(v); s.append(t);
+  }
+  const d=pts.map((p,i)=>(i?"L":"M")+x(i)+" "+y(p.v)).join(" ");
+  if(fill) s.append(sv("path",{d:d+` L${x(pts.length-1)} ${y(lo)} L${x(0)} ${y(lo)} Z`,
+    fill:color,opacity:.1,stroke:"none"}));
+  if(split==null||split>=pts.length-1)
+    s.append(sv("path",{d,fill:"none",stroke:color,"stroke-width":2,
+      "stroke-linejoin":"round","stroke-linecap":"round"}));
+  else {
+    const seg=(a,b,dash)=>{
+      const dd=pts.slice(a,b+1).map((p,i)=>(i?"L":"M")+x(a+i)+" "+y(p.v)).join(" ");
+      s.append(sv("path",{d:dd,fill:"none",stroke:color,"stroke-width":2,
+        "stroke-dasharray":dash,"stroke-linejoin":"round","stroke-linecap":"round"}));
+    };
+    seg(0,split,null); seg(split,pts.length-1,"5 4");
+    s.append(sv("line",{x1:x(split),x2:x(split),y1:P.t,y2:h-P.b,
+      stroke:"var(--muted)","stroke-width":1,"stroke-dasharray":"2 3"}));
+  }
+  const step=Math.ceil(pts.length/14);
+  pts.forEach((p,i)=>{
+    if(i%step===0||i===pts.length-1){
+      const t=sv("text",{x:x(i),y:h-6,"text-anchor":"middle"}); t.textContent=p.k; s.append(t);
+    }
+    const c=sv("circle",{cx:x(i),cy:y(p.v),r:2.5,fill:color,opacity:.85});
+    s.append(tip(c,`${p.k}: ${fmt(p.v)}`));
+  });
+  return s;
+}
+
+function barChart(rows,series,{h=210,fmt=eur0}={}){
+  const W=1000,P={t:12,r:56,b:22,l:8};
+  const s=sv("svg",{viewBox:`0 0 ${W} ${h}`,class:"chart",preserveAspectRatio:"none"});
+  if(!rows.length) return s;
+  let hi=0,lo=0;
+  for(const r of rows) for(const q of series){ const v=q.get(r)||0; hi=Math.max(hi,v); lo=Math.min(lo,v); }
+  if(hi===lo) hi=lo+1;
+  const bw=(W-P.l-P.r)/rows.length, gw=bw*0.74, sw=gw/series.length;
+  const y=v=>P.t+(hi-v)*(h-P.t-P.b)/(hi-lo);
+  for(let i=0;i<=4;i++){
+    const v=lo+(hi-lo)*i/4, Y=y(v);
+    s.append(sv("line",{x1:P.l,x2:W-P.r,y1:Y,y2:Y,stroke:"var(--line)","stroke-width":1}));
+    const t=sv("text",{x:W-P.r+6,y:Y+3.5}); t.textContent=fmt(v); s.append(t);
+  }
+  const zero=y(0);
+  rows.forEach((r,i)=>{
+    series.forEach((q,j)=>{
+      const v=q.get(r)||0, Y=y(v), x=P.l+i*bw+(bw-gw)/2+j*sw;
+      const rect=sv("rect",{x,y:Math.min(Y,zero),width:Math.max(1,sw-1.5),
+        height:Math.max(1,Math.abs(Y-zero)),fill:q.color,opacity:q.faint?.42:.9,rx:1.5});
+      s.append(tip(rect,`${r.month||r.year} · ${q.label}: ${fmt(v)}`));
+    });
+    const step=Math.ceil(rows.length/16);
+    if(i%step===0||i===rows.length-1){
+      const t=sv("text",{x:P.l+i*bw+bw/2,y:h-6,"text-anchor":"middle"});
+      t.textContent=r.month?mLabel(r.month):r.year; s.append(t);
+    }
+  });
+  return s;
+}
+const legend=items=>el("div",{class:"legend"},
+  items.map(i=>el("span",{},el("i",{style:`background:${i.color};opacity:${i.faint?.42:.9}`}),i.label)));
+
+/* ================================================================== *
+ *  Pestanya: Resum                                                   *
+ * ================================================================== */
+function renderResum(root){
+  const all=derive(), years=byYear(all);
+  const rows=all.filter(r=>{
+    const [a,b]=periodRange();
+    return r.month>=a.slice(0,7) && r.month<=b.slice(0,7);
+  });
+  const past=rows.filter(r=>!r.future);
+  const bal=currentBalance();
+  const span=periodSpan();
+
+  const T={income:0,expense:0,invest:0};
+  for(const r of past){ T.income+=r.income; T.expense+=r.expense; T.invest+=r.invest; }
+  T.saving=T.income-T.expense;
+  T.rate=T.income>=MIN_INCOME_FOR_RATE?T.saving/T.income:null;
+  const perDay=v=>span?v/span.days:null;
+  const perMonth=v=>span?v/span.days*365.25/12:null;
+  const perYear=v=>span?v/span.days*365.25:null;
+
+  root.replaceChildren(
+    el("div",{class:"card"},
+      el("div",{class:"bar",style:"margin:0"},
+        el("span",{style:"font-weight:600"},"Període:"), periodBar(),
+        el("span",{class:"mut",style:"font-size:12px"},periodLabel())),
+    ),
+    el("div",{class:"grid kpis",style:"margin-bottom:14px"},
+      kpi("Saldo al compte",eur(bal),"últim moviment registrat"),
+      kpi("Ingressos",eur(T.income),perMonth(T.income)!=null?eur(perMonth(T.income))+" al mes":"","pos"),
+      kpi("Pagaments",eur(T.expense),perMonth(T.expense)!=null?eur(perMonth(T.expense))+" al mes":"","neg"),
+      kpi("Estalvi",eur(T.saving),T.rate!=null?pct(T.rate)+" dels ingressos":"",sgn(T.saving)),
+      kpi("Estalvi al mes",eur(perMonth(T.saving)),"mitjana del període",sgn(T.saving)),
+      kpi("Inversió",eur(T.invest),perMonth(T.invest)!=null?eur(perMonth(T.invest))+" al mes":"","invc"),
+    ),
+    card("Mitjanes del període",
+      el("div",{class:"tw"},table(
+        ["","Ingressos","Pagaments","Estalvi","Inversió","% estalvi"],
+        [
+          ["Total",[eur(T.income),"pos"],[eur(T.expense),"neg"],[eur(T.saving),sgn(T.saving)],
+            [eur(T.invest),"invc"],pct(T.rate)],
+          ["Per any",[eur(perYear(T.income)),"pos"],[eur(perYear(T.expense)),"neg"],
+            [eur(perYear(T.saving)),sgn(T.saving)],[eur(perYear(T.invest)),"invc"],""],
+          ["Per mes",[eur(perMonth(T.income)),"pos"],[eur(perMonth(T.expense)),"neg"],
+            [eur(perMonth(T.saving)),sgn(T.saving)],[eur(perMonth(T.invest)),"invc"],""],
+          ["Per dia",[eur(perDay(T.income)),"pos"],[eur(perDay(T.expense)),"neg"],
+            [eur(perDay(T.saving)),sgn(T.saving)],[eur(perDay(T.invest)),"invc"],""],
+        ])),
+      el("p",{class:"note"},"Les mitjanes es reparteixen sobre els dies que realment tenen "+
+        "moviments dins del període, no sobre l'interval demanat."),
+    ),
+    card("Evolució del saldo",
+      lineChart(past.filter(r=>r.lastBalance!=null).map(r=>({k:mLabel(r.month),v:r.lastBalance}))),
+    ),
+    card("Ingressos, pagaments i inversió per mes",
+      barChart(rows.slice(-36),[
+        {label:"Ingressos",color:"var(--pos)",get:r=>r.income},
+        {label:"Pagaments",color:"var(--neg)",get:r=>r.expense},
+        {label:"Inversió",color:"var(--inv)",get:r=>r.invest},
+        {label:"Ingr. previstos",color:"var(--pos)",faint:true,get:r=>r.fIncome||0},
+        {label:"Pag. previstos",color:"var(--neg)",faint:true,get:r=>r.fExpense||0},
+      ]),
+      legend([{label:"Ingressos",color:"var(--pos)"},{label:"Pagaments",color:"var(--neg)"},
+        {label:"Inversió",color:"var(--inv)"},{label:"Previsió",color:"var(--muted)",faint:true}]),
+    ),
+    card("Taxa d'estalvi",
+      lineChart(past.filter(r=>r.rate!=null).map(r=>({k:mLabel(r.month),v:r.rate})),
+        {h:150,fmt:v=>(v*100).toFixed(0)+"%",color:"var(--accent)"}),
+    ),
+    card("Per any · tot l'històric",
+      el("div",{class:"tw"},table(
+        ["Any","Mesos","Ingressos","Pagaments","Estalvi","% estalvi","Inversió","Sobrant","Saldo màx."],
+        years.filter(y=>y.months).map(y=>[y.year,y.months,
+          [eur(y.income),"pos"],[eur(y.expense),"neg"],[eur(y.saving),sgn(y.saving)],
+          [pct(y.rate),y.rate>=0?"":"neg"],[eur(y.invest),"invc"],
+          [eur(y.surplus),sgn(y.surplus)],eur(y.maxBalance)]),
+        totalRow(years))),
+    ),
+    card("Despesa per categoria",catTable(perMonth)),
+  );
+}
+function kpi(lbl,val,sub,cls){
+  return el("div",{class:"kpi"},el("div",{class:"lbl"},lbl),
+    el("div",{class:"val "+(cls||"")},val), sub?el("div",{class:"sub"},sub):null);
+}
+function card(title,...body){ return el("div",{class:"card"},el("h2",{},title),...body); }
+
+function table(head,rows,foot){
+  const t=el("table",{},
+    el("thead",{},el("tr",{},head.map((h,i)=>el("th",{class:i?"r":""},h)))),
+    el("tbody",{},rows.map(r=>el("tr",{class:r.cls||""},
+      r.filter(c=>c!==undefined).map((c,i)=>{
+        const [txt,cls]=Array.isArray(c)?c:[c,""];
+        return el("td",{class:(i?"r ":"")+cls},txt==null?"—":String(txt));
+      })))),
+  );
+  if(foot) t.append(el("tfoot",{},foot));
+  return t;
+}
+function totalRow(years){
+  const t=years.filter(y=>y.months).reduce((a,y)=>({income:a.income+y.income,expense:a.expense+y.expense,
+    invest:a.invest+y.invest,months:a.months+y.months}),{income:0,expense:0,invest:0,months:0});
+  const sav=t.income-t.expense;
+  return el("tr",{class:"tot"},["Total",t.months,eur(t.income),eur(t.expense),eur(sav),
+    pct(t.income?sav/t.income:null),eur(t.invest),eur(sav-t.invest),""]
+    .map((c,i)=>el("td",{class:i?"r":""},c)));
+}
+function catTable(perMonth){
+  const T=transferCats(), map=new Map();
+  let tot=0;
+  for(const m of S.data.movements){
+    if(m.planned||m.amount>=0||T.has(m.category)||!inPeriod(m.date)) continue;
+    map.set(m.category,(map.get(m.category)||0)+(-m.amount)); tot+=-m.amount;
+  }
+  const rows=[...map].sort((a,b)=>b[1]-a[1]);
+  if(!rows.length) return el("div",{class:"empty"},"Cap despesa en aquest període.");
+  return el("div",{class:"tw"},table(["Categoria","Import","% del total","€/mes"],
+    rows.map(([c,v])=>[c,[eur(v),"neg"],pct(v/tot),eur(perMonth(v))]),
+    el("tr",{class:"tot"},["Total",eur(tot),"100 %",eur(perMonth(tot))]
+      .map((c,i)=>el("td",{class:i?"r":""},c)))));
+}
+function addMonths(k,n){
+  let[y,m]=k.split("-").map(Number); m+=n;
+  while(m<1){m+=12;y--;} while(m>12){m-=12;y++;}
+  return `${y}-${String(m).padStart(2,"0")}`;
+}
+
+/* ================================================================== *
+ *  Pestanya: Moviments                                               *
+ * ================================================================== */
+function filtered(){
+  const f=S.mov, q=f.q.trim().toLowerCase();
+  const [pa,pb]=periodRange();
+  let out=S.data.movements.filter(m=>{
+    if(m.date<pa || m.date>pb) return false;
+    if(f.account && m.account!==f.account) return false;
+    if(f.category && m.category!==f.category) return false;
+    if(f.kind==="planned"?!m.planned:f.kind&&m.kind!==f.kind) return false;
+    if(q && !((m.concept||"")+" "+m.category+" "+(m.city||"")+" "+(m.note||""))
+      .toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const k=f.sort;
+  out.sort((a,b)=>{
+    let r = k==="amount" ? a.amount-b.amount
+          : k==="category" ? a.category.localeCompare(b.category)
+          : k==="concept" ? (a.concept||"").localeCompare(b.concept||"")
+          : a.date<b.date?-1:a.date>b.date?1:0;
+    return r*f.dir;
+  });
+  return out;
+}
+function renderMoviments(root){
+  const cats=[...new Set(S.data.movements.map(m=>m.category))].sort();
+  const f=S.mov, all=filtered(), show=all.slice(0,f.limit);
+  const real=all.filter(m=>!m.planned), flow=real.filter(m=>m.kind!=="transfer");
+  const inc=flow.filter(m=>m.amount>0).reduce((a,m)=>a+m.amount,0);
+  const exp=flow.filter(m=>m.amount<0).reduce((a,m)=>a-m.amount,0);
+  const tra=real.filter(m=>m.kind==="transfer").reduce((a,m)=>a+Math.abs(m.amount),0);
+  const sum=inc-exp;
+
+  const set=(k,v)=>{ S.mov[k]=v; if(k!=="limit") S.mov.limit=300; render(); };
+
+  const bar=el("div",{class:"bar"},
+    el("input",{type:"search",placeholder:"Cerca concepte, categoria, població…",value:f.q,
+      oninput:e=>{f.q=e.target.value;f.limit=300;renderInto();}}),
+    periodBar(),
+    sel(f.account,[["","Tots els comptes"],...S.data.accounts.map(a=>[a.id,a.name])],v=>set("account",v)),
+    sel(f.category,[["","Totes les categories"],...cats.map(c=>[c,c])],v=>set("category",v)),
+    sel(f.kind,[["","Tot"],["expense","Pagaments"],["income","Ingressos"],
+      ["transfer","Traspassos"],["planned","Previstos"]],v=>set("kind",v)),
+    el("button",{class:"btn ghost",onclick:()=>{
+      S.mov={...S.mov,q:"",account:"",category:"",kind:"",limit:300};
+      S.period={preset:"all",from:"",to:""}; render();}},"Netejar"),
+    el("span",{style:"flex:1"}),
+    el("button",{class:"btn",onclick:()=>exportCsv(all)},"Exportar CSV"),
+  );
+
+  const th=(lbl,key,r)=>el("th",{class:r?"r":"",style:"cursor:pointer",
+    onclick:()=>{ if(f.sort===key) f.dir*=-1; else {f.sort=key;f.dir=key==="date"?-1:1;} render(); }},
+    lbl+(f.sort===key?(f.dir<0?" ↓":" ↑"):""));
+
+  const tbl=el("table",{},
+    el("thead",{},el("tr",{},th("Data","date"),el("th",{},"Compte"),th("Concepte","concept"),
+      th("Categoria","category"),th("Import","amount",1),el("th",{class:"r"},"Saldo"),el("th",{},""))),
+    el("tbody",{},show.map(m=>movRow(m,cats))));
+
+  root.replaceChildren(
+    el("div",{class:"grid kpis",style:"margin-bottom:14px"},
+      kpi("Moviments",NF0.format(all.length),all.length!==S.data.movements.length
+        ?"de "+NF0.format(S.data.movements.length):"tots"),
+      kpi("Ingressos",eur(inc),mAvg(inc),"pos"),
+      kpi("Pagaments",eur(exp),mAvg(exp),"neg"),
+      kpi("Net",eur(sum),"ingressos − pagaments",sgn(sum)),
+      kpi("Traspassos",eur(tra),"targeta i inversió, fora dels totals","invc"),
+    ),
+    el("div",{class:"card"},bar,el("div",{class:"tw"},tbl),
+      all.length>show.length
+        ? el("div",{style:"padding:12px;text-align:center"},
+            el("button",{class:"btn",onclick:()=>{f.limit+=500;render();}},
+              `Mostrar-ne més (${NF0.format(all.length-show.length)} restants)`))
+        : null,
+      all.length?null:el("div",{class:"empty"},"Cap moviment amb aquests filtres.")),
+  );
+  function renderInto(){ renderMoviments(root); }
+}
+/** Subtítol de KPI: quant és això al mes, dins del període triat. */
+function mAvg(v){
+  const s=periodSpan();
+  return s ? eur(v/s.days*365.25/12)+" al mes" : "del filtre actual";
+}
+function movRow(m,cats){
+  const tr=el("tr",{class:m.planned?"fut":""},
+    el("td",{},dCa(m.date)),
+    el("td",{},el("span",{class:"pill"},m.account==="targeta"?"targeta":"compte")),
+    el("td",{class:"wrap"},m.concept||"—",
+      m.city?el("span",{class:"mut"}," · "+m.city):null),
+    el("td",{},el("select",{onchange:e=>{m.category=e.target.value;markDirty();render();}},
+      cats.map(c=>el("option",{value:c,selected:c===m.category},c)))),
+    el("td",{class:"r num "+sgn(m.amount)},eur(m.amount)),
+    el("td",{class:"r num mut"},m.balance!=null?eur(m.balance):""),
+    el("td",{class:"r"},el("button",{class:"btn ghost",title:"Detall",
+      onclick:()=>movDialog(m)},"⋯")),
+  );
+  return tr;
+}
+function sel(value,opts,on){
+  return el("select",{onchange:e=>on(e.target.value)},
+    opts.map(([v,l])=>el("option",{value:v,selected:v===value},l)));
+}
+function movDialog(m){
+  const cats=[...new Set(S.data.movements.map(x=>x.category))].sort();
+  const f={};
+  dialog("Moviment", el("div",{class:"map"},
+    lbl("Data",   f.date=el("input",{type:"date",value:m.date})),
+    lbl("Compte", f.account=sel(m.account,S.data.accounts.map(a=>[a.id,a.name]),v=>f.account.value=v)),
+    lbl("Concepte", f.concept=el("input",{type:"text",value:m.concept||""})),
+    lbl("Categoria", f.category=sel(m.category,cats.map(c=>[c,c]),v=>f.category.value=v)),
+    lbl("Import (€)", f.amount=el("input",{type:"number",step:"0.01",value:m.amount})),
+    lbl("Saldo (€)",  f.balance=el("input",{type:"number",step:"0.01",value:m.balance??""})),
+    lbl("Tipus", f.kind=sel(m.kind,[["expense","Pagament"],["income","Ingrés"],
+      ["transfer","Traspàs (no compta com a despesa)"]],v=>f.kind.value=v)),
+    lbl("Etiquetes", f.tags=el("input",{type:"text",value:(m.tags||[]).join(", "),
+      placeholder:"separades per comes"})),
+    lbl("Nota", f.note=el("input",{type:"text",value:m.note||""})),
+  ),[
+    ["Eliminar","btn",()=>{ if(!confirm("Eliminar aquest moviment?")) return;
+      S.data.movements=S.data.movements.filter(x=>x!==m); markDirty(); closeDialog(); render(); }],
+    ["Desar","btn primary",()=>{
+      m.date=f.date.value; m.account=f.account.value; m.concept=f.concept.value;
+      m.category=f.category.value; m.amount=+f.amount.value;
+      m.balance=f.balance.value===""?null:+f.balance.value; m.kind=f.kind.value;
+      m.tags=f.tags.value.split(",").map(s=>s.trim()).filter(Boolean); m.note=f.note.value;
+      m.planned=m.date>TODAY; markDirty(); closeDialog(); render(); }],
+  ]);
+}
+const lbl=(t,n)=>[el("label",{},t),n];
+
+function exportCsv(rows){
+  const head=["Data","Compte","Concepte","Població","Categoria","Import","Saldo","Tipus","Etiquetes"];
+  const esc=v=>{ const s=v==null?"":String(v); return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const body=rows.map(m=>[m.date,m.account,m.concept,m.city||"",m.category,
+    String(m.amount).replace(".",","),m.balance??"",m.kind,(m.tags||[]).join(" ")].map(esc).join(";"));
+  const txt="﻿"+[head.join(";"),...body].join("\r\n");
+  const a=el("a",{href:URL.createObjectURL(new Blob([txt],{type:"text/csv"})),
+    download:"moviments.csv"}); document.body.append(a); a.click(); a.remove();
+}
+
+/* ================================================================== *
+ *  Pestanya: Mesos                                                   *
+ * ================================================================== */
+function renderMesos(root){
+  const rows=derive();
+  const rowsUi=rows.map(r=>{
+    const mo=S.data.months.find(x=>x.month===r.month);
+    const inp=(val,on)=>el("input",{type:"number",step:"50",value:val??"",placeholder:"—",
+      style:"text-align:right",onchange:e=>{on(e.target.value===""?null:+e.target.value);
+        markDirty(); render();}});
+    const ensure=()=>{ let m=S.data.months.find(x=>x.month===r.month);
+      if(!m) S.data.months.push(m={month:r.month,investment:0,forecastExpense:null,
+        forecastInvestment:null,note:""}); return m; };
+    return el("tr",{class:r.future?"fut":""},
+      el("td",{},mLabel(r.month)),
+      el("td",{class:"r num"},r.nMov||""),
+      el("td",{class:"r num pos"},r.income?eur(r.income):""),
+      el("td",{class:"r num neg"},r.expense?eur(r.expense):""),
+      el("td",{class:"r num invc"},r.invest?eur(r.invest):""),
+      el("td",{class:"r num "+sgn(r.saving)},r.nMov?eur(r.saving):""),
+      el("td",{class:"r num"},r.nMov?pct(r.rate):""),
+      el("td",{class:"r num "+sgn(r.surplus)},r.nMov?eur(r.surplus):""),
+      el("td",{class:"r num mut"},r.lastBalance!=null?eur(r.lastBalance):""),
+      el("td",{class:"r"},r.future?inp(mo?.forecastExpense,v=>ensure().forecastExpense=v)
+        :el("span",{class:"mut num"},r.fExpense?eur(r.fExpense):"")),
+      el("td",{class:"r"},r.future?inp(mo?.forecastInvestment,v=>ensure().forecastInvestment=v)
+        :el("span",{class:"mut num"},r.fInvest?eur(r.fInvest):"")),
+      el("td",{class:"r num mut"},r.fIncome?eur(r.fIncome):""),
+    );
+  });
+  const years=byYear(rows);
+
+  root.replaceChildren(
+    el("div",{class:"card"},
+      el("h2",{},"Real per mes i previsió"),
+      el("p",{class:"note",style:"margin-bottom:12px"},
+        "Les xifres de l'esquerra surten dels moviments reals. Les dues columnes editables són la "+
+        "previsió dels mesos que encara no han passat; els ingressos previstos venen del calendari "+
+        "de nòmines importat del full."),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},
+          ["Mes","Mov.","Ingressos","Pagaments","Inversió","Estalvi","% estalvi","Sobrant","Saldo final",
+           "Desp. prevista","Inv. prevista","Ingr. previstos"]
+          .map((h,i)=>el("th",{class:i?"r":""},h)))),
+        el("tbody",{},rowsUi))),
+    ),
+    card("Real vs previsió per any",
+      barChart(years,[
+        {label:"Ingressos",color:"var(--pos)",get:y=>y.income},
+        {label:"Ingr. previstos",color:"var(--pos)",faint:true,get:y=>y.fIncome},
+        {label:"Pagaments",color:"var(--neg)",get:y=>y.expense},
+        {label:"Pag. previstos",color:"var(--neg)",faint:true,get:y=>y.fExpense},
+      ],{h:190}),
+      legend([{label:"Real",color:"var(--accent)"},{label:"Previsió",color:"var(--muted)",faint:true}]),
+    ),
+  );
+}
+
+/* ================================================================== *
+ *  Pestanya: Categories i regles                                     *
+ * ================================================================== */
+function renderCategories(root){
+  const T=transferCats();
+  const use=new Map();
+  for(const m of S.data.movements){
+    let e=use.get(m.category); if(!e) use.set(m.category,e={n:0,sum:0,last:""});
+    e.n++; if(!m.planned) e.sum+=m.amount; if(m.date>e.last) e.last=m.date;
+  }
+  const cats=[...use.entries()].sort((a,b)=>a[1].sum-b[1].sum);
+
+  const rows=cats.map(([c,e])=>el("tr",{},
+    el("td",{},c),
+    el("td",{class:"r num"},NF0.format(e.n)),
+    el("td",{class:"r num "+sgn(e.sum)},eur(e.sum)),
+    el("td",{class:"r num mut"},dCa(e.last)),
+    el("td",{class:"r"},el("select",{onchange:ev=>{setCatKind(c,ev.target.value);markDirty();render();}},
+      [["expense","Despesa / ingrés"],["transfer","Traspàs (exclòs dels totals)"]]
+        .map(([v,l])=>el("option",{value:v,selected:(v==="transfer")===T.has(c)},l)))),
+    el("td",{class:"r"},
+      el("button",{class:"btn ghost",onclick:()=>renameCat(c)},"Reanomenar"),
+      el("button",{class:"btn ghost",onclick:()=>mergeCat(c,cats.map(x=>x[0]))},"Fusionar")),
+  ));
+
+  root.replaceChildren(
+    sospitoses(),
+    el("div",{class:"card"},
+      el("h2",{},"Categories · "+cats.length),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Categoria","Moviments","Net","Últim ús","Tractament",""]
+          .map((h,i)=>el("th",{class:i?"r":""},h)))),
+        el("tbody",{},rows))),
+    ),
+    el("div",{class:"card"},
+      el("h2",{},"Regles d'autocategorització"),
+      el("p",{class:"note",style:"margin:0 0 12px"},
+        "S'apliquen en importar, de dalt a baix: el primer patró que coincideix amb el concepte guanya."),
+      rulesTable(),
+      el("button",{class:"btn",style:"margin-top:10px",onclick:()=>{
+        S.data.rules.push({match:"",category:cats[0]?.[0]||"VARIS",field:"concept"});
+        markDirty(); render();}},"Afegir regla"),
+      el("button",{class:"btn",style:"margin-top:10px",onclick:suggestRules},"Suggerir des de l'històric"),
+    ),
+  );
+}
+/** Categories comptades com a ingrés que semblen desinversió o devolucions:
+    inflen la taxa d'estalvi sense ser diners nous. Les xifres es calculen. */
+const NOMS_SOSPITOSOS=/BINANCE|RETORN|REEMBORS|DEVOLUCI|TRASPAS|TRASPÀS|VENDA/i;
+function sospitoses(){
+  const T=transferCats(), m=new Map();
+  for(const x of S.data.movements){
+    if(x.planned||x.amount<=0||T.has(x.category)) continue;
+    if(!NOMS_SOSPITOSOS.test(x.category)) continue;
+    m.set(x.category,(m.get(x.category)||0)+x.amount);
+  }
+  if(!m.size) return null;
+  const llista=[...m].sort((a,b)=>b[1]-a[1]);
+  return el("div",{class:"warnbox"},
+    "Aquestes categories compten com a ingrés però tenen pinta de desinversió o "+
+    "devolucions, i així inflen la taxa d'estalvi: ",
+    llista.map(([c,v],i)=>[i?", ":"",el("b",{},c)," (",eur0(v),")"]),
+    ". Si ho són, marca-les com a traspàs.");
+}
+function setCatKind(id,kind){
+  let c=S.data.categories.find(x=>x.id===id);
+  if(!c) S.data.categories.push(c={id,kind});
+  c.kind=kind;
+  for(const m of S.data.movements) if(m.category===id)
+    m.kind = kind==="transfer" ? "transfer" : (m.amount>0?"income":"expense");
+}
+function rulesTable(){
+  return el("div",{class:"tw"},el("table",{},
+    el("thead",{},el("tr",{},el("th",{},"Si el concepte conté"),el("th",{},"Categoria"),el("th",{},""))),
+    el("tbody",{},S.data.rules.map((r,i)=>el("tr",{},
+      el("td",{},el("input",{type:"text",value:r.match,placeholder:"text o /regex/",
+        onchange:e=>{r.match=e.target.value;markDirty();}})),
+      el("td",{},el("input",{type:"text",value:r.category,
+        onchange:e=>{r.category=e.target.value;markDirty();}})),
+      el("td",{class:"r"},el("button",{class:"btn ghost",
+        onclick:()=>{S.data.rules.splice(i,1);markDirty();render();}},"✕")),
+    )))));
+}
+function conceptKeys(concept){
+  const c=(concept||"").toUpperCase().replace(/[0-9]+/g," ").replace(/\s+/g," ").trim();
+  const keys=[];
+  if(c.length>=5) keys.push(c.slice(0,22).trim());       // patró llarg
+  const w=c.split(" ").filter(x=>x.length>2);
+  if(w.length>1 && w[0].length>=5) keys.push(w[0]);       // primera paraula
+  return [...new Set(keys)];
+}
+/** Agrupa l'històric per patró i mira si cada patró apunta sempre a la mateixa categoria. */
+function ruleCandidates(){
+  const map=new Map();
+  for(const m of S.data.movements)
+    for(const k of conceptKeys(m.concept)){
+      let e=map.get(k); if(!e) map.set(k,e=new Map());
+      e.set(m.category,(e.get(m.category)||0)+1);
+    }
+  const clear=[],fuzzy=[];
+  for(const [key,cs] of map){
+    const tot=[...cs.values()].reduce((a,b)=>a+b,0);
+    if(tot<3) continue;
+    const ranked=[...cs].sort((a,b)=>b[1]-a[1]);
+    const [cat,n]=ranked[0];
+    const rec={key,cat,n,tot,purity:n/tot,alts:ranked.map(([c,v])=>c+" ("+v+")")};
+    (rec.purity>=0.9?clear:fuzzy).push(rec);
+  }
+  // Si un patro llarg i el seu prefix curt cobreixen exactament el mateix,
+  // nomes cal el curt: si no, es veurien dues files identiques.
+  const dedupe=list=>list.filter(r=>!list.some(o=>o!==r && o.key.length<r.key.length
+    && r.key.startsWith(o.key) && o.tot===r.tot && o.cat===r.cat));
+  const cmp=(a,b)=>b.tot-a.tot;
+  return {clear:dedupe(clear).sort(cmp),fuzzy:dedupe(fuzzy).sort(cmp)};
+}
+function suggestRules(){
+  const {clear,fuzzy}=ruleCandidates();
+  let added=0;
+  for(const r of clear){
+    if(S.data.rules.some(x=>x.match===r.key)) continue;
+    // si una regla mes curta ja cobreix aquest patro, no cal la llarga
+    if(S.data.rules.some(x=>x.category===r.cat && x.match.length<r.key.length
+        && r.key.startsWith(x.match))) continue;
+    S.data.rules.push({match:r.key,category:r.cat,field:"concept"}); added++;
+  }
+  markDirty(); render();
+  const pend=fuzzy.filter(r=>!S.data.rules.some(x=>x.match===r.key));
+  if(!pend.length){ flash(added+" regles afegides"); return; }
+  const picked=new Map();
+  dialog("Regles suggerides",el("div",{},
+    el("p",{class:"note",style:"margin:0 0 14px"},
+      added+" regles afegides automàticament. Aquests "+pend.length+
+      " conceptes apareixen sovint però els has classificat de més d'una manera, "+
+      "així que no s'ha decidit sol. Tria'n la categoria si en vols una regla."),
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},el("th",{},"Concepte"),el("th",{class:"r"},"Vegades"),
+        el("th",{},"Com l'has classificat"),el("th",{},"Regla"))),
+      el("tbody",{},pend.map(r=>el("tr",{},
+        el("td",{class:"wrap"},r.key),
+        el("td",{class:"r num"},r.tot),
+        el("td",{class:"wrap mut"},r.alts.join(" · ")),
+        el("td",{},sel("",[["","— cap regla —"],...[...new Set(r.alts.map(a=>a.replace(/ \(\d+\)$/,"")))]
+          .map(c=>[c,c])],v=>{ if(v) picked.set(r.key,v); else picked.delete(r.key); })),
+      )))))
+  ),[
+    ["Tancar","btn",closeDialog],
+    ["Afegir les triades","btn primary",()=>{
+      for(const [key,cat] of picked) S.data.rules.push({match:key,category:cat,field:"concept"});
+      markDirty(); closeDialog(); render(); flash((added+picked.size)+" regles en total");
+    }],
+  ]);
+}
+function renameCat(c){
+  const inp=el("input",{type:"text",value:c,style:"width:100%"});
+  const n=S.data.movements.filter(m=>m.category===c).length;
+  dialog("Reanomenar categoria",el("div",{},
+    el("p",{class:"note",style:"margin:0 0 12px"},
+      "Es canviarà a "+n+" moviment"+(n===1?"":"s")+" i a les regles que hi apuntin."),
+    el("div",{class:"map"},lbl("Nou nom",inp)),
+  ),[
+    ["Cancel·lar","btn",closeDialog],
+    ["Reanomenar","btn primary",()=>{
+      const nou=inp.value.trim().toUpperCase();
+      if(!nou||nou===c) return closeDialog();
+      for(const m of S.data.movements) if(m.category===c) m.category=nou;
+      const cc=S.data.categories.find(x=>x.id===c); if(cc) cc.id=nou;
+      for(const r of S.data.rules) if(r.category===c) r.category=nou;
+      markDirty(); closeDialog(); render(); flash(c+" → "+nou);
+    }],
+  ]);
+}
+function mergeCat(c,all){
+  const dest=all.filter(x=>x!==c).sort();
+  if(!dest.length){ alert("No hi ha cap altra categoria."); return; }
+  const n=S.data.movements.filter(m=>m.category===c).length;
+  let target=dest[0];
+  const info=el("p",{class:"note",style:"margin:10px 0 0"});
+  const upd=()=>{ info.textContent=n+(n===1?" moviment de «":" moviments de «")+c+
+    (n===1?"» passarà a «":"» passaran a «")+target+"». «"+c+"» desapareixerà."; };
+  const s=sel(target,dest.map(x=>[x,x]),v=>{ target=v; upd(); });
+  upd();
+  dialog("Fusionar categoria",el("div",{},
+    el("div",{class:"map"},lbl("Fusionar «"+c+"» dins de",s)), info,
+  ),[
+    ["Cancel·lar","btn",closeDialog],
+    ["Fusionar","btn primary",()=>{
+      for(const m of S.data.movements) if(m.category===c) m.category=target;
+      for(const r of S.data.rules) if(r.category===c) r.category=target;
+      S.data.categories=S.data.categories.filter(x=>x.id!==c);
+      markDirty(); closeDialog(); render();
+      flash(n+(n===1?" moviment mogut a ":" moviments moguts a ")+target);
+    }],
+  ]);
+}
+
+/* ================================================================== *
+ *  Importació d'extractes                                            *
+ * ================================================================== */
+/* --- lector XLSX natiu (ZIP + DecompressionStream, sense llibreries) --- */
+async function readXlsx(buf){
+  const files=await unzip(buf);
+  const dec=new TextDecoder();
+  const shared=[];
+  if(files["xl/sharedStrings.xml"]){
+    const x=dec.decode(files["xl/sharedStrings.xml"]);
+    for(const si of x.match(/<si>[\s\S]*?<\/si>/g)||[])
+      shared.push([...si.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(m=>unesc(m[1])).join(""));
+  }
+  const wbXml=dec.decode(files["xl/workbook.xml"]||new Uint8Array());
+  const names=[...wbXml.matchAll(/<sheet[^>]*name="([^"]*)"/g)].map(m=>unesc(m[1]));
+  const sheetKeys=Object.keys(files).filter(k=>/^xl\/worksheets\/sheet\d+\.xml$/.test(k))
+    .sort((a,b)=>(+a.match(/\d+/)[0])-(+b.match(/\d+/)[0]));
+  const sheets=sheetKeys.map((k,i)=>({name:names[i]||("Full "+(i+1)),rows:parseSheet(dec.decode(files[k]),shared)}));
+  return sheets;
+}
+function unesc(s){ return s.replace(/&lt;/g,"<").replace(/&gt;/g,">")
+  .replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,"&"); }
+function colIdx(ref){ let n=0; for(const ch of ref.replace(/\d+/g,"")) n=n*26+(ch.charCodeAt(0)-64); return n-1; }
+function parseSheet(xml,shared){
+  const out=[];
+  for(const rm of xml.match(/<row[\s\S]*?(?:\/>|<\/row>)/g)||[]){
+    const cells=[];
+    for(const cm of rm.matchAll(/<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){
+      const attrs=cm[1], body=cm[2]||"";
+      const ref=(attrs.match(/r="([A-Z]+\d+)"/)||[])[1];
+      const t=(attrs.match(/t="([^"]+)"/)||[])[1];
+      let v=(body.match(/<v>([\s\S]*?)<\/v>/)||[])[1];
+      if(t==="inlineStr") v=[...body.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(m=>m[1]).join("");
+      let val = v==null ? "" : t==="s" ? (shared[+v]??"") : t==="str"||t==="inlineStr" ? unesc(v) : v;
+      const i = ref?colIdx(ref):cells.length;
+      cells[i]=val;
+    }
+    for(let i=0;i<cells.length;i++) cells[i]??="";
+    out.push(cells);
+  }
+  return out;
+}
+async function unzip(buf){
+  const dv=new DataView(buf), u8=new Uint8Array(buf);
+  let eocd=-1;
+  for(let i=u8.length-22;i>=Math.max(0,u8.length-66000);i--)
+    if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; }
+  if(eocd<0) throw new Error("No sembla un fitxer xlsx");
+  const n=dv.getUint16(eocd+10,true); let p=dv.getUint32(eocd+16,true);
+  const out={};
+  for(let i=0;i<n;i++){
+    const method=dv.getUint16(p+10,true), csize=dv.getUint32(p+20,true);
+    const fnl=dv.getUint16(p+28,true), efl=dv.getUint16(p+30,true), cml=dv.getUint16(p+32,true);
+    const lho=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(u8.subarray(p+46,p+46+fnl));
+    const lfnl=dv.getUint16(lho+26,true), lefl=dv.getUint16(lho+28,true);
+    const start=lho+30+lfnl+lefl;
+    const raw=u8.subarray(start,start+csize);
+    out[name]= method===0 ? raw : new Uint8Array(await new Response(
+      new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+    p+=46+fnl+efl+cml;
+  }
+  return out;
+}
+/* --- lector .xls antic (BIFF8 dins d'un OLE compound file) ---
+   El banc exporta en aquest format, no en xlsx, i el navegador no en sap res.
+   Només es llegeix el mínim per treure'n cel·les: prou per a un extracte. */
+async function readXls(buf){
+  const wb = cfbFindStream(buf, ["Workbook","Book"]);
+  if(!wb) throw new Error("No s'hi ha trobat el flux Workbook");
+  return parseBiff(wb);
+}
+/* -- OLE / Compound File Binary: només cal extreure'n un flux -- */
+function cfbFindStream(buf, names){
+  const u8=new Uint8Array(buf), dv=new DataView(buf);
+  const sig=[0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1];
+  if(sig.some((b,i)=>u8[i]!==b)) return null;
+  const ssz=1<<dv.getUint16(30,true), msz=1<<dv.getUint16(32,true);
+  const nFat=dv.getUint32(44,true), dirStart=dv.getUint32(48,true);
+  const cutoff=dv.getUint32(56,true), miniFatStart=dv.getUint32(60,true);
+  const difStart=dv.getUint32(68,true), nDif=dv.getUint32(72,true);
+  const sect=n=>u8.subarray((n+1)*ssz,(n+2)*ssz);
+  /* DIFAT: 109 entrades a la capçalera i, si cal, més en cadena */
+  const fatSects=[];
+  for(let i=0;i<109 && fatSects.length<nFat;i++){
+    const v=dv.getUint32(76+i*4,true); if(v>0xFFFFFFF9) break; fatSects.push(v);
+  }
+  let d=difStart;
+  for(let i=0;i<nDif && d<=0xFFFFFFF9;i++){
+    const s0=(d+1)*ssz, n=(ssz/4)-1;
+    for(let j=0;j<n && fatSects.length<nFat;j++){
+      const v=dv.getUint32(s0+j*4,true); if(v>0xFFFFFFF9) break; fatSects.push(v);
+    }
+    d=dv.getUint32(s0+n*4,true);
+  }
+  const fat=[];
+  for(const fs of fatSects){
+    const o=(fs+1)*ssz;
+    for(let i=0;i<ssz/4;i++) fat.push(dv.getUint32(o+i*4,true));
+  }
+  const chain=start=>{ const out=[]; let n=start,g=0;
+    while(n<=0xFFFFFFF9 && g++<1e6){ out.push(n); n=fat[n]; if(n==null) break; } return out; };
+  const readChain=(start,size)=>{
+    const parts=chain(start).map(sect);
+    const out=new Uint8Array(parts.length*ssz);
+    parts.forEach((p,i)=>out.set(p,i*ssz));
+    return size!=null?out.subarray(0,size):out;
+  };
+  /* directori */
+  const dirBytes=readChain(dirStart);
+  const dirDv=new DataView(dirBytes.buffer,dirBytes.byteOffset,dirBytes.byteLength);
+  const entries=[];
+  for(let o=0;o+128<=dirBytes.length;o+=128){
+    const nl=dirDv.getUint16(o+64,true);
+    if(nl<2) continue;
+    let name="";
+    for(let i=0;i<nl-2;i+=2) name+=String.fromCharCode(dirDv.getUint16(o+i,true));
+    entries.push({name,type:dirBytes[o+66],start:dirDv.getUint32(o+116,true),
+      size:dirDv.getUint32(o+120,true)});
+  }
+  const root=entries.find(e=>e.type===5);
+  const want=entries.find(e=>e.type===2 && names.includes(e.name));
+  if(!want) return null;
+  if(want.size>=cutoff) return readChain(want.start,want.size);
+  /* flux petit: viu dins del mini-stream de l'arrel, amb la seva pròpia FAT */
+  const miniFatBytes=readChain(miniFatStart);
+  const mdv=new DataView(miniFatBytes.buffer,miniFatBytes.byteOffset,miniFatBytes.byteLength);
+  const miniFat=[]; for(let i=0;i<miniFatBytes.length/4;i++) miniFat.push(mdv.getUint32(i*4,true));
+  const mini=readChain(root.start,root.size);
+  const out=new Uint8Array(want.size);
+  let n=want.start,off=0,g=0;
+  while(n<=0xFFFFFFF9 && off<want.size && g++<1e6){
+    out.set(mini.subarray(n*msz,Math.min(n*msz+msz,mini.length)),off);
+    off+=msz; n=miniFat[n];
+  }
+  return out;
+}
+/* -- BIFF8: només els registres que porten valors -- */
+function parseBiff(u8){
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  const recs=[];
+  for(let p=0;p+4<=u8.length;){
+    const id=dv.getUint16(p,true), len=dv.getUint16(p+2,true);
+    if(p+4+len>u8.length) break;
+    recs.push({id,off:p+4,len}); p+=4+len;
+  }
+  /* taula de textos compartits, que pot continuar en registres CONTINUE */
+  let sst=[];
+  const iSst=recs.findIndex(r=>r.id===0x00FC);
+  if(iSst>=0){
+    const blocks=[recs[iSst]];
+    for(let j=iSst+1;j<recs.length && recs[j].id===0x003C;j++) blocks.push(recs[j]);
+    sst=parseSST(u8,dv,blocks);
+  }
+  const sheets=[]; let cur=null;
+  const put=(r,c,v)=>{ if(!cur) return;
+    while(cur.rows.length<=r) cur.rows.push([]);
+    const row=cur.rows[r]; while(row.length<=c) row.push("");
+    row[c]=v; };
+  const names=recs.filter(r=>r.id===0x0085).map(r=>{
+    const o=r.off, cch=u8[o+6], flags=u8[o+7]; let s="";
+    if(flags&1){ for(let i=0;i<cch;i++) s+=String.fromCharCode(dv.getUint16(o+8+i*2,true)); }
+    else { for(let i=0;i<cch;i++) s+=String.fromCharCode(u8[o+8+i]); }
+    return s;
+  });
+  let iSheet=0;
+  for(const r of recs){
+    const o=r.off;
+    switch(r.id){
+      case 0x0809: {                                   // BOF
+        const dt=dv.getUint16(o+2,true);
+        if(dt===0x0010){ cur={name:names[iSheet]||("Full "+(iSheet+1)),rows:[]};
+          sheets.push(cur); iSheet++; }
+        else cur=null;
+        break;
+      }
+      case 0x000A: cur=null; break;                    // EOF
+      case 0x00FD:                                     // LABELSST
+        put(dv.getUint16(o,true),dv.getUint16(o+2,true),sst[dv.getUint32(o+6,true)]??"");
+        break;
+      case 0x0204: {                                   // LABEL
+        const [s]=biffStr(u8,dv,o+6);
+        put(dv.getUint16(o,true),dv.getUint16(o+2,true),s);
+        break;
+      }
+      case 0x0203:                                     // NUMBER
+        put(dv.getUint16(o,true),dv.getUint16(o+2,true),dv.getFloat64(o+6,true));
+        break;
+      case 0x027E:                                     // RK
+        put(dv.getUint16(o,true),dv.getUint16(o+2,true),rkNum(dv.getUint32(o+6,true)));
+        break;
+      case 0x00BD: {                                   // MULRK
+        const row=dv.getUint16(o,true); let c=dv.getUint16(o+2,true);
+        for(let q=o+4;q+6<=o+r.len-2;q+=6) put(row,c++,rkNum(dv.getUint32(q+2,true)));
+        break;
+      }
+      case 0x0006: {                                   // FORMULA: només el valor calculat
+        const row=dv.getUint16(o,true), col=dv.getUint16(o+2,true);
+        if(dv.getUint16(o+12,true)===0xFFFF){
+          if(u8[o+6]===3) put(row,col,"");             // resultat buit
+        } else put(row,col,dv.getFloat64(o+6,true));
+        break;
+      }
+    }
+  }
+  for(const sh of sheets) for(const row of sh.rows)
+    for(let i=0;i<row.length;i++) if(row[i]==null) row[i]="";
+  return sheets;
+}
+function rkNum(v){
+  let n;
+  if(v&2) n=(v|0)>>2;                                  // enter de 30 bits
+  else { const b=new ArrayBuffer(8), d=new DataView(b);
+         d.setUint32(0,v&0xFFFFFFFC); n=d.getFloat64(0,false); }
+  return (v&1)?n/100:n;
+}
+/** Cadena BIFF8: longitud, un byte d'indicadors i després 8 o 16 bits per caràcter. */
+function biffStr(u8,dv,o,cchIn){
+  let p=o, cch=cchIn;
+  if(cch==null){ cch=dv.getUint16(p,true); p+=2; }
+  const grbit=u8[p++];
+  const wide=grbit&1, rich=grbit&8, ext=grbit&4;
+  let nRun=0,cbExt=0;
+  if(rich){ nRun=dv.getUint16(p,true); p+=2; }
+  if(ext){ cbExt=dv.getUint32(p,true); p+=4; }
+  let s="";
+  if(wide){ for(let i=0;i<cch;i++) s+=String.fromCharCode(dv.getUint16(p+i*2,true)); p+=cch*2; }
+  else { for(let i=0;i<cch;i++) s+=String.fromCharCode(u8[p+i]); p+=cch; }
+  return [s, p+nRun*4+cbExt];
+}
+/** La SST travessa registres CONTINUE, i cada tall repeteix el byte d'indicadors. */
+function parseSST(u8,dv,blocks){
+  const total=dv.getUint32(blocks[0].off+4,true);
+  const out=[];
+  let bi=0, p=blocks[0].off+8;
+  const end=()=>blocks[bi].off+blocks[bi].len;
+  for(let n=0;n<total;n++){
+    if(p+3>end()){ if(++bi>=blocks.length) break; p=blocks[bi].off; }
+    const cch=dv.getUint16(p,true); p+=2;
+    const grbit=u8[p++];
+    let wide=grbit&1; const rich=grbit&8, ext=grbit&4;
+    let nRun=0, cbExt=0;
+    if(rich){ nRun=dv.getUint16(p,true); p+=2; }
+    if(ext){ cbExt=dv.getUint32(p,true); p+=4; }
+    let s="", left=cch;
+    while(left>0){
+      const room=end()-p, can=wide?Math.min(left,room>>1):Math.min(left,room);
+      for(let i=0;i<can;i++) s+= wide?String.fromCharCode(dv.getUint16(p+i*2,true))
+                                    :String.fromCharCode(u8[p+i]);
+      p+=wide?can*2:can; left-=can;
+      if(left>0){                       // la cadena continua al registre següent
+        if(++bi>=blocks.length) break;
+        p=blocks[bi].off; wide=u8[p++]&1;
+      }
+    }
+    p+=nRun*4+cbExt;
+    out.push(s);
+  }
+  return out;
+}
+/* --- CSV --- */
+function parseCsv(txt){
+  const d=[";","\t",","].map(c=>({c,n:(txt.split("\n")[0].match(new RegExp("\\"+c,"g"))||[]).length}))
+    .sort((a,b)=>b.n-a.n)[0].c;
+  const rows=[]; let row=[],cell="",q=false;
+  for(let i=0;i<txt.length;i++){
+    const ch=txt[i];
+    if(q){ if(ch==='"'){ if(txt[i+1]==='"'){cell+='"';i++;} else q=false; } else cell+=ch; }
+    else if(ch==='"') q=true;
+    else if(ch===d){ row.push(cell); cell=""; }
+    else if(ch==="\n"){ row.push(cell); rows.push(row); row=[]; cell=""; }
+    else if(ch!=="\r") cell+=ch;
+  }
+  if(cell||row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r=>r.some(c=>c.trim()!==""));
+}
+/* --- normalitzadors --- */
+function toNum(v){
+  if(typeof v==="number") return v;
+  let s=String(v??"").replace(/[^\d,.\-+()]/g,"").trim();
+  if(!s) return null;
+  if(/^\(.*\)$/.test(s)) s="-"+s.slice(1,-1);
+  const lc=s.lastIndexOf(","), ld=s.lastIndexOf(".");
+  if(lc>ld) s=s.replace(/\./g,"").replace(",",".");
+  else s=s.replace(/,/g,"");
+  const n=parseFloat(s);
+  return isNaN(n)?null:n;
+}
+function toDate(v){
+  if(v instanceof Date) return v.toISOString().slice(0,10);
+  const s=String(v??"").trim();
+  if(!s) return null;
+  let m=s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if(m) return `${m[1]}-${p2(m[2])}-${p2(m[3])}`;
+  m=s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+  if(m){ let y=+m[3]; if(y<100) y+=2000; return `${y}-${p2(m[2])}-${p2(m[1])}`; }
+  if(/^\d+([.,]\d+)?$/.test(s)){       // número de sèrie d'Excel
+    const n=parseFloat(s.replace(",","."));
+    if(n>20000&&n<80000){
+      const d=new Date(Date.UTC(1899,11,30)+n*86400000);
+      return d.toISOString().slice(0,10);
+    }
+    return null;   // qualsevol altre número és un import, no una data:
+                   // new Date("39.9") en donaria una de vàlida i seria un desastre
+  }
+  const d=new Date(s);
+  return isNaN(d)?null:d.toISOString().slice(0,10);
+}
+const p2=v=>String(v).padStart(2,"0");
+
+function movKey(m){ return m.date+"|"+m.amount.toFixed(2)+"|"+
+  (m.concept||"").toUpperCase().replace(/\s+/g," ").trim().slice(0,28); }
+
+function applyRules(concept,fallback){
+  const c=(concept||"").toUpperCase();
+  for(const r of S.data.rules){
+    if(!r.match) continue;
+    const m=r.match.trim();
+    if(/^\/.*\/$/.test(m)){ try{ if(new RegExp(m.slice(1,-1),"i").test(concept||"")) return r.category; }catch{} }
+    else if(c.includes(m.toUpperCase())) return r.category;
+  }
+  return fallback||"SENSE CATEGORIA";
+}
+
+/* --- assistent --- */
+function startImport(){
+  if(!S.data){ alert("Obre primer el fitxer de dades."); return; }
+  const drop=el("div",{class:"drop"},"Arrossega aquí el fitxer que et descarregues del banc (.xls, .xlsx o .csv)",
+    el("div",{style:"margin-top:12px"},
+      el("button",{class:"btn",onclick:()=>{
+        pickWithInput("import"); }},"…o tria'l")));
+  drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("over");});
+  drop.addEventListener("dragleave",()=>drop.classList.remove("over"));
+  drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("over");
+    if(e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]);});
+  dialog("Importar extracte",drop,[]);
+}
+async function handleImportFile(file){
+  try{
+    let rows;
+    if(/\.xls[xm]?$/i.test(file.name)){
+      const buf=await file.arrayBuffer();
+      const head=new Uint8Array(buf,0,4);
+      // PK.. = xlsx (zip); D0CF.. = .xls antic (OLE)
+      const sheets = (head[0]===0x50&&head[1]===0x4B) ? await readXlsx(buf) : await readXls(buf);
+      rows = sheets.sort((a,b)=>b.rows.length-a.rows.length)[0].rows;
+    } else {
+      rows=parseCsv(await file.text());
+    }
+    if(!rows.length) throw new Error("El fitxer no té files.");
+    S.imp={file:file.name,rows,header:guessHeader(rows),preset:null};
+    stepMap();
+  }catch(e){ alert("No s'ha pogut llegir el fitxer: "+e.message); }
+}
+function guessHeader(rows){
+  let best=0,score=-1;
+  for(let i=0;i<Math.min(12,rows.length);i++){
+    const r=rows[i], filled=r.filter(c=>String(c).trim()!=="").length;
+    const words=r.filter(c=>/[a-zA-ZÀ-ú]{3,}/.test(String(c))).length;
+    const s=filled+words*2;
+    if(s>score){ score=s; best=i; }
+  }
+  return best;
+}
+function stepMap(){
+  const {rows}=S.imp;
+  const hdr=rows[S.imp.header]||[];
+  const sample=v=>{
+    const s=String(v??"").trim();
+    if(!s) return "";
+    const d=/^\d+(\.\d+)?$/.test(s) ? toDate(s) : null;   // número de sèrie d'Excel
+    return (d||s).slice(0,18);
+  };
+  const cols=hdr.map((h,i)=>[String(i),(String(h).trim()||"col "+(i+1))+"  ["+
+    sample(rows[S.imp.header+1]?.[i])+"]"]);
+  const none=[["","— cap —"]];
+  const pre=S.imp.preset;  // perfil acabat de triar: mana per sobre de l'autodetecció
+  const guess=re=>{ const i=hdr.findIndex(h=>re.test(String(h))); return i<0?"":String(i); };
+  const pick=(k,re)=>pre ? (pre[k]??"") : guess(re);
+  const prof=S.data.importProfiles;
+  const f={};
+  const body=el("div",{},
+    el("p",{class:"note",style:"margin:0 0 14px"},
+      S.imp.file+" · "+rows.length+" files · capçalera detectada a la fila "+(S.imp.header+1)),
+    el("div",{class:"map"},
+      lbl("Perfil desat", f.profile=sel(pre?String(prof.indexOf(pre)):"",[["","— nou —"],...prof.map((p,i)=>[String(i),p.name])],
+        v=>{ if(v==="") return; const p=prof[+v];
+          S.imp.header=p.header??S.imp.header; S.imp.preset=p;
+          closeDialog(); stepMap();
+        })),
+      lbl("Fila de capçalera", f.header=el("input",{type:"number",min:"1",value:S.imp.header+1,
+        onchange:e=>{S.imp.header=Math.max(0,+e.target.value-1); closeDialog(); stepMap();}})),
+      lbl("Compte destí", f.account=sel(pre?.account??(hdr.some(h=>/establiment/i.test(String(h)))?"targeta":"compte"),
+        S.data.accounts.map(a=>[a.id,a.name]),v=>f.account.value=v)),
+      el("div",{style:"grid-column:1/-1;height:1px;background:var(--line);margin:6px 0"}),
+      lbl("Data",      f.date   =sel(pick("date",/fecha|data|date/i),cols,v=>f.date.value=v)),
+      lbl("Concepte",  f.concept=sel(pick("concept",/concepto|concepte|establiment|descripci|comercio/i),cols,v=>f.concept.value=v)),
+      lbl("Import únic",f.amount=sel(pick("amount",/^(importe|import|amount)$/i),[...none,...cols],v=>f.amount.value=v)),
+      lbl("…o Càrrec", f.debit  =sel(pick("debit",/pagos|cargo|càrrec|debe|debit/i),[...none,...cols],v=>f.debit.value=v)),
+      lbl("…i Abonament",f.credit=sel(pick("credit",/ingresos|abono|haber|credit/i),[...none,...cols],v=>f.credit.value=v)),
+      lbl("Saldo",     f.balance=sel(pick("balance",/saldo|balance/i),[...none,...cols],v=>f.balance.value=v)),
+      lbl("Categoria", f.category=sel(pick("category",/categor/i),[...none,...cols],v=>f.category.value=v)),
+      lbl("Població",  f.city   =sel(pick("city",/localitat|localidad|poblaci|ciudad/i),[...none,...cols],v=>f.city.value=v)),
+      lbl("Signe de l'import únic", f.sign=sel(pre?.sign??guessSign(),[["auto","Tal com ve al fitxer"],
+        ["neg","Tot són pagaments (invertir el signe)"]],v=>f.sign.value=v)),
+      lbl("Desar perfil com a", f.pname=el("input",{type:"text",placeholder:"p. ex. Sabadell compte"})),
+    ),
+    el("p",{class:"note"},"Si el fitxer porta dues columnes (càrrec i abonament) deixa «Import únic» a «cap»."),
+  );
+  dialog("Importar · assignar columnes",body,[
+    ["Cancel·lar","btn",closeDialog],
+    ["Continuar","btn primary",()=>{
+      const cfg={}; for(const k of ["header","date","concept","amount","debit","credit",
+        "balance","category","city","account","sign"]) cfg[k]=f[k]?.value??"";
+      cfg.header=S.imp.header;
+      if(cfg.date===""||(cfg.amount===""&&cfg.debit===""&&cfg.credit==="")){
+        alert("Cal com a mínim la columna de data i una d'import."); return; }
+      if(f.pname.value.trim()){
+        S.data.importProfiles.push({name:f.pname.value.trim(),...cfg}); markDirty(); }
+      S.imp.cfg=cfg; stepPreview();
+    }],
+  ]);
+}
+/** Un extracte de targeta porta els càrrecs en positiu i no separa deure i haver:
+    si tota la columna és positiva, el que hi ha són pagaments. */
+function guessSign(){
+  const {rows,header}=S.imp, hdr=rows[header]||[];
+  const i=hdr.findIndex(h=>/^(importe|import|amount)$/i.test(String(h).trim()));
+  if(i<0) return "auto";
+  let n=0,neg=0;
+  for(let r=header+1;r<rows.length;r++){
+    const v=toNum(rows[r]?.[i]); if(v==null||v===0) continue;
+    n++; if(v<0) neg++;
+  }
+  return (n>=3 && neg===0) ? "neg" : "auto";
+}
+function stepPreview(){
+  const {rows,cfg}=S.imp;
+  const col=(r,k)=>cfg[k]===""?null:r[+cfg[k]];
+  const existing=new Set(S.data.movements.map(movKey));
+  const parsed=[],skipped=[];
+  for(let i=cfg.header+1;i<rows.length;i++){
+    const r=rows[i];
+    const date=toDate(col(r,"date"));
+    if(!date){ skipped.push([i+1,"sense data vàlida"]); continue; }
+    let amount;
+    if(cfg.amount!==""){
+      amount=toNum(col(r,"amount"));
+      if(amount!=null && cfg.sign==="neg") amount=-amount;
+    } else {
+      const d=toNum(col(r,"debit"))||0, c=toNum(col(r,"credit"))||0;
+      amount=c-d;
+    }
+    if(amount==null||amount===0){ skipped.push([i+1,"sense import"]); continue; }
+    const concept=String(col(r,"concept")??"").trim();
+    const cat=(String(col(r,"category")??"").trim().toUpperCase())||applyRules(concept);
+    const m={ id:uid(), date, opDate:date, account:cfg.account,
+      concept, city:String(col(r,"city")??"").trim()||null, category:cat,
+      amount:+amount.toFixed(2), balance:toNum(col(r,"balance")),
+      kind:transferCats().has(cat)?"transfer":(amount>0?"income":"expense"),
+      planned:false, tags:[], note:"" };
+    m.dup=existing.has(movKey(m));
+    parsed.push(m);
+  }
+  const nous=parsed.filter(m=>!m.dup);
+  S.imp.parsed=parsed;
+
+  const body=el("div",{},
+    el("div",{class:"grid kpis",style:"margin-bottom:14px"},
+      kpi("Files llegides",NF0.format(parsed.length)),
+      kpi("Nous",NF0.format(nous.length),"s'importaran","pos"),
+      kpi("Duplicats",NF0.format(parsed.length-nous.length),"ja hi són, s'ometen","mut"),
+      kpi("Descartades",NF0.format(skipped.length),skipped.length?skipped[0][1]:"","mut"),
+    ),
+    el("div",{class:"tw",style:"max-height:320px;overflow:auto"},
+      el("table",{},
+        el("thead",{},el("tr",{},["","Data","Concepte","Categoria","Import","Saldo"]
+          .map((h,i)=>el("th",{class:i>3?"r":""},h)))),
+        el("tbody",{},parsed.slice(0,250).map(m=>el("tr",{class:m.dup?"fut":""},
+          el("td",{},m.dup?el("span",{class:"pill"},"dup"):""),
+          el("td",{},dCa(m.date)),
+          el("td",{class:"wrap"},m.concept),
+          el("td",{},m.category),
+          el("td",{class:"r num "+sgn(m.amount)},eur(m.amount)),
+          el("td",{class:"r num mut"},m.balance!=null?eur(m.balance):""),
+        )))),
+    ),
+    parsed.length>250?el("p",{class:"note"},"Es mostren les 250 primeres files."):null,
+  );
+  dialog("Importar · revisió",body,[
+    ["Enrere","btn",()=>{closeDialog();stepMap();}],
+    [`Importar ${nous.length} moviments`,"btn primary",()=>{
+      for(const m of nous){ delete m.dup; S.data.movements.push(m); }
+      S.data.movements.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+      for(const c of new Set(nous.map(m=>m.category)))
+        if(!S.data.categories.some(x=>x.id===c)) S.data.categories.push({id:c,kind:"expense"});
+      markDirty(); closeDialog(); S.tab="moviments"; render();
+      flash(nous.length+" moviments importats");
+    }],
+  ]);
+}
+
+/* ================================================================== *
+ *  Real: ingressos i despeses imputats al mes que els toca            *
+ * ================================================================== */
+const MES_NOM={enero:1,gener:1,febrero:2,febrer:2,marzo:3,"març":3,marc:3,abril:4,
+  mayo:5,maig:5,junio:6,juny:6,julio:7,juliol:7,agosto:8,agost:8,
+  septiembre:9,setembre:9,octubre:10,noviembre:11,novembre:11,diciembre:12,desembre:12};
+
+/** Mes que el concepte declara, si en declara cap: "Salario Mayo 2024" → 2024-05. */
+function declaredMonth(concept){
+  const t=(concept||"").toLowerCase();
+  for(const [nom,n] of Object.entries(MES_NOM)){
+    if(!t.includes(nom)) continue;
+    const y=t.match(/(20\d\d)/);
+    if(!y) return null;
+    return y[1]+"-"+String(n).padStart(2,"0");
+  }
+  return null;
+}
+const monthDiff=(a,b)=>(+a.slice(0,4)-+b.slice(0,4))*12 + (+a.slice(5,7)-+b.slice(5,7));
+
+/** Com s'imputa un ingrés, i per què. El "per què" és el que permet revisar-ho. */
+function accrual(m){
+  if(m.accrual) return {month:m.accrual, how:"fixat", sure:true};
+  const dec=declaredMonth(m.concept);
+  if(dec){
+    // "Salario diciembre 2025" cobrat el 15/01/2025 és una errata del banc:
+    // si el mes declarat queda lluny del cobrament, no és de fiar.
+    if(Math.abs(monthDiff(dec,m.date.slice(0,7)))<=2) return {month:dec,how:"concepte",sure:true};
+    return {month:m.date.slice(0,7),how:"concepte descartat",sure:false};
+  }
+  return {month:m.date.slice(0,7),how:"data de cobrament",sure:false};
+}
+/* El cicle de la targeta de Mediolanum va del 20 al 20: el cicle que anomenem "agost"
+   són les compres del 20 de juliol al 19 d'agost, i es carrega al compte l'1 de setembre.
+   Comprovat contra les liquidacions reals: set cicles quadren al cèntim. */
+const CICLE_DIA=20;
+/** Cicle al qual pertany una compra: a partir del dia 20, ja compta al mes següent. */
+function cycleMonth(date){
+  const k=date.slice(0,7);
+  return +date.slice(8,10)>=CICLE_DIA ? addMonths(k,1) : k;
+}
+/** Primer i últim dia d'un cicle: del 20 del mes anterior al 19 d'aquest. */
+function cycleRange(month){
+  const p2=v=>String(v).padStart(2,"0");
+  return [addMonths(month,-1)+"-"+p2(CICLE_DIA), month+"-"+p2(CICLE_DIA-1)];
+}
+/** Mes al qual pertany una liquidació: la que es carrega l'1 de setembre paga
+    el cicle d'agost, o sigui el mes anterior al càrrec. */
+function visaMonth(m){ return addMonths((m.opDate||m.date).slice(0,7),-1); }
+/** El cicle que encara s'està acumulant i que no s'ha cobrat. */
+function openCycle(){
+  const month=cycleMonth(TODAY);
+  const [from,to]=cycleRange(month);
+  let spent=0,n=0;
+  for(const m of S.data.movements){
+    if(m.account!=="targeta"||m.planned) continue;
+    if(m.date<from||m.date>to) continue;
+    spent+=-m.amount; n++;
+  }
+  const total=Math.round((Date.parse(to)-Date.parse(from))/86400000)+1;
+  const done =Math.min(total,Math.round((Date.parse(TODAY)-Date.parse(from))/86400000)+1);
+  return {month,from,to,spent,n,total,done,
+    charge:addMonths(month,1)+"-01",
+    pace: done>0 ? spent/done*total : null};
+}
+
+function realTable(){
+  const T=transferCats(), rows=new Map();
+  const at=k=>{ let e=rows.get(k); if(!e) rows.set(k,e={month:k,income:0,bank:0,card:0,visa:0,buys:0});
+    return e; };
+  for(const m of S.data.movements){
+    if(m.planned) continue;
+    if(m.category==="VISA" && m.amount<0){ at(visaMonth(m)).visa+=-m.amount; continue; }
+    if(T.has(m.category)) continue;
+    if(m.amount>0){ at(accrual(m).month).income+=m.amount; continue; }
+    if(m.account==="targeta") at(cycleMonth(m.date)).buys+=-m.amount;
+    else at(m.date.slice(0,7)).bank+=-m.amount;
+  }
+  const modeCard=S.real.card, obert=openCycle().month;
+  for(const r of rows.values()){
+    r.settled = r.visa>0;                          // ja te liquidacio al compte
+    r.open    = r.month===obert;                   // encara s'esta acumulant
+    r.pending = !r.settled && r.buys>0;            // tancat pero encara no cobrat
+    r.card = (modeCard==="visa" && r.settled) ? r.visa : r.buys;
+    r.expense=r.bank+r.card;
+    r.saving=r.income-r.expense;
+    r.rate=r.income>=MIN_INCOME_FOR_RATE?r.saving/r.income:null;
+  }
+  return [...rows.values()].filter(r=>r.income||r.expense||r.buys||r.visa)
+    .sort((a,b)=>a.month<b.month?-1:1);
+}
+function renderReal(root){
+  const [pa,pb]=periodRange();
+  const all=realTable();
+  const rows=all.filter(r=>r.month>=pa.slice(0,7)&&r.month<=pb.slice(0,7));
+  // Només les nòmines: en un bizum de 26 € el mes d'imputació no canvia res.
+  const dubtes=S.data.movements.filter(m=>!m.planned&&m.amount>0&&
+    m.category==="NOMINA"&&!accrual(m).sure);
+  const T=rows.reduce((a,r)=>({income:a.income+r.income,bank:a.bank+r.bank,
+    card:a.card+r.card,expense:a.expense+r.expense}),{income:0,bank:0,card:0,expense:0});
+  T.saving=T.income-T.expense;
+
+  const gap=r=>r.buys&&r.visa?Math.abs(r.buys-r.visa)/Math.max(r.buys,r.visa):0;
+  const dolentes=all.filter(r=>gap(r)>0.25 && (r.buys>200||r.visa>200));
+
+  root.replaceChildren(
+    el("div",{class:"card"},
+      el("div",{class:"bar",style:"margin:0"},
+        el("span",{style:"font-weight:600"},"Període:"), periodBar()),
+      el("div",{class:"bar",style:"margin:10px 0 0"},
+        el("span",{style:"font-weight:600"},"Despeses de targeta:"),
+        sel(S.real.card,[
+          ["visa","Per liquidació VISA — l'import que surt del compte"],
+          ["buys","Per compres del cicle — suma de l'extracte de la targeta"],
+        ],v=>{S.real.card=v;render();})),
+      el("p",{class:"note"},
+        "El cicle va del 20 al 20: el que aquí es diu «agost» són les compres del 20 de "+
+        "juliol al 19 d'agost, que et carreguen l'1 de setembre. "+
+        (S.real.card==="visa"
+          ? "Es fa servir l'import liquidat, que és el que realment surt del compte."
+          : "Es sumen les compres de l'extracte de la targeta, que té més detall però "+
+            "depèn que estigui complet.")+
+        " El cicle que encara s'està acumulant surt sempre per compres, perquè encara "+
+        "no s'ha cobrat."),
+    ),
+    openCyclePanel(all),
+    el("div",{class:"grid kpis",style:"margin-bottom:14px"},
+      kpi("Ingressos",eur(T.income),"imputats al seu mes","pos"),
+      kpi("Despeses del compte",eur(T.bank),"","neg"),
+      kpi("Despeses de targeta",eur(T.card),S.real.card==="visa"?"per liquidació":"per data de compra","neg"),
+      kpi("Estalvi",eur(T.saving),T.income?pct(T.saving/T.income):"",sgn(T.saving)),
+    ),
+    dubtes.length ? el("div",{class:"warnbox"},
+      dubtes.length+" nòmines no diuen a quin mes pertanyen i s'han imputat al mes del "+
+      "cobrament. ",
+      el("button",{class:"btn",style:"margin-left:8px",onclick:()=>accrualDialog(dubtes)},
+        "Revisar-los")) : null,
+    el("div",{class:"card"},
+      el("h2",{},"Ingressos i despeses reals per mes"),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Mes","Ingressos","Compte","Targeta","Despeses","Estalvi","% estalvi"]
+          .map((h,i)=>el("th",{class:i?"r":""},h)))),
+        el("tbody",{},rows.map(r=>el("tr",{},
+          el("td",{},mLabel(r.month),
+            r.open?el("span",{class:"pill",style:"margin-left:7px"},"en curs")
+            :r.pending?el("span",{class:"pill",style:"margin-left:7px"},"sense liquidar")
+            :null),
+          el("td",{class:"r num pos"},r.income?eur(r.income):""),
+          el("td",{class:"r num neg"},r.bank?eur(r.bank):""),
+          el("td",{class:"r num neg"},r.card?eur(r.card):""),
+          el("td",{class:"r num neg"},r.expense?eur(r.expense):""),
+          el("td",{class:"r num "+sgn(r.saving)},eur(r.saving)),
+          el("td",{class:"r num"},pct(r.rate)),
+        ))),
+        el("tfoot",{},el("tr",{class:"tot"},
+          ["Total",eur(T.income),eur(T.bank),eur(T.card),eur(T.expense),eur(T.saving),
+           pct(T.income?T.saving/T.income:null)]
+          .map((c,i)=>el("td",{class:i?"r":""},c)))),
+      )),
+    ),
+    card("Ingressos, despeses i estalvi",
+      barChart(rows.slice(-36),[
+        {label:"Ingressos",color:"var(--pos)",get:r=>r.income},
+        {label:"Despeses",color:"var(--neg)",get:r=>r.expense},
+        {label:"Estalvi",color:"var(--accent)",get:r=>r.saving},
+      ]),
+      legend([{label:"Ingressos",color:"var(--pos)"},{label:"Despeses",color:"var(--neg)"},
+        {label:"Estalvi",color:"var(--accent)"}]),
+    ),
+    el("div",{class:"card"},
+      el("h2",{},"Targeta: compres contra liquidació"),
+      el("p",{class:"note",style:"margin:0 0 12px"},
+        "Les dues maneres de comptar la targeta, l'una al costat de l'altra. Si no s'assemblen, "+
+        "és que a l'extracte de la targeta li falten compres d'aquell mes."),
+      dolentes.length ? el("div",{class:"warnbox"},
+        "Mesos que no quadren: "+dolentes.map(r=>mLabel(r.month)).join(", ")+
+        ". En aquests, la xifra de fiar és la de la liquidació.") : null,
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Mes","Compres (extracte targeta)","Liquidació VISA","Diferència"]
+          .map((h,i)=>el("th",{class:i?"r":""},h)))),
+        el("tbody",{},all.filter(r=>r.buys||r.visa).slice().reverse().map(r=>el("tr",
+          {class:gap(r)>0.25&&(r.buys>200||r.visa>200)?"fut":""},
+          el("td",{},mLabel(r.month)),
+          el("td",{class:"r num"},r.buys?eur(r.buys):"—"),
+          el("td",{class:"r num"},r.visa?eur(r.visa):"—"),
+          el("td",{class:"r num "+(r.buys&&r.visa?sgn(r.visa-r.buys):"mut")},
+            r.buys&&r.visa?eur(r.visa-r.buys):""),
+        ))),
+      )),
+    ),
+  );
+}
+/** El cicle que s'està acumulant ara mateix: quant portes gastat i com va
+    comparat amb els cicles anteriors. Encara no s'ha cobrat. */
+function openCyclePanel(rows){
+  const c=openCycle();
+  const tancats=rows.filter(r=>r.month<c.month&&r.visa>0).slice(-6);
+  const mitjana=tancats.length?tancats.reduce((a,r)=>a+r.visa,0)/tancats.length:null;
+  const restants=c.total-c.done;
+  const pct=Math.max(0,Math.min(1,c.done/c.total));
+  const barra=(v,color)=>el("div",{style:"height:9px;border-radius:5px;background:var(--line);margin-top:6px"},
+    el("div",{style:`height:9px;border-radius:5px;background:${color};width:${Math.min(100,v*100)}%`}));
+  return el("div",{class:"card"},
+    el("h2",{},"Targeta · cicle obert"),
+    el("div",{class:"grid kpis",style:"margin-bottom:0"},
+      kpi("Portes gastat",eur(c.spent),c.n+(c.n===1?" compra":" compres"),"neg"),
+      kpi("Cicle",dCa(c.from)+" → "+dCa(c.to),"dia "+c.done+" de "+c.total),
+      kpi("Al ritme d'ara",eur(c.pace),restants?"queden "+restants+" dies":"cicle acabat"),
+      kpi("Mitjana dels últims "+tancats.length,eur(mitjana),"cicles ja liquidats","mut"),
+      kpi("Te'l cobraran el",dCa(c.charge),"al compte corrent"),
+    ),
+    el("div",{style:"margin-top:14px"},
+      el("div",{style:"display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"},
+        el("span",{},"Recorregut del cicle"),el("span",{},Math.round(pct*100)+" %")),
+      barra(pct,"var(--accent)"),
+      mitjana?el("div",{style:"margin-top:10px"},
+        el("div",{style:"display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"},
+          el("span",{},"Gastat contra la mitjana d'un cicle sencer"),
+          el("span",{},pct2(c.spent/mitjana))),
+        barra(c.spent/mitjana,c.spent>mitjana?"var(--neg)":"var(--pos)")):null),
+  );
+}
+const pct2=v=>(v==null||!isFinite(v))?"—":Math.round(v*100)+" %";
+
+/** Assignar a mà el mes de cada ingrés dubtós. Un cop fet, queda desat al moviment. */
+function accrualDialog(list){
+  const opts=[];
+  for(const m of list){
+    const base=m.date.slice(0,7);
+    for(let k=-2;k<=1;k++) opts.push(addMonths(base,k));
+  }
+  const sels=new Map();
+  const rows=list.slice().sort((a,b)=>a.date<b.date?1:-1).map(m=>{
+    const base=m.date.slice(0,7);
+    const choices=[-3,-2,-1,0,1].map(k=>addMonths(base,k));
+    const cur=accrual(m).month;
+    const s=sel(cur,choices.map(c=>[c,mLabel(c)]),v=>{ sels.set(m,v); });
+    sels.set(m,cur);
+    return el("tr",{},
+      el("td",{},dCa(m.date)),
+      el("td",{class:"wrap"},m.concept||"—"),
+      el("td",{class:"r num pos"},eur(m.amount)),
+      el("td",{},s));
+  });
+  const tbody=el("tbody",{},rows);
+  dialog("A quin mes pertanyen aquestes nòmines?",el("div",{},
+    el("p",{class:"note",style:"margin:0 0 12px"},
+      "El concepte no ho diu, així que ara mateix compten al mes en què les vas cobrar. "+
+      "El que triïs aquí queda desat al moviment i no es tornarà a preguntar."),
+    el("div",{class:"bar"},
+      el("button",{class:"btn",onclick:()=>{
+        // La nòmina del mes es cobra a finals; el que arriba a principis sol ser
+        // la variable del mes anterior. Encerta ~3 de cada 4: repassa-ho.
+        let i=0;
+        for(const m of list.slice().sort((a,b)=>a.date<b.date?1:-1)){
+          const dia=+m.date.slice(8,10), base=m.date.slice(0,7);
+          const v=dia>=20?base:addMonths(base,-1);
+          const s=tbody.children[i++].querySelector("select");
+          s.value=v; sels.set(m,v);
+        }
+      }},"Aplicar la regla del dia 20"),
+      el("span",{class:"note"},"finals de mes → aquell mes; principis → el mes anterior")),
+    el("div",{class:"tw",style:"max-height:52vh;overflow:auto"},el("table",{},
+      el("thead",{},el("tr",{},el("th",{},"Cobrat el"),el("th",{},"Concepte"),
+        el("th",{class:"r"},"Import"),el("th",{},"Compta al mes de"))),
+      tbody)),
+  ),[
+    ["Cancel·lar","btn",closeDialog],
+    ["Desar","btn primary",()=>{
+      // Prémer Desar és la confirmació: es fixa el mes a totes, també a les que
+      // es queden al mes del cobrament, perquè deixin de sortir com a dubtoses.
+      let n=0;
+      for(const [m,v] of sels){ if(m.accrual!==v) n++; m.accrual=v; }
+      markDirty(); closeDialog(); render();
+      flash(sels.size+(sels.size===1?" nòmina confirmada":" nòmines confirmades")+
+        (n?" ("+n+" canviada"+(n===1?"":"es")+")":""));
+    }],
+  ]);
+}
+
+/* ================================================================== *
+ *  Cartera                                                           *
+ * ================================================================== */
+/** Últim valor conegut d'un actiu: la valoració més recent, o el camp `last`
+    per als actius sense sèrie mensual, que són els il·líquids. */
+function assetValue(a){
+  let best=null;
+  for(const s of S.data.snapshots)
+    if(s.assetId===a.id && (!best||s.date>best.date)) best=s;
+  return best ? best.value : (a.last||0);
+}
+function assetStats(a){
+  const value=assetValue(a), inv=a.contributed||0;
+  const gain=value-inv;
+  const years=a.start ? Math.max(0,(Date.parse(TODAY)-Date.parse(a.start))/(365.25*86400000)) : 0;
+  return { value, inv, gain,
+    ret: inv>0 ? gain/inv : null,
+    years,
+    cagr: (inv>0 && value>0 && years>0.08) ? Math.pow(value/inv,1/years)-1 : null };
+}
+function portfolioSeries(){
+  const byDate=new Map();
+  for(const t of (S.data.portfolioTotals||[])) byDate.set(t.date,t.total);
+  const sums=new Map();
+  for(const s of S.data.snapshots) sums.set(s.date,(sums.get(s.date)||0)+s.value);
+  for(const [d,v] of sums) if(!byDate.has(d)) byDate.set(d,v);
+  return [...byDate].sort((a,b)=>a[0]<b[0]?-1:1).map(([date,total])=>({date,total}));
+}
+/** Barres horitzontals: per a 6-13 categories es llegeix molt millor que un formatget. */
+function breakdown(rows,total,color){
+  if(!rows.length) return el("div",{class:"empty"},"Sense dades.");
+  const max=Math.max(...rows.map(r=>r[1]));
+  return el("div",{},rows.map(([k,v])=>el("div",{style:"margin-bottom:9px"},
+    el("div",{style:"display:flex;justify-content:space-between;gap:12px;font-size:13px"},
+      el("span",{},k),
+      el("span",{class:"num mut"},eur(v)+"  ·  "+pct(total?v/total:0))),
+    el("div",{style:"height:7px;border-radius:4px;background:var(--line);margin-top:3px"},
+      el("div",{style:`height:7px;border-radius:4px;background:${color};width:${max?v/max*100:0}%`})),
+  )));
+}
+function renderCartera(root){
+  const A=S.data.assets;
+  if(!A.length){ root.replaceChildren(el("div",{class:"card"},
+    el("div",{class:"empty"},"Cap actiu a la cartera."))); return; }
+  const st=new Map(A.map(a=>[a.id,assetStats(a)]));
+  const value=A.reduce((s,a)=>s+st.get(a.id).value,0);
+  const inv  =A.reduce((s,a)=>s+st.get(a.id).inv,0);
+  const zero =A.filter(a=>st.get(a.id).value===0 && st.get(a.id).inv>0);
+  const zInv =zero.reduce((s,a)=>s+st.get(a.id).inv,0);
+  const live =A.filter(a=>!zero.includes(a));
+  const lInv =live.reduce((s,a)=>s+st.get(a.id).inv,0);
+  const lVal =live.reduce((s,a)=>s+st.get(a.id).value,0);
+  const series=portfolioSeries();
+  const lastDate=series.length?series[series.length-1].date:null;
+
+  const group=key=>groupAssets(A,key)
+    .map(g=>[g.label,g.assets.reduce((s,a)=>s+st.get(a.id).value,0)])
+    .filter(([,v])=>v>0).sort((x,y)=>y[1]-x[1]);
+
+  root.replaceChildren(
+    el("div",{class:"grid kpis",style:"margin-bottom:14px"},
+      kpi("Valor actual",eur(value),lastDate?"valorat el "+dCa(lastDate):""),
+      kpi("Aportat",eur(inv),A.length+" actius"),
+      kpi("Balanç",eur(value-inv),pct(inv?(value-inv)/inv:null),sgn(value-inv)),
+      kpi("Balanç sense els il·líquids",eur(lVal-lInv),pct(lInv?(lVal-lInv)/lInv:null),sgn(lVal-lInv)),
+      kpi("Valoracions",NF0.format(new Set(S.data.snapshots.map(s=>s.date)).size),"mesos registrats"),
+    ),
+    zero.length ? el("div",{class:"warnbox"},
+      zero.map(a=>a.entity+" "+a.name).join(" i ")+
+      (zero.length===1?" està valorat":" estan valorats")+" a 0 perquè no en tens "+
+      "cotització, i "+(zero.length===1?"arrossega ":"arrosseguen ")+eur(-zInv)+
+      " al balanç. Sense "+(zero.length===1?"aquest actiu":"aquests actius")+
+      " el balanç és "+eur(lVal-lInv)+".") : null,
+    el("div",{class:"card"},
+      el("div",{class:"bar",style:"margin:0"},
+        el("span",{style:"font-weight:600"},"Període:"), periodBar(),
+        el("span",{style:"flex:1"}),
+        el("button",{class:"btn primary",onclick:valuationDialog},"Valoració del mes")),
+    ),
+    (()=>{const [pa,pb]=periodRange();
+      const f=series.filter(p=>p.date>=pa&&p.date<=pb);
+      const p0=f[0],p1=f.at(-1);
+      return el("div",{class:"card"},
+        el("h2",{},"Evolució del valor total"),
+        lineChart(f.map(p=>({k:mLabel(p.date.slice(0,7)),v:p.total})),{color:"var(--inv)"}),
+        p0&&p1&&f.length>1?el("p",{class:"note"},
+          "De "+dCa(p0.date)+" a "+dCa(p1.date)+": "+eur0(p0.total)+" → "+eur0(p1.total)+
+          " ("+(p1.total>=p0.total?"+":"")+eur0(p1.total-p0.total)+", "+
+          pct((p1.total-p0.total)/(p0.total||1))+")."):null);
+    })(),
+    renderEvolucio(),
+    el("div",{class:"grid",style:"grid-template-columns:repeat(auto-fit,minmax(320px,1fr))"},
+      card("Per classe d'actiu",breakdown(group("class"),value,"var(--inv)")),
+      card("Per entitat",breakdown(group("entity"),value,"var(--accent)")),
+    ),
+    renderValorAportat(),
+    renderMatriu(),
+    el("div",{class:"card"},
+      el("h2",{},"Actius"),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Actiu","Classe","Entitat","Des de","Aportat","Valor","Balanç","%","Pes",""]
+          .map((h,i)=>el("th",{class:i>3?"r":""},h)))),
+        el("tbody",{},A.slice().sort((a,b)=>st.get(b.id).value-st.get(a.id).value).map(a=>{
+          const s=st.get(a.id);
+          return el("tr",{},
+            el("td",{},a.name),
+            el("td",{class:"mut"},a.class),
+            el("td",{class:"mut"},a.entity),
+            el("td",{class:"r mut num"},a.start?a.start.slice(0,4):""),
+            el("td",{class:"r num"},eur(s.inv)),
+            el("td",{class:"r num"},eur(s.value)),
+            el("td",{class:"r num "+sgn(s.gain)},eur(s.gain)),
+            el("td",{class:"r num "+sgn(s.gain)},pct(s.ret)),
+            el("td",{class:"r num mut"},pct(value?s.value/value:0)),
+            el("td",{class:"r"},el("button",{class:"btn ghost",onclick:()=>assetDialog(a)},"⋯")),
+          );
+        })),
+        el("tfoot",{},el("tr",{class:"tot"},
+          [["Total",""],["",""],["",""],["",""],[eur(inv),""],[eur(value),""],
+           [eur(value-inv),sgn(value-inv)],[pct(inv?(value-inv)/inv:null),sgn(value-inv)],
+           ["100 %",""],["",""]]
+          .map(([t,c],i)=>el("td",{class:(i>3?"r ":"")+c},t)))),
+      )),
+    ),
+  );
+}
+/** La feina mensual: teclejar els valors de tots els actius d'una tirada. */
+function valuationDialog(){
+  const A=S.data.assets;
+  const last=[...new Set(S.data.snapshots.map(s=>s.date))].sort().pop();
+  const dEnd=(()=>{ const d=new Date(TODAY); // per defecte, final del mes en curs
+    return new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).toISOString().slice(0,10); })();
+  const fDate=el("input",{type:"date",value:dEnd});
+  const vals=new Map(), adds=new Map();
+  const rows=A.map(a=>{
+    const prev=assetValue(a);
+    const v=el("input",{type:"number",step:"0.01",value:prev,style:"text-align:right"});
+    const c=el("input",{type:"number",step:"0.01",placeholder:"—",style:"text-align:right"});
+    vals.set(a.id,v); adds.set(a.id,c);
+    return el("tr",{},
+      el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity)),
+      el("td",{class:"r num mut"},lastSnapshotDate(a)?eur(prev):"—"),
+      el("td",{},v),
+      el("td",{},c));
+  });
+  dialog("Valoració del mes",el("div",{},
+    el("div",{class:"bar"},el("span",{},"Data de la valoració:"),fDate,
+      el("span",{class:"mut",style:"font-size:12px"},last?"l'última va ser el "+dCa(last):"")),
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},el("th",{},"Actiu"),el("th",{class:"r"},"Valor anterior"),
+        el("th",{},"Valor nou"),el("th",{},"Aportació del mes"))),
+      el("tbody",{},rows))),
+    el("p",{class:"note"},"Deixa el valor com està si un actiu no s'ha mogut. Un 0 també és "+
+      "una valoració vàlida —els actius il·líquids ho són— i cal desar-la perquè el seu "+
+      "aportat compti al balanç del mes. L'aportació és opcional: si n'hi poses, se suma al que "+
+      "tens aportat en aquell actiu."),
+  ),[
+    ["Cancel·lar","btn",closeDialog],
+    ["Desar la valoració","btn primary",()=>{
+      const date=fDate.value; if(!date) return;
+      let n=0,ap=0;
+      for(const a of A){
+        const v=vals.get(a.id).value, c=adds.get(a.id).value;
+        // primer l'aportació: així el punt es desa amb l'aportat ja actualitzat
+        if(c!==""&&+c!==0){
+          S.data.contributions.push({date,assetId:a.id,amount:+c});
+          a.contributed=Math.round(((a.contributed||0)+ +c)*100)/100; ap++;
+        }
+        if(v!==""){ setAssetValue(a,date,+v); n++; }   // el total, en acabar
+      }
+      ensureTotal(date);
+      markDirty(); closeDialog(); render();
+      flash(n+(n===1?" valoració":" valoracions")+
+        (ap?" i "+ap+(ap===1?" aportació":" aportacions"):"")+
+        (n===1&&!ap?" desada":" desades"));
+    }],
+  ]);
+}
+/** Data de l'última valoració d'un actiu, o la d'avui si encara no en té cap. */
+function lastSnapshotDate(a){
+  let d=null;
+  for(const s of S.data.snapshots) if(s.assetId===a.id && (!d||s.date>d)) d=s.date;
+  return d;
+}
+/** Aportat d'un actiu en una data, o null si en aquell moment no se sabia.
+    Es va provar de reconstruir-ho cap enrere restant les aportacions posteriors,
+    però el registre d'aportacions heretat del full no quadra amb l'aportat total
+    i en sortien xifres impossibles, com un aportat que puja com més enrere vas.
+    Val més no ensenyar res que ensenyar una línia inventada. */
+function assetCostAt(a,date){
+  let base=null;
+  for(const s of S.data.snapshots)
+    if(s.assetId===a.id && s.cost!=null && s.date<=date && (!base||s.date>base.date)) base=s;
+  if(!base) return null;
+  let c=base.cost;
+  for(const x of S.data.contributions)
+    if(x.assetId===a.id && x.date>base.date && x.date<=date) c+=x.amount;
+  return c;
+}
+/** Aportat de tota la cartera en una data, o null si encara no n'hi havia registre. */
+function portfolioCostAt(date){
+  const amb=S.data.assets.map(a=>assetCostAt(a,date)).filter(v=>v!=null);
+  return amb.length?amb.reduce((s,v)=>s+v,0):null;
+}
+/** La primera data en què tenim l'aportat desat de debò, no reconstruït. */
+function firstCostDate(){
+  let d=null;
+  for(const s of S.data.snapshots)
+    if(s.cost!=null && (!d||s.date<d)) d=s.date;
+  return d;
+}
+/** Valor d'un actiu tal com era en una data: l'última valoració que no la sobrepassa. */
+function assetValueAt(a,date){
+  let best=null;
+  for(const s of S.data.snapshots)
+    if(s.assetId===a.id && s.date<=date && (!best||s.date>best.date)) best=s;
+  return best?best.value:0;
+}
+/** Escriu el valor d'un actiu a una data i mou el total d'aquell dia en la mateixa
+    quantitat. Se suma la diferència en comptes de recalcular el total perquè els
+    totals del 2025 venien escrits a mà i no són la suma de les valoracions.
+    Si aquell dia encara no té total, el crea `ensureTotal` un cop escrits tots
+    els actius: fer-ho aquí barrejaria valors nous i vells. */
+function setAssetValue(a,date,value,cost){
+  const eraUltima = date>=(lastSnapshotDate(a)||date);
+  const i=S.data.snapshots.findIndex(s=>s.assetId===a.id && s.date===date);
+  const previ = i>=0 ? S.data.snapshots[i].value : 0;
+  if(cost==null) cost=a.contributed||0;
+  if(i>=0){ S.data.snapshots[i].value=value; S.data.snapshots[i].cost=cost; }
+  else S.data.snapshots.push({date,assetId:a.id,value,cost});
+  S.data.snapshots.sort((x,y)=>x.date<y.date?-1:1);
+  if(eraUltima) a.last=value;
+  const t=(S.data.portfolioTotals||[]).find(t=>t.date===date);
+  if(t) t.total=Math.round((t.total+value-previ)*100)/100;
+}
+function ensureTotal(date){
+  if((S.data.portfolioTotals||[]).some(t=>t.date===date)) return;
+  S.data.portfolioTotals.push({date,
+    total:Math.round(S.data.assets.reduce((s,x)=>s+assetValueAt(x,date),0)*100)/100});
+  S.data.portfolioTotals.sort((x,y)=>x.date<y.date?-1:1);
+}
+function assetDialog(a){
+  const cls=[...new Set(S.data.assets.map(x=>x.class))].sort();
+  const wal=[...new Set(S.data.assets.map(x=>x.wallet).filter(Boolean))].sort();
+  const dVal=lastSnapshotDate(a)||TODAY;
+  const f={};
+  dialog("Actiu",el("div",{},
+    el("div",{class:"map"},
+      lbl("Nom",      f.name=el("input",{type:"text",value:a.name||""})),
+      lbl("Classe",   f.class=sel(a.class,cls.map(c=>[c,c]),v=>f.class.value=v)),
+      lbl("Entitat",  f.entity=el("input",{type:"text",value:a.entity||""})),
+      lbl("ISIN / ticker", f.isin=el("input",{type:"text",value:a.isin||""})),
+      lbl("Data d'inici", f.start=el("input",{type:"date",value:a.start||""})),
+      lbl("Aportat (€)", f.contributed=el("input",{type:"number",step:"0.01",value:a.contributed??""})),
+      lbl("Valor actual (€)", f.value=el("input",{type:"number",step:"0.01",value:assetValue(a)||""})),
+      lbl("…a data de", f.vdate=el("input",{type:"date",value:dVal})),
+      lbl("Cartera",  f.wallet=sel(a.wallet||"",[["","— cap —"],...wal.map(w=>[w,w])],v=>f.wallet.value=v)),
+      lbl("Compta al rendiment", f.include=sel(a.include?"1":"0",
+        [["1","Sí"],["0","No — il·líquid o sense cotització"]],v=>f.include.value=v)),
+    ),
+    el("p",{class:"note"},"El valor es desa com una valoració d'aquella data. Per posar "+
+      "al dia tota la cartera de cop, fes servir «Valoració del mes»."),
+  ),[
+    ["Cancel·lar","btn",closeDialog],
+    ["Desar","btn primary",()=>{
+      a.name=f.name.value.trim(); a.class=f.class.value; a.entity=f.entity.value.trim();
+      a.isin=f.isin.value.trim()||null; a.start=f.start.value||null;
+      a.contributed=f.contributed.value===""?0:+f.contributed.value;
+      a.wallet=f.wallet.value||null; a.include=f.include.value==="1";
+      if(f.value.value!=="" && f.vdate.value){   // amb l'aportat ja desat
+        setAssetValue(a,f.vdate.value,+f.value.value);
+        ensureTotal(f.vdate.value);
+      }
+      markDirty(); closeDialog(); render();
+    }],
+  ]);
+}
+
+/** Gràfic d'àrees apilades: com s'ha repartit la cartera al llarg del temps. */
+function areaChart(dates,series,{h=230,fmt=eur0}={}){
+  const W=1000,P={t:12,r:60,b:22,l:8};
+  const s=sv("svg",{viewBox:`0 0 ${W} ${h}`,class:"chart",preserveAspectRatio:"none"});
+  if(!dates.length||!series.length) return s;
+  const tot=dates.map((_,i)=>series.reduce((a,q)=>a+(q.values[i]||0),0));
+  const hi=Math.max(1,...tot);
+  const x=i=>P.l+i*(W-P.l-P.r)/Math.max(1,dates.length-1);
+  const y=v=>P.t+(hi-v)*(h-P.t-P.b)/hi;
+  for(let i=0;i<=4;i++){
+    const v=hi*i/4, Y=y(v);
+    s.append(sv("line",{x1:P.l,x2:W-P.r,y1:Y,y2:Y,stroke:"var(--line)","stroke-width":1}));
+    const t=sv("text",{x:W-P.r+6,y:Y+3.5}); t.textContent=fmt(v); s.append(t);
+  }
+  const acum=new Array(dates.length).fill(0);
+  for(const q of series){
+    const baix=acum.slice();
+    for(let i=0;i<dates.length;i++) acum[i]+=q.values[i]||0;
+    const d=[...acum.map((v,i)=>(i?"L":"M")+x(i)+" "+y(v)),
+             ...baix.map((v,i)=>"L"+x(dates.length-1-i)+" "+y(baix[dates.length-1-i]))].join(" ")+" Z";
+    const path=sv("path",{d,fill:q.color,opacity:.85,stroke:"var(--panel)","stroke-width":.5});
+    s.append(tip(path,q.label));
+  }
+  const step=Math.ceil(dates.length/12);
+  dates.forEach((d,i)=>{
+    if(i%step===0||i===dates.length-1){
+      const t=sv("text",{x:x(i),y:h-6,"text-anchor":"middle"});
+      t.textContent=mLabel(d.slice(0,7)); s.append(t);
+    }
+  });
+  return s;
+}
+/** Diverses línies al mateix gràfic, per comparar sèries. */
+function linesChart(labels,series,{h=200,fmt=eur0}={}){
+  const W=1000,P={t:12,r:62,b:22,l:8};
+  const s=sv("svg",{viewBox:`0 0 ${W} ${h}`,class:"chart",preserveAspectRatio:"none"});
+  if(!labels.length) return s;
+  const tots=series.flatMap(q=>q.values).filter(v=>v!=null);
+  let lo=Math.min(0,...tots), hi=Math.max(...tots); if(hi===lo) hi=lo+1;
+  const x=i=>P.l+i*(W-P.l-P.r)/Math.max(1,labels.length-1);
+  const y=v=>P.t+(hi-v)*(h-P.t-P.b)/(hi-lo);
+  for(let i=0;i<=4;i++){
+    const v=lo+(hi-lo)*i/4, Y=y(v);
+    s.append(sv("line",{x1:P.l,x2:W-P.r,y1:Y,y2:Y,stroke:"var(--line)","stroke-width":1}));
+    const t=sv("text",{x:W-P.r+6,y:Y+3.5}); t.textContent=fmt(v); s.append(t);
+  }
+  for(const q of series){
+    const d=q.values.map((v,i)=>(i?"L":"M")+x(i)+" "+y(v)).join(" ");
+    s.append(sv("path",{d,fill:"none",stroke:q.color,"stroke-width":2,
+      "stroke-dasharray":q.dash||null,"stroke-linejoin":"round","stroke-linecap":"round"}));
+    q.values.forEach((v,i)=>{
+      const c=sv("circle",{cx:x(i),cy:y(v),r:2.2,fill:q.color,opacity:.9});
+      s.append(tip(c,`${labels[i]} · ${q.label}: ${fmt(v)}`));
+    });
+  }
+  const step=Math.ceil(labels.length/12);
+  labels.forEach((l,i)=>{
+    if(i%step===0||i===labels.length-1){
+      const t=sv("text",{x:x(i),y:h-6,"text-anchor":"middle"}); t.textContent=l; s.append(t);
+    }
+  });
+  return s;
+}
+const PALETA=["#2f6fed","#8b5cf6","#0f9d58","#e0a33e","#d93025","#0891b2","#db2777",
+              "#65a30d","#7c3aed","#ea580c","#0d9488","#a16207","#9333ea"];
+
+/** Les dates on hi ha valoracions, dins del període triat. */
+function snapshotDates(){
+  const [a,b]=periodRange();
+  return [...new Set(S.data.snapshots.map(s=>s.date))].sort()
+    .filter(d=>d>=a&&d<=b);
+}
+/** Agrupa ignorant majúscules i etiqueta amb la grafia més repetida: al full
+    hi ha "MyInvestor" i "Myinvestor", i si no, surten com dues entitats. */
+function groupAssets(A,key){
+  const m=new Map();
+  for(const a of A){
+    const raw=a[key]||"—", k=String(raw).toLowerCase().trim();
+    let g=m.get(k);
+    if(!g) m.set(k,g={label:raw,noms:new Map(),assets:[]});
+    g.assets.push(a);
+    g.noms.set(raw,(g.noms.get(raw)||0)+1);
+  }
+  for(const g of m.values())
+    g.label=[...g.noms].sort((a,b)=>b[1]-a[1])[0][0];
+  return [...m].map(([k,g])=>({key:k,label:g.label,assets:g.assets}));
+}
+function renderEvolucio(){
+  const dates=snapshotDates();
+  if(dates.length<2) return el("div",{class:"card"},el("h2",{},"Evolució"),
+    el("div",{class:"empty"},"Calen almenys dues valoracions dins del període."));
+  const A=S.data.assets;
+  const modes=[["class","Per classe d'actiu"],["entity","Per entitat"],["asset","Per actiu"]];
+  const mode=S.cartera.evol;
+
+  let grups;
+  grups = mode==="asset"
+    ? A.map(a=>({key:a.id,label:a.entity+" · "+a.name,assets:[a]}))
+    : groupAssets(A,mode);
+  const series=grups.map((g,i)=>({label:g.label,color:PALETA[i%PALETA.length],
+    values:dates.map(d=>g.assets.reduce((s,a)=>s+assetValueAt(a,d),0))}))
+    .filter(q=>q.values.some(v=>v>0));
+  series.sort((a,b)=>b.values.at(-1)-a.values.at(-1));
+
+  const totals=dates.map((d,i)=>series.reduce((s,q)=>s+q.values[i],0));
+  const primer=totals[0], ultim=totals.at(-1);
+
+  return el("div",{class:"card"},
+    el("div",{class:"bar",style:"margin:0 0 12px"},
+      el("h2",{style:"margin:0;flex:1"},"Com s'ha repartit la cartera"),
+      sel(mode,modes,v=>{S.cartera.evol=v;render();})),
+    areaChart(dates,series),
+    el("div",{class:"legend"},series.map(q=>el("span",{},
+      el("i",{style:"background:"+q.color}),q.label+" · "+eur0(q.values.at(-1))))),
+    (()=>{
+      // Als primers mesos el total escrit a mà del full era més alt que la suma de
+      // valoracions per actiu, perquè encara no les portava totes. Val més dir-ho
+      // que no pas ensenyar dos gràfics amb dos punts de partida diferents i cap explicació.
+      const rec=(S.data.portfolioTotals||[]).find(t=>t.date===dates[0]);
+      const forat=rec?rec.total-primer:0;
+      return el("p",{class:"note"},
+        "Només hi surt el que tens valorat actiu per actiu. Cada actiu manté l'últim valor "+
+        "conegut fins que en registres un de nou."+
+        (forat>1 ? " Al "+dCa(dates[0])+" això són "+eur0(primer)+" dels "+eur0(rec.total)+
+          " que tenies apuntats com a total: els "+eur0(forat)+" que falten són cartera que "+
+          "aleshores no desglossaves, i per això aquest gràfic arrenca més avall que el de dalt."
+        : ""));
+    })(),
+  );
+}
+/** Valor contra aportat al llarg del temps: el que hi has posat i el que val. */
+function renderValorAportat(){
+  const fcd=firstCostDate();
+  const A=S.data.assets;
+  const rec=new Map((S.data.portfolioTotals||[]).map(t=>[t.date,t.total]));
+  const valorA=d=>rec.has(d)?rec.get(d):A.reduce((s,a)=>s+assetValueAt(a,d),0);
+  if(!fcd) return el("div",{class:"card"},
+    el("h2",{},"El que hi has posat contra el que val"),
+    el("div",{class:"empty"},
+      el("p",{},"Encara no hi ha historial de l'aportat."),
+      el("p",{class:"note",style:"max-width:52ch;margin:0 auto"},
+        "L'aportat que ve d'abans és una xifra d'avui, sense dates, i el registre "+
+        "d'aportacions no hi quadra ("+
+        eur0(S.data.contributions.reduce((s,c)=>s+c.amount,0))+" registrats contra "+
+        eur0(A.reduce((s,a)=>s+(a.contributed||0),0))+" reals), o sigui que no es pot "+
+        "reconstruir enrere sense inventar-se-la. A partir de la propera valoració que "+
+        "desis, cada punt es guardarà amb l'aportat d'aquell moment i aquest gràfic "+
+        "es començarà a omplir.")));
+  const dates=snapshotDates().filter(d=>d>=fcd);
+  if(dates.length<2) return el("div",{class:"card"},
+    el("h2",{},"El que hi has posat contra el que val"),
+    el("div",{class:"empty"},
+      el("p",{},"Hi ha un punt amb l'aportat desat, del "+dCa(fcd)+"."),
+      el("p",{class:"note"},"A la propera valoració ja hi haurà línia.")));
+  const valor=dates.map(valorA);
+  const cost =dates.map(d=>portfolioCostAt(d)??0);
+  const balanc=dates.map((_,i)=>valor[i]-cost[i]);
+  const labels=dates.map(d=>mLabel(d.slice(0,7)));
+  const i0=0;
+  return el("div",{class:"card"},
+    el("h2",{},"El que hi has posat contra el que val"),
+    linesChart(labels,[
+      {label:"Valor",color:"var(--inv)",values:valor},
+      {label:"Aportat",color:"var(--muted)",values:cost,dash:"5 4"},
+    ],{h:210}),
+    el("div",{class:"legend"},
+      el("span",{},el("i",{style:"background:var(--inv)"}),"Valor de la cartera"),
+      el("span",{},el("i",{style:"background:var(--muted)"}),"Diners aportats")),
+    el("h2",{style:"margin-top:20px"},"Balanç"),
+    barChart(dates.map((d,i)=>({month:d.slice(0,7),v:balanc[i]})),
+      [{label:"Balanç",color:"var(--pos)",get:r=>r.v}],{h:150}),
+    el("p",{class:"note"},
+      "Avui: "+eur0(valor.at(-1))+" de valor sobre "+eur0(cost.at(-1))+" aportats, "+
+      "balanç de "+eur0(balanc.at(-1))+". El gràfic arrenca el "+dCa(fcd)+", que és la "+
+      "primera valoració desada amb l'aportat d'aquell moment; el que hi ha abans no "+
+      "portava data d'aportació i no es pot dibuixar sense inventar-se'l."),
+  );
+}
+/** La matriu de valoracions, com la del full: una fila per data i una columna per actiu. */
+function renderMatriu(){
+  const dates=snapshotDates().slice().reverse();
+  if(!dates.length) return null;
+  const A=S.data.assets.filter(a=>S.data.snapshots.some(s=>s.assetId===a.id));
+  const rec=new Map((S.data.portfolioTotals||[]).map(t=>[t.date,t.total]));
+  return el("div",{class:"card"},
+    el("h2",{},"Valoracions mes a mes"),
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},el("th",{},"Data"),
+        A.map(a=>el("th",{class:"r"},a.name)),
+        el("th",{class:"r"},"Total"),el("th",{class:"r"},"Variació"),
+        el("th",{class:"r"},"Aportat"),el("th",{class:"r"},"Balanç"))),
+      el("tbody",{},dates.map((d,i)=>{
+        const vals=A.map(a=>{
+          const s=S.data.snapshots.find(s=>s.assetId===a.id&&s.date===d);
+          return s?s.value:null;
+        });
+        const total=rec.has(d)?rec.get(d):A.reduce((s,a)=>s+assetValueAt(a,d),0);
+        const ant=dates[i+1];
+        const totalAnt=ant?(rec.has(ant)?rec.get(ant):A.reduce((s,a)=>s+assetValueAt(a,ant),0)):null;
+        const dif=totalAnt==null?null:total-totalAnt;
+        const cost=portfolioCostAt(d);
+        return el("tr",{},
+          el("td",{},dCa(d)),
+          vals.map(v=>el("td",{class:"r num "+(v==null?"mut":"")},v==null?"·":eur0(v))),
+          el("td",{class:"r num"},eur0(total)),
+          el("td",{class:"r num "+(dif==null?"mut":sgn(dif))},
+            dif==null?"":(dif>=0?"+":"")+eur0(dif)),
+          el("td",{class:"r num mut"},cost==null?"·":eur0(cost)),
+          el("td",{class:"r num "+(cost==null?"mut":sgn(total-cost))},
+            cost==null?"·":eur0(total-cost)));
+      })),
+    )),
+    el("p",{class:"note"},"Un punt vol dir que aquell mes no en vas registrar el valor; "+
+      "al total s'hi compta l'últim que en sabies."),
+  );
+}
+
+/* ================================================================== *
+ *  Rendiment                                                         *
+ * ================================================================== */
+function renderRendiment(root){
+  const A=S.data.assets.filter(a=>a.include);
+  const st=new Map(S.data.assets.map(a=>[a.id,assetStats(a)]));
+  const inv=A.reduce((s,a)=>s+st.get(a.id).inv,0);
+  const val=A.reduce((s,a)=>s+st.get(a.id).value,0);
+  const ret=inv?(val-inv)/inv:null;
+  // anys ponderats per diners aportats: un actiu de 68 k pesa més que un de 770 €
+  const years=inv?A.reduce((s,a)=>s+st.get(a.id).inv*st.get(a.id).years,0)/inv:0;
+  const cagr=(inv>0&&val>0&&years>0.08)?Math.pow(val/inv,1/years)-1:null;
+  const score=cagr==null?null:Math.round(
+    (Math.max(0,Math.min(cagr,0.12))/0.12)*70 + (Math.max(0,Math.min(ret,0.40))/0.40)*30);
+  const nota=score==null?"—":score>=75?"Fort":score>=50?"Bo":score>0?"Fluix":"Revisar";
+
+  const series=portfolioSeries();
+  const monthly=series.map((p,i)=>({month:p.date.slice(0,7),
+    pct:i? (series[i-1].total? (p.total-series[i-1].total)/series[i-1].total : 0) : 0,
+    eur:i? p.total-series[i-1].total : 0})).slice(1);
+
+  const wallets=new Map();
+  for(const a of A){
+    const k=a.wallet||"Sense cartera";
+    let w=wallets.get(k); if(!w) wallets.set(k,w={inv:0,val:0,n:0});
+    w.inv+=st.get(a.id).inv; w.val+=st.get(a.id).value; w.n++;
+  }
+  const excluded=S.data.assets.filter(a=>!a.include);
+
+  root.replaceChildren(
+    el("div",{class:"grid kpis",style:"margin-bottom:14px"},
+      kpi("Aportat",eur(inv),A.length+" actius que compten"),
+      kpi("Valor actual",eur(val),""),
+      kpi("Benefici",eur(val-inv),pct(ret),sgn(val-inv)),
+      kpi("CAGR aproximat",pct(cagr),years?years.toFixed(1).replace(".",",")+" anys ponderats":""),
+      kpi("Nota de la cartera",score==null?"—":score+" / 100",nota,
+        score>=75?"pos":score>=50?"":"neg"),
+    ),
+    excluded.length ? el("div",{class:"warnbox"},
+      "En queden fora "+excluded.map(a=>a.entity+" "+a.name).join(", ")+
+      ". Canvia-ho a Cartera → ⋯ → «Compta al rendiment».") : null,
+    el("div",{class:"card"},
+      el("h2",{},"Per actiu"),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Actiu","Cartera","Aportat","Valor","Benefici","Retorn","Anys","CAGR","Pes","Contribució"]
+          .map((h,i)=>el("th",{class:i>1?"r":""},h)))),
+        el("tbody",{},A.slice().sort((a,b)=>st.get(b.id).inv-st.get(a.id).inv).map(a=>{
+          const s=st.get(a.id), w=inv?s.inv/inv:0;
+          return el("tr",{},
+            el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity)),
+            el("td",{class:"mut"},(a.wallet||"—").replace(/^Wallet\d_/,"")),
+            el("td",{class:"r num"},eur(s.inv)),
+            el("td",{class:"r num"},eur(s.value)),
+            el("td",{class:"r num "+sgn(s.gain)},eur(s.gain)),
+            el("td",{class:"r num "+sgn(s.gain)},pct(s.ret)),
+            el("td",{class:"r num mut"},s.years.toFixed(1).replace(".",",")),
+            el("td",{class:"r num "+(s.cagr>=0?"pos":"neg")},pct(s.cagr)),
+            el("td",{class:"r num mut"},pct(w)),
+            el("td",{class:"r num "+sgn(s.ret)},pct(s.ret!=null?s.ret*w:null)),
+          );
+        })),
+      )),
+      el("p",{class:"note"},"El retorn és simple: valor actual contra diners aportats. No té en "+
+        "compte quan va entrar cada aportació, així que en un actiu on hi vas posant diners "+
+        "cada mes es queda curt. El CAGR anualitza aquest mateix retorn des de la data d'inici."),
+    ),
+    card("Per cartera",
+      el("div",{class:"tw"},table(["Cartera","Actius","Aportat","Valor","Benefici","Retorn"],
+        [...wallets].sort((a,b)=>b[1].inv-a[1].inv).map(([k,w])=>[
+          k.replace(/^Wallet\d_/,""),w.n,eur(w.inv),eur(w.val),
+          [eur(w.val-w.inv),sgn(w.val-w.inv)],[pct(w.inv?(w.val-w.inv)/w.inv:null),sgn(w.val-w.inv)]]))),
+    ),
+    card("Variació mensual de la cartera",
+      barChart(monthly,[{label:"Variació",color:"var(--inv)",get:r=>r.eur}],{h:180}),
+      el("div",{class:"tw",style:"margin-top:12px"},table(["Mes","Valor","Variació","%"],
+        series.slice(1).map((p,i)=>[mLabel(p.date.slice(0,7)),eur(p.total),
+          [eur(monthly[i].eur),sgn(monthly[i].eur)],
+          [pct(monthly[i].pct),sgn(monthly[i].eur)]]).reverse())),
+    ),
+  );
+}
+
+/* ================================================================== *
+ *  Independència financera                                            *
+ *  El model és el de independencia_v33.html: tres fases, objectiu     *
+ *  Coast FIRE descomptat des del capital dels 60, i tres maneres de   *
+ *  retirar. La diferència és que aquí el capital, el cost d'adquisició *
+ *  i els saldos de liquiditat surten de les dades reals, no d'inputs. *
+ * ================================================================== */
+/* Valors de sortida neutres. Els de debò viuen al fitxer de dades, no al codi:
+   aquest fitxer es pot publicar i no ha de dir res de ningú. */
+const ARA=new Date().getFullYear();
+const FIRE_DEF={ year:ARA+5, monthly:1000, rate:6, surplus:0,
+  fase2Annual:0, fase3Year:ARA+15, ageNow:45, ageFire:65, income:1500,
+  inflation:2.5, retRate:4, lifespan:90, model:"hybrid", liquidity:null };
+
+/** Valor futur amb aportacions mensuals. */
+function projectValue(start,monthly,annualRate,months){
+  const r=annualRate/100/12;
+  if(r===0) return start+monthly*months;
+  return start*Math.pow(1+r,months)+monthly*(Math.pow(1+r,months)-1)/r;
+}
+/** Impost de l'estalvi sobre el guany anual (trams estatals). */
+function calcTax(gain){
+  if(gain<=0) return 0;
+  const trams=[[6000,.19],[50000,.21],[200000,.23],[300000,.27],[Infinity,.28]];
+  let t=0,rest=gain,prev=0;
+  for(const [limit,rate] of trams){
+    const tros=Math.min(rest,limit-prev);
+    if(tros<=0) break;
+    t+=tros*rate; rest-=tros; prev=limit;
+    if(rest<=0) break;
+  }
+  return t;
+}
+/** Capital i cost d'adquisició reals, de la cartera. */
+function fireCapital(){
+  const A=S.data.assets;
+  return { value:A.reduce((s,a)=>s+assetValue(a),0),
+           cost: A.reduce((s,a)=>s+(a.contributed||0),0) };
+}
+/** Mitjanes mensuals mesurades: el que de debò estalvies i inverteixes. */
+function fireMeasured(){
+  const rows=derive().filter(r=>!r.future&&r.nMov);
+  const w=rows.slice(-12);
+  if(!w.length) return {saving:null,invest:null,n:0};
+  return { saving:w.reduce((a,r)=>a+r.saving,0)/w.length,
+           invest:w.reduce((a,r)=>a+r.invest,0)/w.length, n:w.length };
+}
+
+function fireModel(){
+  const f=S.data.fire, cap=fireCapital();
+  const now=new Date(TODAY), currentYear=now.getFullYear();
+  const monthly=(+f.monthly||0)+(+f.surplus||0);
+  const rate=+f.rate||0, inflation=+f.inflation||0;
+  const retRate=(+f.retRate||0)/100;
+  const ageNow=+f.ageNow||0, ageFire=+f.ageFire||0, lifespan=+f.lifespan||0;
+  const income=+f.income||0, fase2Annual=+f.fase2Annual||0;
+  const coastYear=+f.year||currentYear, fase3Year=+f.fase3Year||currentYear;
+
+  /* --- objectiu Coast FIRE ---
+     capital necessari a la fase 3 = renda anual / taxa de retirada, descomptat
+     enrere fins l'any de coast amb compost mensual, restant-hi abans el valor
+     futur de les aportacions de la fase 2. */
+  const annualIncomeNeeded=income*12;
+  const capitalAtFireComplete=retRate>0?annualIncomeNeeded/retRate:annualIncomeNeeded*25;
+  const monthsCoastToFire=Math.max(0,(fase3Year-coastYear)*12);
+  const r=rate/100/12;
+  let goal;
+  if(monthsCoastToFire===0) goal=capitalAtFireComplete;
+  else if(r===0) goal=capitalAtFireComplete-(fase2Annual/12)*monthsCoastToFire;
+  else {
+    const fvFase2=(fase2Annual/12)*((Math.pow(1+r,monthsCoastToFire)-1)/r);
+    goal=(capitalAtFireComplete-fvFase2)/Math.pow(1+r,monthsCoastToFire);
+  }
+
+  /* --- projecció real --- */
+  const monthsToCoast=Math.max(1,Math.round((new Date(coastYear,11,31)-now)/(86400000*30.44)));
+  const capitalAtCoast=projectValue(cap.value,monthly,rate,monthsToCoast);
+  const capitalAtFire =projectValue(capitalAtCoast,fase2Annual/12,rate,monthsCoastToFire);
+
+  /* --- fracció que tributa: el cost creix nominal, el valor compost --- */
+  const costAtFire=cap.cost+monthly*monthsToCoast+(fase2Annual/12)*monthsCoastToFire;
+  const gainFraction=capitalAtFire>0
+    ? Math.max(0,Math.min(1,1-costAtFire/capitalAtFire))
+    : Math.max(0,Math.min(1,1-cap.cost/Math.max(cap.value,1)));
+
+  /* --- renda: la neta objectiu, portada a euros del futur, i el brut que cal --- */
+  const yearsToFire=Math.max(0,ageFire-ageNow);
+  const incomeAtFire=income*Math.pow(1+inflation/100,yearsToFire);
+  let grossAnnual=incomeAtFire*12;
+  for(let i=0;i<25;i++){
+    const net=grossAnnual-calcTax(grossAnnual*gainFraction);
+    grossAnnual=grossAnnual*(incomeAtFire*12/Math.max(net,1));
+  }
+  const yearsRetirement=Math.max(1,lifespan-ageFire);
+  let capitalNeeded,swr,annualWithdrawal;
+  if(f.model==="growth"){
+    swr=retRate; capitalNeeded=grossAnnual/(retRate||1); annualWithdrawal=capitalNeeded*retRate;
+  } else if(f.model==="swr"){
+    swr=0.04; annualWithdrawal=capitalAtFire*swr; capitalNeeded=grossAnnual/swr;
+  } else {
+    const n=yearsRetirement;
+    const factor=retRate>0?(1-Math.pow(1+retRate,-n))/retRate:n;
+    capitalNeeded=grossAnnual*factor; swr=retRate>0?1/factor:1/n;
+    annualWithdrawal=capitalAtFire*swr;
+  }
+  const annualNet=annualWithdrawal-calcTax(annualWithdrawal*gainFraction);
+  const monthlyNetFire=annualNet/12;
+  const monthlyNetToday=monthlyNetFire/Math.pow(1+inflation/100,yearsToFire);
+
+  /* --- quan s'arriba a l'objectiu al ritme d'ara --- */
+  let mesos=null;
+  if(cap.value<goal && monthly>0){
+    let lo=0,hi=720;
+    for(let i=0;i<60;i++){
+      const mid=(lo+hi)/2;
+      if(projectValue(cap.value,monthly,rate,mid)<goal) lo=mid; else hi=mid;
+    }
+    mesos=Math.ceil(hi);
+  } else if(cap.value>=goal) mesos=0;
+
+  return {goal,capital:cap.value,cost:cap.cost,monthly,rate,inflation,
+    coastYear,fase3Year,ageNow,ageFire,lifespan,income,fase2Annual,retRate,
+    capitalAtCoast,capitalAtFire,capitalNeeded,gainFraction,grossAnnual,
+    swr,annualWithdrawal,monthlyNetFire,monthlyNetToday,mesos,
+    monthsToCoast,monthsCoastToFire,yearsRetirement,model:f.model,
+    progress:goal>0?cap.value/goal:null};
+}
+
+/** Capital any a any, de l'edat d'avui fins a l'esperança de vida.
+    Es compta tot en mesos des d'avui i amb els mateixos trams que fireModel(),
+    perquè si no el gràfic i els indicadors no donarien el mateix als 62. */
+function fireSeries(M){
+  const out=[];
+  const rNom=M.retRate/12, inflR=M.inflation/100;
+  const grossMonthly=M.grossAnnual/12;
+  const mFire=M.monthsToCoast+M.monthsCoastToFire;
+  // Un punt per any, més el moment exacte en què comença la renda: si no,
+  // el gràfic saltaria per damunt d'aquell mes i no coincidiria amb el KPI.
+  const punts=[];
+  for(let a=M.ageNow;a<=M.lifespan;a++) punts.push((a-M.ageNow)*12);
+  if(!punts.includes(mFire)) punts.push(mFire);
+  punts.sort((a,b)=>a-b);
+  for(const mesos of punts){
+    const age=M.ageNow+mesos/12;
+    let cap;
+    if(mesos<=mFire){
+      const mesosFase1=Math.min(mesos,M.monthsToCoast);
+      const mesosFase2=Math.max(0,mesos-mesosFase1);
+      const c1=projectValue(M.capital,M.monthly,M.rate,mesosFase1);
+      cap=projectValue(c1,M.fase2Annual/12,M.rate,mesosFase2);
+    } else {
+      const mInto=mesos-mFire;
+      if(M.model==="growth") cap=M.capitalAtFire*Math.pow(1+inflR,mInto/12);
+      else {
+        const pmt=M.model==="swr"?M.annualWithdrawal/12:grossMonthly;
+        cap=Math.abs(rNom)<1e-5 ? M.capitalAtFire-pmt*mInto
+          : M.capitalAtFire*Math.pow(1+rNom,mInto)-pmt*(Math.pow(1+rNom,mInto)-1)/rNom;
+        cap=Math.max(0,cap);
+      }
+    }
+    let renda=null;
+    if(mesos>=mFire){
+      const inf=Math.pow(1+inflR,age-M.ageNow);
+      const draw=M.model==="growth"
+        ? cap*Math.max(M.rate/100-inflR,0.01)/12
+        : M.annualWithdrawal/12;
+      const tax=calcTax(draw*12*M.gainFraction)/12;
+      renda=Math.max(0,draw-tax)/inf;
+    }
+    out.push({age,label:String(Math.round(age)),cap:Math.round(cap),
+      renda:renda==null?null:Math.round(renda),fire:mesos===mFire});
+  }
+  return out;
+}
+
+/** Ajunta el que ha passat de debò amb el que es projecta, en una sola línia. */
+function fireCombined(M,serie){
+  const anys=d=>(Date.parse(d)-Date.parse(TODAY))/(365.25*86400000);
+  const real=(S.data.portfolioTotals||[])
+    .filter(t=>t.date<=TODAY)
+    .map(t=>({k:String(Math.round(M.ageNow+anys(t.date))),v:t.total,real:true}));
+  const proj=serie.map(p=>({k:p.label,v:p.cap}));
+  return {pts:[...real,...proj], split:real.length?real.length-1:null};
+}
+function renderFire(root){
+  const M=fireModel(), serie=fireSeries(M), mes=fireMeasured();
+  const arribada=M.mesos==null?null:(()=>{
+    const d=new Date(TODAY); d.setMonth(d.getMonth()+M.mesos);
+    return d.toISOString().slice(0,10);
+  })();
+  const anysFase1=Math.max(0,M.coastYear-new Date(TODAY).getFullYear());
+
+  const barra=(v,color)=>el("div",{style:"height:10px;border-radius:5px;background:var(--line);margin-top:6px"},
+    el("div",{style:`height:10px;border-radius:5px;background:${color};width:${Math.max(0,Math.min(100,v*100))}%`}));
+
+  root.replaceChildren(
+    el("div",{class:"grid kpis",style:"margin-bottom:14px"},
+      kpi("Capital actual",eur0(M.capital),"la teva cartera, avui"),
+      kpi("Objectiu Coast FIRE",eur0(M.goal),"a assolir el "+M.coastYear),
+      kpi("Assolit",pct(M.progress),eur0(Math.max(0,M.goal-M.capital))+" per arribar-hi",
+        M.progress>=1?"pos":""),
+      kpi("Hi arribes el",M.mesos===0?"ja hi ets":arribada?dCa(arribada):"—",
+        M.mesos?"al ritme de "+eur0(M.monthly)+"/mes":"",
+        arribada&&arribada.slice(0,4)<=String(M.coastYear)?"pos":"neg"),
+      kpi("Renda des dels "+M.ageFire,eur0(M.monthlyNetToday),"neta al mes, en € d'avui","pos"),
+      kpi("Capital en començar",eur0(M.capitalAtFire),
+        M.capitalAtFire>=M.capitalNeeded?"per sobre del que cal":"per sota del que cal",
+        M.capitalAtFire>=M.capitalNeeded?"pos":"neg"),
+    ),
+    el("div",{class:"card"},
+      el("h2",{},"Camí cap a l'objectiu"),
+      el("div",{style:"display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"},
+        el("span",{},eur0(M.capital)),el("span",{},eur0(M.goal))),
+      barra(M.progress,M.progress>=1?"var(--pos)":"var(--accent)"),
+      el("p",{class:"note"},
+        arribada
+          ? (arribada.slice(0,4)<=String(M.coastYear)
+              ? "Al ritme actual hi arribes el "+dCa(arribada)+", abans del "+M.coastYear+"."
+              : "Al ritme actual hi arribes el "+dCa(arribada)+", "+
+                plural(+arribada.slice(0,4)-M.coastYear,"any","anys")+" tard. Caldrien "+
+                eur0(fireNeededMonthly(M))+" al mes per fer-ho el "+M.coastYear+".")
+          : "Amb aportació 0 no s'hi arriba."),
+    ),
+    fireFases(M,anysFase1),
+    card("El teu capital: el que ha passat i el que es projecta",
+      (()=>{const c=fireCombined(M,serie);
+        return lineChart(c.pts,{h:210,color:"var(--inv)",fmt:eur0,split:c.split});})(),
+      el("p",{class:"note"},"El tram continu és real, tret de la teva pròpia cartera; "+
+        "el discontinu és la projecció des d'avui. Per edat. Fase 1 fins als "+(M.ageNow+anysFase1)+
+        " (aportant "+eur0(M.monthly)+"/mes), fase 2 fins als "+M.ageFire+
+        " (aportant "+eur0(M.fase2Annual/12)+"/mes), i a partir d'aquí es retira."),
+    ),
+    card("Renda mensual neta, en euros d'avui",
+      lineChart(serie.filter(p=>p.renda!=null).map(p=>({k:p.label,v:p.renda})),
+        {h:170,color:"var(--pos)",fmt:eur0}),
+      el("p",{class:"note"},"Descomptats impostos de l'estalvi sobre la part que és guany ("+
+        pct(M.gainFraction)+" del capital als "+M.ageFire+") i la inflació del "+
+        M.inflation+" %."),
+    ),
+    fireLiquidity(),
+    fireParams(mes),
+    fireHistory(),
+  );
+}
+/** Quant caldria aportar cada mes per arribar a l'objectiu l'any previst. */
+const plural=(n,u,us)=>n+" "+(n===1?u:us);
+function fireNeededMonthly(M){
+  const m=Math.max(1,M.monthsToCoast), r=M.rate/100/12;
+  const fvCapital=M.capital*Math.pow(1+r,m);
+  const falta=M.goal-fvCapital;
+  if(falta<=0) return 0;
+  return r===0 ? falta/m : falta*r/(Math.pow(1+r,m)-1);
+}
+function fireFases(M,anysFase1){
+  const cell=(t,v,s)=>el("div",{},
+    el("div",{class:"lbl",style:"font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)"},t),
+    el("div",{style:"font-size:17px;font-weight:600;margin-top:3px"},v),
+    s?el("div",{class:"sub",style:"font-size:12px;color:var(--muted)"},s):null);
+  const fase=(n,titol,sub,cells)=>el("div",{class:"card",style:"margin:0"},
+    el("h2",{style:"margin-bottom:4px"},"Fase "+n+" · "+titol),
+    el("p",{class:"note",style:"margin:0 0 12px"},sub),
+    el("div",{style:"display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px"},cells));
+  return el("div",{class:"grid",style:"grid-template-columns:repeat(auto-fit,minmax(300px,1fr))"},
+    fase(1,"Acumulació",
+      "Fins al "+M.coastYear+" ("+anysFase1+" anys), aportant cada mes.",
+      [cell("Aportació",eur0(M.monthly)+"/mes"),
+       cell("Capital al final",eur0(M.capitalAtCoast)),
+       cell("Objectiu",eur0(M.goal),M.capitalAtCoast>=M.goal?"s'assoleix":"no s'assoleix")]),
+    fase(2,"Coast",
+      "Del "+M.coastYear+" al "+M.fase3Year+": ja no cal aportar, el capital sol es capitalitza.",
+      [cell("Aportació",eur0(M.fase2Annual)+"/any"),
+       cell("Capital als "+M.ageFire,eur0(M.capitalAtFire)),
+       cell("Creixement",eur0(M.capitalAtFire-M.capitalAtCoast))]),
+    fase(3,"Renda",
+      "Dels "+M.ageFire+" als "+M.lifespan+" anys ("+M.yearsRetirement+" anys), vivint del capital.",
+      [cell("Retirada",pct(M.swr)+"/any",eur0(M.annualWithdrawal/12)+" bruts/mes"),
+       cell("Renda neta",eur0(M.monthlyNetFire)+"/mes","en € del "+(new Date(TODAY).getFullYear()+(M.ageFire-M.ageNow))),
+       cell("En € d'avui",eur0(M.monthlyNetToday)+"/mes",
+         M.monthlyNetToday>=M.income?"per sobre de l'objectiu":"per sota de l'objectiu")]),
+  );
+}
+
+/** Els matalassos de liquiditat. L'import real surt de la cartera, no es teclegen. */
+function fireLiquidity(){
+  const f=S.data.fire;
+  if(!f.liquidity) f.liquidity=defaultLiquidity();
+  const rows=f.liquidity.map(b=>{
+    const a=S.data.assets.find(x=>x.id===b.assetId);
+    const actual=a?assetValue(a):0;
+    const target=+b.target||0;
+    const dif=actual-target;
+    return {b,a,actual,target,dif};
+  });
+  const tot=rows.reduce((s,r)=>s+r.actual,0);
+  const totT=rows.reduce((s,r)=>s+r.target,0);
+  const inp=(val,on)=>el("input",{type:"number",step:"100",value:val??"",style:"text-align:right",
+    onchange:e=>{on(e.target.value===""?0:+e.target.value); markDirty(); render();}});
+  const assets=S.data.assets.map(a=>[a.id,a.entity+" · "+a.name]);
+  return el("div",{class:"card"},
+    el("h2",{},"Matalassos de liquiditat"),
+    el("p",{class:"note",style:"margin:0 0 12px"},
+      "L'import real de cada matalàs és el valor de l'actiu que hi has assignat, "+
+      "o sigui que es posa al dia sol quan actualitzes la cartera."),
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},["Matalàs","Actiu","Real","Objectiu","Diferència","Cobertura",""]
+        .map((h,i)=>el("th",{class:i>1?"r":""},h)))),
+      el("tbody",{},rows.map(r=>el("tr",{},
+        el("td",{},el("input",{type:"text",value:r.b.name||"",
+          onchange:e=>{r.b.name=e.target.value;markDirty();}})),
+        el("td",{},sel(r.b.assetId||"",[["","— cap —"],...assets],
+          v=>{r.b.assetId=v||null;markDirty();render();})),
+        el("td",{class:"r num"},eur0(r.actual)),
+        el("td",{class:"r"},inp(r.b.target,v=>r.b.target=v)),
+        el("td",{class:"r num "+sgn(r.dif)},eur0(r.dif)),
+        el("td",{class:"r num "+(r.target&&r.actual>=r.target?"pos":"neg")},
+          r.target?pct(r.actual/r.target):"—"),
+        el("td",{class:"r"},el("button",{class:"btn ghost",onclick:()=>{
+          f.liquidity=f.liquidity.filter(x=>x!==r.b); markDirty(); render();}},"✕")),
+      ))),
+      el("tfoot",{},el("tr",{class:"tot"},
+        ["Total","",eur0(tot),eur0(totT),eur0(tot-totT),totT?pct(tot/totT):"",""]
+        .map((c,i)=>el("td",{class:i>1?"r":""},c)))),
+    )),
+    el("button",{class:"btn",style:"margin-top:10px",onclick:()=>{
+      f.liquidity.push({name:"Nou matalàs",assetId:null,target:0}); markDirty(); render();}},
+      "Afegir matalàs"),
+  );
+}
+/** Per defecte, els actius monetaris: són els que fan de matalàs. */
+function defaultLiquidity(){
+  return S.data.assets.filter(a=>a.class==="Monetari"&&assetValue(a)>100)
+    .map(a=>({name:a.name,assetId:a.id,target:0}));
+}
+
+const FIRE_LBL={year:"Any de Coast FIRE",monthly:"Aportació mensual",surplus:"Extra",
+  rate:"Rendibilitat anual",fase2Annual:"Aportació fase 2",fase3Year:"Any d'inici fase 3",
+  ageNow:"Edat actual",ageFire:"Edat de renda",income:"Renda objectiu",
+  inflation:"Inflació",retRate:"Taxa de retirada",lifespan:"Esperança de vida",
+  model:"Model de retirada"};
+/** Canvia un paràmetre i en desa la data: així el pla té historial. */
+function fireSet(k,v){
+  const f=S.data.fire;
+  if(f[k]===v) return;
+  (f.history ??= []).push({date:TODAY,field:k,from:f[k],to:v});
+  f[k]=v; markDirty(); render();
+}
+function fireHistory(){
+  const h=(S.data.fire.history||[]).slice().reverse();
+  if(!h.length) return null;
+  const val=(k,v)=>{
+    if(k==="model") return {growth:"Capital invertit",swr:"Regla del 4 %",hybrid:"Híbrid"}[v]||v;
+    if(["year","fase3Year","ageNow","ageFire","lifespan"].includes(k)) return String(v);
+    if(["rate","inflation","retRate"].includes(k))
+      return new Intl.NumberFormat("ca-ES",{maximumFractionDigits:2}).format(v)+" %";
+    return eur0(v);
+  };
+  return el("div",{class:"card"},
+    el("h2",{},"Canvis de pla"),
+    el("p",{class:"note",style:"margin:0 0 12px"},
+      "Els paràmetres que has anat canviant, amb la data. La projecció sempre es "+
+      "recalcula des d'avui i del capital real: aquesta llista és perquè sàpigues "+
+      "quan vas moure el pla, no perquè el gràfic canviï d'abans."),
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},el("th",{},"Data"),el("th",{},"Paràmetre"),
+        el("th",{class:"r"},"Abans"),el("th",{class:"r"},"Després"))),
+      el("tbody",{},h.slice(0,40).map(x=>el("tr",{},
+        el("td",{},dCa(x.date)),
+        el("td",{},FIRE_LBL[x.field]||x.field),
+        el("td",{class:"r num mut"},val(x.field,x.from)),
+        el("td",{class:"r num"},val(x.field,x.to))))))),
+    h.length>40?el("p",{class:"note"},"Es mostren els 40 últims."):null,
+  );
+}
+function fireParams(mes){
+  const f=S.data.fire;
+  const num=(k,step)=>el("input",{type:"number",step:step||"1",value:f[k]??"",
+    onchange:e=>fireSet(k,e.target.value===""?0:+e.target.value)});
+  const usar=(v,k)=>v==null?null:el("button",{class:"btn ghost",style:"white-space:nowrap",
+    onclick:()=>fireSet(k,Math.round(v)),},"usar "+eur0(v));
+  return el("div",{class:"card"},
+    el("h2",{},"Paràmetres"),
+    el("div",{style:"display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:22px"},
+      el("div",{},
+        el("h3",{style:"font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 10px"},
+          "Acumulació"),
+        el("div",{class:"map"},
+          lbl("Any de Coast FIRE",num("year")),
+          lbl("Aportació mensual (€)",
+            el("span",{style:"display:flex;gap:6px"},num("monthly","50"),
+              usar(mes.invest,"monthly"))),
+          lbl("Extra aquest mes (€)",num("surplus","50")),
+          lbl("Rendibilitat anual (%)",num("rate","0.25")),
+          lbl("Aportació fase 2 (€/any)",num("fase2Annual","500")),
+          lbl("Any d'inici fase 3",num("fase3Year")),
+        ),
+        mes.n?el("p",{class:"note"},
+          "Mesurat pels teus moviments dels últims "+mes.n+" mesos: inverteixes "+
+          eur0(mes.invest)+" al mes i estalvies "+eur0(mes.saving)+"."):null,
+      ),
+      el("div",{},
+        el("h3",{style:"font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 10px"},
+          "Retirada"),
+        el("div",{class:"map"},
+          lbl("Edat actual",num("ageNow")),
+          lbl("Edat d'inici de renda",num("ageFire")),
+          lbl("Renda neta objectiu (€/mes)",num("income","50")),
+          lbl("Inflació (%)",num("inflation","0.25")),
+          lbl("Taxa de retirada (%)",num("retRate","0.25")),
+          lbl("Esperança de vida",num("lifespan")),
+          lbl("Model",sel(f.model,[
+            ["growth","Capital invertit — retires el rendiment"],
+            ["swr","Regla del 4 % — retirada fixa del capital inicial"],
+            ["hybrid","Híbrid — renda fixa, la resta invertida"],
+          ],v=>fireSet("model",v))),
+        ),
+      ),
+    ),
+    el("p",{class:"note"},
+      "El capital i el cost d'adquisició surten de la pestanya Cartera: "+
+      eur0(fireCapital().value)+" de valor sobre "+eur0(fireCapital().cost)+" aportats. "+
+      "No es teclegen enlloc."),
+  );
+}
+
+/* ================================================================== *
+ *  Diàleg                                                            *
+ * ================================================================== */
+function dialog(title,body,buttons){
+  $("#dlgTitle").textContent=title;
+  $("#dlgBody").replaceChildren(body);
+  $("#dlgFoot").replaceChildren(...(buttons||[]).map(([l,c,f])=>el("button",{class:c,onclick:f},l)));
+  $("#dlg").showModal();
+}
+const closeDialog=()=>$("#dlg").close();
+
+/* ================================================================== *
+ *  Render                                                            *
+ * ================================================================== */
+function render(){
+  for(const b of $$("nav button")) b.setAttribute("aria-current",String(b.dataset.tab===S.tab));
+  for(const s of $$("main section")) s.hidden = s.id!=="tab-"+S.tab;
+  const root=$("#tab-"+S.tab);
+  if(!S.data){
+    root.replaceChildren(el("div",{class:"card"},el("div",{class:"empty"},
+      el("p",{},"Encara no hi ha dades carregades."),
+      el("p",{},
+        el("button",{class:"btn primary",style:"margin-right:8px",onclick:driveDialog},
+          "Connectar Google Drive"),
+        el("button",{class:"btn",onclick:openFile},"Obrir un fitxer")),
+      el("p",{class:"note"},"Amb el Drive les dades et segueixen a tot arreu, també al "+
+        "mòbil. Amb un fitxer, viuen només en aquest ordinador."),
+      serverWrite
+        ? el("p",{class:"note"},"Es desarà al PC a través del servidor.")
+        : hasFS
+        ? el("p",{class:"note"},"El navegador desarà directament al fitxer; només cal donar permís un cop.")
+        : el("p",{class:"note"},
+            location.protocol==="file:"
+              ? "L'has obert amb doble clic (file://), i així Chrome no deixa desar al fitxer: "+
+                "els canvis es descarregaran a la carpeta de baixades. Per desar-hi directament, "+
+                "obre'l amb servir.cmd."
+              : "Aquest navegador no pot escriure al fitxer: els canvis es descarreguen."),
+    )));
+    return;
+  }
+  ({resum:renderResum,moviments:renderMoviments,mesos:renderMesos,real:renderReal,
+    cartera:renderCartera,rendiment:renderRendiment,fire:renderFire,
+    categories:renderCategories})[S.tab](root);
+}
+
+/* ================================================================== *
+ *  Arrencada                                                         *
+ * ================================================================== */
+$$("nav button").forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; render(); });
+$("#bOpen").onclick=openFile;
+$("#bSave").onclick=save;
+$("#bImport").onclick=startImport;
+$("#dlgX").onclick=closeDialog;
+$("#bDrive").onclick=driveDialog;
+$("#bTheme").onclick=()=>{
+  const cur=document.documentElement.getAttribute("data-theme");
+  const nxt=cur==="dark"?"light":cur==="light"?null:"dark";
+  if(nxt) document.documentElement.setAttribute("data-theme",nxt);
+  else document.documentElement.removeAttribute("data-theme");
+  try{ localStorage.setItem("finances:theme",nxt||""); }catch{}
+};
+$("#filePick").onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  if(e.target.dataset.mode==="import") await handleImportFile(f);
+  else loadData(JSON.parse(await f.text()));
+  e.target.value="";
+};
+addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==="s"){ e.preventDefault(); save(); }
+});
+addEventListener("beforeunload",e=>{ if(S.dirty){ e.preventDefault(); e.returnValue=""; } });
+
+if("serviceWorker" in navigator && location.protocol!=="file:"){
+  addEventListener("load",()=>navigator.serviceWorker
+    .register("./sw.js",{scope:"./",updateViaCache:"none"}).catch(()=>{}));
+}
+(async function boot(){
+  try{ const t=localStorage.getItem("finances:theme");
+    if(t) document.documentElement.setAttribute("data-theme",t); }catch{}
+  // Llegir la còpia ABANS de carregar el fitxer: carregar-lo la sobreescriu.
+  const pendent=readBackup();
+  if(hasFS){
+    const h=await idb.get("handle").catch(()=>null);
+    if(h){
+      try{
+        const perm=await h.queryPermission({mode:"readwrite"});
+        if(perm==="granted"){ S.handle=h; await loadFromHandle(h); return; }
+        S.handle=h;
+        $("#bOpen").textContent="Reobrir "+h.name;
+        $("#bOpen").onclick=async()=>{
+          if(await h.requestPermission({mode:"readwrite"})==="granted") await loadFromHandle(h);
+          else openFile();
+        };
+      }catch{}
+    }
+  }
+  await checkServer();
+  loadTok();
+  if(driveOn()){
+    try{ await driveLoad(); }catch(e){ console.warn("Drive:",e); }
+  }
+  if(!S.data) await autoLoad();
+  render(); setStatus();
+  offerBackup(pendent);
+})();
+/** Si l'última sessió va quedar amb canvis sense desar, proposa recuperar-los. */
+function offerBackup(b){
+  if(!b||!b.dirty||!S.data) return;
+  const quan=new Date(b.savedAt);
+  const nMov=b.data.movements?.length??0, nSnap=b.data.snapshots?.length??0;
+  dialog("Hi ha feina sense desar",el("div",{},
+    el("p",{},"L'última vegada vas deixar canvis sense desar, del ",
+      el("b",{},quan.toLocaleString("ca-ES")),"."),
+    el("p",{class:"note"},"La còpia té "+NF0.format(nMov)+" moviments i "+
+      NF0.format(nSnap)+" valoracions. El fitxer del disc en té "+
+      NF0.format(S.data.movements.length)+" i "+NF0.format(S.data.snapshots.length)+"."),
+    el("p",{class:"note"},"Si la recuperes, substitueix el que s'acaba de carregar. "+
+      "No es desa res al disc fins que premis Desar."),
+  ),[
+    ["Descartar-la","btn",()=>{ writeBackup(false); closeDialog(); }],
+    ["Recuperar","btn primary",()=>{
+      S.data=normalise(b.data); S.dirty=true;
+      $("#bSave").disabled=false; closeDialog(); render(); setStatus();
+      flash("Recuperat — prem Desar per fixar-ho al fitxer");
+    }],
+  ]);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Les dades no es publiquen mai.
+finances.json
+copies/
+Backup json/
+*.json
+!package.json
+
+# Instruccions per a mi, amb rutes d'aquest ordinador: no cal publicar-les
+DESPLEGAMENT.md
+
+__pycache__/
+
+# Eines locals, no formen part de l'app publicada
+migrate.py
+add_portfolio_history.py
+seed_fire.py
+servir.py
+servir.cmd
