@@ -2475,6 +2475,16 @@ function assetDialog(a){
   const wal=[...new Set(S.data.assets.map(x=>x.wallet).filter(Boolean))].sort();
   const dVal=lastSnapshotDate(a)||TODAY;
   const f={};
+  const pista=el("span",{class:"note"});
+  let dataTocada=false;
+  /* Si canvies el valor o l'aportat, això és una dada d'avui, no una correcció
+     de la valoració antiga: la data salta a avui sola. Si la mous tu, mana la teva. */
+  const avui=()=>{
+    if(dataTocada || f.vdate.value===TODAY) return;
+    f.vdate.value=TODAY;
+    pista.textContent="data posada a avui";
+    setTimeout(()=>{ if(pista.textContent==="data posada a avui") pista.textContent=""; },2500);
+  };
   dialog("Actiu",el("div",{},
     el("div",{class:"map"},
       lbl("Nom",      f.name=el("input",{type:"text",value:a.name||""})),
@@ -2482,15 +2492,20 @@ function assetDialog(a){
       lbl("Entitat",  f.entity=el("input",{type:"text",value:a.entity||""})),
       lbl("ISIN / ticker", f.isin=el("input",{type:"text",value:a.isin||""})),
       lbl("Data d'inici", f.start=el("input",{type:"date",value:a.start||""})),
-      lbl("Aportat (€)", f.contributed=el("input",{type:"number",step:"0.01",value:a.contributed??""})),
-      lbl("Valor actual (€)", f.value=el("input",{type:"number",step:"0.01",value:assetValue(a)||""})),
-      lbl("…a data de", f.vdate=el("input",{type:"date",value:dVal})),
+      lbl("Aportat (€)", f.contributed=el("input",{type:"number",step:"0.01",
+        value:a.contributed??"",oninput:avui})),
+      lbl("Valor actual (€)", f.value=el("input",{type:"number",step:"0.01",
+        value:assetValue(a)||"",oninput:avui})),
+      lbl("…a data de", f.vdate=el("input",{type:"date",value:dVal,
+        onchange:()=>{ dataTocada=true; pista.textContent=""; }})),
       lbl("Cartera",  f.wallet=sel(a.wallet||"",[["","— cap —"],...wal.map(w=>[w,w])],v=>f.wallet.value=v)),
       lbl("Compta al rendiment", f.include=sel(a.include?"1":"0",
         [["1","Sí"],["0","No — il·líquid o sense cotització"]],v=>f.include.value=v)),
     ),
-    el("p",{class:"note"},"El valor es desa com una valoració d'aquella data. Per posar "+
-      "al dia tota la cartera de cop, fes servir «Valoració del mes»."),
+    el("p",{class:"note"},"El valor es desa com una valoració de la data que hi digui. "+
+      "Si en canvies el valor o l'aportat, la data es posa a avui sola —perquè el que "+
+      "escrius és d'ara, no una correcció del mes passat—; si vols corregir una "+
+      "valoració antiga, canvia-la tu i es quedarà on la deixis. ",pista),
   ),[
     ["Cancel·lar","btn",closeDialog],
     ["Desar","btn primary",()=>{

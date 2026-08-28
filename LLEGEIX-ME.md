@@ -267,9 +267,10 @@ Dues coses que se'n deriven:
    posat diners, escriu-los a *Aportació del mes*: se sumen a l'aportat de l'actiu.
 
    Per tocar **un sol actiu**, ves a **Cartera → ⋯**: allà hi ha tant l'*Aportat* com el
-   *Valor actual*, amb la data a la qual es desa (per defecte, la de l'última valoració
-   d'aquell actiu). El valor es guarda com una valoració d'aquella data, igual que si
-   l'haguessis posat per la pantalla mensual.
+   *Valor actual*, amb la data a la qual es desa. Si en canvies el valor o l'aportat, la
+   data **es posa a avui sola**: el que escrius és d'ara, i queda com una valoració nova
+   sense tocar la del mes passat. Si el que vols és corregir una valoració antiga, canvia
+   la data tu i es quedarà on la deixis.
 3. Ctrl+S.
 
 ## Dues coses que el full es menjava
