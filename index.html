@@ -2296,24 +2296,33 @@ function valuationDialog(){
   const last=[...new Set(S.data.snapshots.map(s=>s.date))].sort().pop();
   const dEnd=(()=>{ const d=new Date(TODAY); // per defecte, final del mes en curs
     return new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).toISOString().slice(0,10); })();
-  const fDate=el("input",{type:"date",value:dEnd});
-  const vals=new Map(), adds=new Map();
+  const vals=new Map(), adds=new Map(), prevCel=new Map();
+  // Si tries una data anterior, els valors proposats han de ser els d'aquell moment,
+  // no els d'avui: si no, escriuries les xifres d'ara al passat sense adonar-te'n.
+  const refresca=d=>{
+    for(const a of A){
+      const v=d ? assetValueAt(a,d) : assetValue(a);
+      vals.get(a.id).value=v;
+      prevCel.get(a.id).textContent=v?eur(v):"—";
+    }
+  };
+  const fDate=el("input",{type:"date",value:dEnd,onchange:e=>refresca(e.target.value)});
   const rows=A.map(a=>{
-    const prev=assetValue(a);
+    const prev=assetValueAt(a,dEnd);
     const v=el("input",{type:"number",step:"0.01",value:prev,style:"text-align:right"});
     const c=el("input",{type:"number",step:"0.01",placeholder:"—",style:"text-align:right"});
     vals.set(a.id,v); adds.set(a.id,c);
+    const cel=el("td",{class:"r num mut"},lastSnapshotDate(a)?eur(prev):"—");
+    prevCel.set(a.id,cel);
     return el("tr",{},
       el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity)),
-      el("td",{class:"r num mut"},lastSnapshotDate(a)?eur(prev):"—"),
-      el("td",{},v),
-      el("td",{},c));
+      cel, el("td",{},v), el("td",{},c));
   });
   dialog("Valoració del mes",el("div",{},
     el("div",{class:"bar"},el("span",{},"Data de la valoració:"),fDate,
       el("span",{class:"mut",style:"font-size:12px"},last?"l'última va ser el "+dCa(last):"")),
     el("div",{class:"tw"},el("table",{},
-      el("thead",{},el("tr",{},el("th",{},"Actiu"),el("th",{class:"r"},"Valor anterior"),
+      el("thead",{},el("tr",{},el("th",{},"Actiu"),el("th",{class:"r"},"Valor a la data"),
         el("th",{},"Valor nou"),el("th",{},"Aportació del mes"))),
       el("tbody",{},rows))),
     el("p",{class:"note"},"Deixa el valor com està si un actiu no s'ha mogut. Un 0 també és "+
@@ -2334,7 +2343,7 @@ function valuationDialog(){
         }
         if(v!==""){ setAssetValue(a,date,+v); n++; }   // el total, en acabar
       }
-      ensureTotal(date);
+      recomputeTotal(date);      // valoració de tota la cartera: el total és la suma
       markDirty(); closeDialog(); render();
       flash(n+(n===1?" valoració":" valoracions")+
         (ap?" i "+ap+(ap===1?" aportació":" aportacions"):"")+
@@ -2390,7 +2399,10 @@ function assetValueAt(a,date){
 function setAssetValue(a,date,value,cost){
   const eraUltima = date>=(lastSnapshotDate(a)||date);
   const i=S.data.snapshots.findIndex(s=>s.assetId===a.id && s.date===date);
-  const previ = i>=0 ? S.data.snapshots[i].value : 0;
+  // Valor amb què aquell dia ja comptava l'actiu. Si no en tenia de propi, el que
+  // se n'arrossegava de l'última valoració anterior — que és el que el total ja
+  // reflectia. Posar-hi 0 sumava l'actiu sencer i inflava el total.
+  const previ = i>=0 ? S.data.snapshots[i].value : assetValueAt(a,date);
   if(cost==null) cost=a.contributed||0;
   if(i>=0){ S.data.snapshots[i].value=value; S.data.snapshots[i].cost=cost; }
   else S.data.snapshots.push({date,assetId:a.id,value,cost});
@@ -2404,6 +2416,27 @@ function ensureTotal(date){
   S.data.portfolioTotals.push({date,
     total:Math.round(S.data.assets.reduce((s,x)=>s+assetValueAt(x,date),0)*100)/100});
   S.data.portfolioTotals.sort((x,y)=>x.date<y.date?-1:1);
+}
+/** Després d'una valoració de tota la cartera, el total d'aquell dia és la suma.
+    Si aquell dia ja en tenia un d'apuntat i no s'assemblen, es pregunta: als mesos
+    antics el total venia escrit a mà i incloïa actius que no desglossaves, o sigui
+    que la suma pot ser molt més baixa sense que la xifra vella fos dolenta. */
+function recomputeTotal(date){
+  const total=Math.round(S.data.assets.reduce((s,x)=>s+assetValueAt(x,date),0)*100)/100;
+  const t=(S.data.portfolioTotals||[]).find(t=>t.date===date);
+  if(t){
+    const dif=Math.abs(t.total-total), rel=t.total?dif/t.total:0;
+    if(dif>1 && rel>0.05 && !confirm(
+      "Aquell dia hi tenies apuntat un total de "+eur(t.total)+", i la suma de les "+
+      "valoracions que acabes de desar és "+eur(total)+". Si als mesos antics no "+
+      "desglossaves tots els actius, la xifra vella pot ser la bona. "+
+      "Vols substituir-la per "+eur(total)+"?")) return;
+    t.total=total;
+  }
+  else{
+    S.data.portfolioTotals.push({date,total});
+    S.data.portfolioTotals.sort((x,y)=>x.date<y.date?-1:1);
+  }
 }
 function assetDialog(a){
   const cls=[...new Set(S.data.assets.map(x=>x.class))].sort();
