@@ -3778,6 +3778,26 @@ function render(){
         el("button",{class:"btn",onclick:openFile},"Obrir un fitxer")),
       el("p",{class:"note"},"Amb el Drive les dades et segueixen a tot arreu, també al "+
         "mòbil. Amb un fitxer, viuen només en aquest ordinador."),
+      S.handle?el("div",{style:"margin-top:18px;padding-top:14px;border-top:1px solid var(--line)"},
+        el("p",{class:"note",style:"margin:0 0 8px"},
+          "L'últim fitxer que vas obrir en aquest navegador va ser ",
+          el("b",{},S.handle.name),". Comprova que és el que vols: si porta un "+
+          "«(2)» o «(3)» al nom, segurament és una còpia de la carpeta de baixades i "+
+          "no les teves dades bones."),
+        el("button",{class:"btn",style:"margin-right:8px",onclick:async()=>{
+          try{
+            if(await S.handle.requestPermission({mode:"readwrite"})==="granted"){
+              await loadFromHandle(S.handle); marcaOrigen("fitxer",S.handle.name);
+              render(); setStatus();
+            }
+          }catch(e){ alert("No s'ha pogut obrir: "+e.message); }
+        }},"Tornar a obrir "+S.handle.name),
+        el("button",{class:"btn ghost",onclick:async()=>{
+          await idb.set("handle",null).catch(()=>{});
+          S.handle=null; render();
+          flash("Fitxer oblidat");
+        }},"Oblidar-lo"),
+      ):null,
       serverWrite
         ? el("p",{class:"note"},"Es desarà al PC a través del servidor.")
         : hasFS
@@ -3889,15 +3909,7 @@ function marcaOrigen(tipus,detall){ S.origen={tipus,detall,quan:new Date()}; }
       try{
         const perm=await h.queryPermission({mode:"readwrite"});
         if(perm==="granted"){ S.handle=h; await loadFromHandle(h); marcaOrigen("fitxer",h.name); }
-        else{
-          S.handle=h;
-          $("#bOpen").textContent="Reobrir "+h.name;
-          $("#bOpen").onclick=async()=>{
-            if(await h.requestPermission({mode:"readwrite"})==="granted"){
-              await loadFromHandle(h); marcaOrigen("fitxer",h.name); render(); setStatus();
-            } else openFile();
-          };
-        }
+        else S.handle=h;   // hi és, però sense permís: s'ofereix a la pantalla d'inici
       }catch{}
     }
   }
