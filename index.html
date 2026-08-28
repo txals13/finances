@@ -102,17 +102,24 @@ td select:focus,td input:focus{border-color:var(--accent);outline:none;backgroun
    El problema no eren les taules (ja fan scroll dins del seu contenidor) sinó la
    capçalera: el menú es partia en quatre línies i es menjava 205 px de pantalla. */
 @media (max-width:640px){
-  header{padding:7px 10px;gap:8px;row-gap:6px}
+  /* Els env(safe-area-*) són perquè, instal·lada com a app, la pàgina va a
+     pantalla completa i la capçalera quedaria sota el rellotge i la bateria. */
+  header{gap:7px;row-gap:5px;
+    padding:calc(7px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
+            7px calc(10px + env(safe-area-inset-left))}
   .brand{display:none}
-  nav{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto;
-      scrollbar-width:none;-webkit-overflow-scrolling:touch}
-  nav::-webkit-scrollbar{display:none}
-  nav button{padding:8px 12px;white-space:nowrap;flex:0 0 auto}
+  /* flex:0 0 100% i no width:100%: el nav hereta flex:1 de l'escriptori, que li
+     posa la base a 0, guanya al width i el deixava escanyat a 48 px al costat
+     dels botons — amb les vuit pestanyes fora de la pantalla.
+     Les vuit sumen prop de 600 px, o sigui que a 375 px van en dues fileres:
+     val més veure-les totes que no pas amagar-ne sis darrere un scroll. */
+  nav{order:3;flex:0 0 100%;flex-wrap:wrap;gap:4px}
+  nav button{padding:6px 9px;font-size:12.5px;white-space:nowrap;flex:0 0 auto}
   #status{order:1;flex:1;font-size:11px}
   .tools{order:2}
-  .tools .btn{padding:8px 10px}
+  .tools .btn{padding:7px 9px;font-size:13px}
   #status{display:none}
-  main{padding:10px}
+  main{padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
   .card{padding:11px}
   .kpi .val{font-size:20px}
   .bar input[type=search]{min-width:100%;max-width:none}
@@ -226,7 +233,9 @@ const el = (t,a={},...kids)=>{
     else if(k.startsWith("on")) n.addEventListener(k.slice(2),v);
     else n.setAttribute(k,v===true?"":v);
   }
-  for(const k of kids.flat()) if(k!=null) n.append(k.nodeType?k:document.createTextNode(k));
+  // flat(Infinity) i no flat(): amb llistes dins de llistes, un sol nivell deixava
+  // arrays sense desfer i s'escrivien com a "[object HTMLElement]".
+  for(const k of kids.flat(Infinity)) if(k!=null) n.append(k.nodeType?k:document.createTextNode(k));
   return n;
 };
 const NF = new Intl.NumberFormat("ca-ES",{minimumFractionDigits:2,maximumFractionDigits:2});
