@@ -1721,6 +1721,19 @@ function startImport(){
 }
 async function handleImportFile(file){
   try{
+    // Si el que arrossega és el fitxer de dades de l'app, no és cap extracte:
+    // llegir-lo com a tal donava 21.000 files de JSON i cap columna reconeixible.
+    if(/\.json$/i.test(file.name)){
+      let dades=null;
+      try{ dades=JSON.parse(await file.text()); }catch{}
+      if(dades && Array.isArray(dades.movements)){
+        dadesDialog(file,dades);
+        return;
+      }
+      alert("Això és un fitxer JSON, però no sembla ni un extracte ni les dades de "+
+        "Finances. Els extractes del banc són .xls, .xlsx o .csv.");
+      return;
+    }
     let rows;
     if(/\.xls[xm]?$/i.test(file.name)){
       const buf=await file.arrayBuffer();
@@ -1735,6 +1748,25 @@ async function handleImportFile(file){
     S.imp={file:file.name,rows,header:guessHeader(rows),preset:null};
     stepMap();
   }catch(e){ alert("No s'ha pogut llegir el fitxer: "+e.message); }
+}
+/** Han arrossegat un finances.json: el que volen és obrir-lo, no importar-lo. */
+function dadesDialog(file,dades){
+  const n=dades.movements.length, na=(dades.assets||[]).length;
+  const ara=S.data?S.data.movements.length:0;
+  dialog("Això són dades, no un extracte",el("div",{},
+    el("p",{},el("b",{},file.name)," conté ",NF0.format(n)," moviments i ",
+      NF0.format(na)," actius: és un fitxer de dades de Finances, no un extracte del banc."),
+    S.data?el("p",{class:"note"},"Ara tens carregats "+NF0.format(ara)+" moviments. "+
+      "Si el carregues, substituirà el que hi ha obert. No es desa res fins que premis Desar."):null,
+    el("p",{class:"note"},"Per afegir moviments nous, el que has d'arrossegar aquí és "+
+      "l'extracte que et descarregues del banc: .xls, .xlsx o .csv."),
+  ),[
+    ["Cancel·lar","btn",closeDialog],
+    ["Carregar-lo","btn primary",()=>{
+      loadData(dades); closeDialog(); render();
+      flash(NF0.format(n)+" moviments carregats");
+    }],
+  ]);
 }
 function guessHeader(rows){
   let best=0,score=-1;
