@@ -115,6 +115,17 @@ El repartiment es fa sobre els dies que **realment tenen moviments** dins del pe
 no sobre l'interval que has demanat. Si demanes 12 mesos i només en tens 3 amb dades,
 dividir per 12 mentiria. Sota la taula hi surt quin tram s'ha fet servir i quants dies són.
 
+## Afegir un moviment a mà
+
+A **Moviments**, el botó **Afegir moviment**. La data ve posada a avui i la categoria és
+la que més fas servir, o la que tinguis filtrada. Posa l'import **en negatiu si és una
+despesa**: el tipus (pagament o ingrés) se't posa sol segons el signe.
+
+Es tracten igual que els importats, o sigui que si després importes l'extracte del banc,
+el detector de duplicats el reconeixerà per data, import i concepte i no te'l repetirà.
+
+Per **editar o esborrar** qualsevol moviment, el botó ⋯ de la seva fila.
+
 ## Importar un extracte
 
 **Importar extracte** → arrossega el fitxer tal com te'l descarregues del banc.
