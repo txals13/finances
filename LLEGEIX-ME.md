@@ -340,7 +340,12 @@ Es genera sense cap llibreria externa, igual que els lectors d'extractes.
 1. Baixa't els dos extractes del banc i importa'ls.
 2. **Cartera → Valoració del mes**: la data ja ve posada al final del mes i cada actiu
    surt amb el valor anterior. Canvia només el que s'hagi mogut. Si aquell mes hi has
-   posat diners, escriu-los a *Aportació del mes*: se sumen a l'aportat de l'actiu.
+   posat diners, escriu-los a *Aportació del mes*.
+
+   Aquella columna **va amb signe**: positiva si hi poses diners, negativa si en treus o
+   si en deprecies el valor aportat. Se suma amb el seu signe, o sigui que una de negativa
+   **baixa** l'aportat de l'actiu. Al teu historial ja n'hi ha quatre, com la depreciació
+   de Wind.
 
    Per tocar **un sol actiu**, ves a **Cartera → ⋯**: allà hi ha tant l'*Aportat* com el
    *Valor actual*, amb la data a la qual es desa. Si en canvies el valor o l'aportat, la
