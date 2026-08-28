@@ -77,7 +77,10 @@ L'app també en desa una còpia al `localStorage` del navegador cada cop que car
 - **Resum** — saldo, ingressos, pagaments, estalvi i taxa d'estalvi; mitjanes, gràfics i
   taula per any.
 - **Moviments** — el llibre unificat de compte i targeta. Filtres, cerca, canvi de categoria
-  a la mateixa fila, exportació a CSV.
+  a la mateixa fila, exportació a CSV. El filtre de categories admet **triar-ne unes
+  quantes**: obre'l, cerca si en tens moltes, i marca les que vulguis. Amb el cercador
+  actiu, el botó *Totes* selecciona només les que hi surten. El que exportes a CSV és
+  sempre el que tens filtrat.
 - **Mesos** — el real de cada mes i, per als mesos que encara no han passat, la previsió editable.
 - **Real** — ingressos i despeses imputats al mes que els toca, no al del cobrament o
   del càrrec. Mira'n l'apartat de sota.

@@ -200,7 +200,8 @@ const S = {
   handle: null,        // FileSystemFileHandle si el navegador ho suporta
   dirty: false,
   tab: "resum",
-  mov: { q:"", account:"", category:"", kind:"", sort:"date", dir:-1, limit:300 },
+  mov: { q:"", account:"", cats:[], catOpen:false, catQ:"", kind:"",
+         sort:"date", dir:-1, limit:300 },
   period: { preset:"all", from:"", to:"" },
   real:   { card:"visa" },
   cartera:{ evol:"class" },
@@ -997,7 +998,7 @@ function filtered(){
   let out=S.data.movements.filter(m=>{
     if(m.date<pa || m.date>pb) return false;
     if(f.account && m.account!==f.account) return false;
-    if(f.category && m.category!==f.category) return false;
+    if(f.cats.length && !f.cats.includes(m.category)) return false;
     if(f.kind==="planned"?!m.planned:f.kind&&m.kind!==f.kind) return false;
     if(q && !((m.concept||"")+" "+m.category+" "+(m.city||"")+" "+(m.note||""))
       .toLowerCase().includes(q)) return false;
@@ -1029,11 +1030,11 @@ function renderMoviments(root){
       oninput:e=>{f.q=e.target.value;f.limit=300;renderInto();}}),
     periodBar(),
     sel(f.account,[["","Tots els comptes"],...S.data.accounts.map(a=>[a.id,a.name])],v=>set("account",v)),
-    sel(f.category,[["","Totes les categories"],...cats.map(c=>[c,c])],v=>set("category",v)),
+    filtreCategories(cats,renderInto),
     sel(f.kind,[["","Tot"],["expense","Pagaments"],["income","Ingressos"],
       ["transfer","Traspassos"],["planned","Previstos"]],v=>set("kind",v)),
     el("button",{class:"btn ghost",onclick:()=>{
-      S.mov={...S.mov,q:"",account:"",category:"",kind:"",limit:300};
+      S.mov={...S.mov,q:"",account:"",cats:[],catOpen:false,catQ:"",kind:"",limit:300};
       S.period={preset:"all",from:"",to:""}; render();}},"Netejar"),
     el("span",{style:"flex:1"}),
     el("button",{class:"btn",onclick:()=>exportCsv(all)},"Exportar CSV"),
@@ -1071,6 +1072,63 @@ function renderMoviments(root){
 function mAvg(v){
   const s=periodSpan();
   return s ? eur(v/s.days*365.25/12)+" al mes" : "del filtre actual";
+}
+let foraCat=null;   // l'escoltador que tanca el panell, per no acumular-ne
+/** Filtre de categories amb selecció múltiple. Amb prop de cinquanta,
+    una llista de xips no s'hi val: cal cercador i comptadors. */
+function filtreCategories(cats,refresca){
+  const f=S.mov;
+  const n=f.cats.length;
+  const boto=el("button",{class:"btn"+(n?" primary":""),"data-catfiltre":"1",
+    onclick:e=>{ e.stopPropagation(); f.catOpen=!f.catOpen; refresca(); }},
+    n===0?"Totes les categories":n===1?f.cats[0]:n+" categories");
+  if(!f.catOpen) return boto;
+
+  const compta=new Map();
+  for(const m of S.data.movements) compta.set(m.category,(compta.get(m.category)||0)+1);
+  const q=f.catQ.trim().toLowerCase();
+  const llista=cats.filter(c=>!q||c.toLowerCase().includes(q));
+  const marca=(c,on)=>{
+    f.cats = on ? [...f.cats,c] : f.cats.filter(x=>x!==c);
+    f.limit=300; refresca();
+  };
+  const panell=el("div",{"data-catfiltre":"1",
+      style:"position:absolute;z-index:30;top:calc(100% + 6px);left:0;"+
+      "background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);"+
+      "box-shadow:0 8px 28px rgba(0,0,0,.18);padding:10px;width:290px;max-width:86vw"},
+    el("input",{type:"search",id:"catCerca",placeholder:"Cerca una categoria…",value:f.catQ,
+      style:"width:100%;background:var(--bg);border:1px solid var(--line);"+
+        "border-radius:8px;padding:6px 9px;margin-bottom:8px",
+      oninput:e=>{ f.catQ=e.target.value; refresca();
+        const i=$("#catCerca");      // el panell es refà: cal tornar-hi el cursor
+        if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } }}),
+    el("div",{class:"bar",style:"margin:0 0 8px;gap:6px"},
+      el("button",{class:"btn ghost",onclick:()=>{ f.cats=llista.slice(); refresca(); }},
+        "Totes"+(q?" les trobades":"")),
+      el("button",{class:"btn ghost",onclick:()=>{ f.cats=[]; refresca(); }},"Cap"),
+      el("span",{style:"flex:1"}),
+      el("button",{class:"btn ghost",onclick:()=>{ f.catOpen=false; refresca(); }},"Tancar")),
+    el("div",{style:"max-height:270px;overflow:auto"},
+      llista.length?llista.map(c=>{
+        const on=f.cats.includes(c);
+        return el("label",{style:"display:flex;align-items:center;gap:8px;padding:4px 2px;"+
+          "cursor:pointer;font-size:13px;border-radius:6px"},
+          el("input",{type:"checkbox",checked:on,onchange:e=>marca(c,e.target.checked)}),
+          el("span",{style:"flex:1"},c),
+          el("span",{class:"mut num",style:"font-size:11px"},compta.get(c)||0));
+      }):el("div",{class:"mut",style:"padding:8px"},"Cap categoria amb aquest text.")),
+  );
+  // Clicar fora el tanca. Es mira si el clic ha caigut dins del filtre mirant els
+  // ascendents de l'element clicat: val també si el panell ja s'ha refet i el node
+  // que van tocar ha quedat despenjat del document, que és el que passava abans.
+  if(foraCat) document.removeEventListener("click",foraCat);   // el del refresc anterior
+  foraCat=e=>{
+    if(e.target.closest && e.target.closest("[data-catfiltre]")) return;   // a dins: res
+    document.removeEventListener("click",foraCat); foraCat=null;
+    if(S.mov.catOpen){ S.mov.catOpen=false; refresca(); }
+  };
+  setTimeout(()=>{ if(foraCat) document.addEventListener("click",foraCat); },0);
+  return el("span",{style:"position:relative;display:inline-flex"},boto,panell);
 }
 function movRow(m,cats){
   const tr=el("tr",{class:m.planned?"fut":""},
