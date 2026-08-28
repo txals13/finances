@@ -2197,6 +2197,125 @@ function accrualDialog(list){
 }
 
 /* ================================================================== *
+ *  Escriptura d'.xlsx                                                 *
+ *  Sense llibreries, com els lectors. Un xlsx és un ZIP amb uns quants *
+ *  XML; s'hi guarda sense comprimir (mètode 0), que estalvia haver     *
+ *  d'implementar deflate i els fitxers són de quatre files.            *
+ * ================================================================== */
+const CRC_T=(()=>{const t=new Uint32Array(256);
+  for(let i=0;i<256;i++){let c=i;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);t[i]=c>>>0;}
+  return t;})();
+function crc32(u8){
+  let c=0xFFFFFFFF;
+  for(let i=0;i<u8.length;i++) c=CRC_T[(c^u8[i])&0xFF]^(c>>>8);
+  return (c^0xFFFFFFFF)>>>0;
+}
+/** ZIP sense compressió a partir de {ruta: text}. */
+function zip(files){
+  const enc=new TextEncoder(), parts=[], dir=[];
+  let off=0;
+  const u16=v=>[v&255,(v>>8)&255];
+  const u32=v=>[v&255,(v>>8)&255,(v>>16)&255,(v>>24)&255];
+  for(const [nom,txt] of Object.entries(files)){
+    const dades=enc.encode(txt), nomB=enc.encode(nom), c=crc32(dades);
+    const local=[...u32(0x04034b50),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),
+      ...u32(c),...u32(dades.length),...u32(dades.length),...u16(nomB.length),...u16(0)];
+    parts.push(new Uint8Array(local),nomB,dades);
+    dir.push([...u32(0x02014b50),...u16(20),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),
+      ...u32(c),...u32(dades.length),...u32(dades.length),...u16(nomB.length),
+      ...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)],nomB);
+    off+=local.length+nomB.length+dades.length;
+  }
+  const cd=[]; let cdLen=0;
+  for(let i=0;i<dir.length;i+=2){
+    const a=new Uint8Array(dir[i]), b=dir[i+1];
+    cd.push(a,b); cdLen+=a.length+b.length;
+  }
+  const n=Object.keys(files).length;
+  cd.push(new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(n),...u16(n),
+    ...u32(cdLen),...u32(off),...u16(0)]));
+  return new Blob([...parts,...cd],
+    {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+}
+const xEsc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const colL=i=>{let s="";i++;while(i>0){const r=(i-1)%26;s=String.fromCharCode(65+r)+s;i=(i-r-1)/26;}return s;};
+/** Data → número de sèrie d'Excel. */
+const serial=iso=>Math.round((Date.parse(iso)-Date.UTC(1899,11,30))/86400000);
+
+/** files = matriu; la primera és la capçalera. Les cel·les poden ser
+    {d:"2025-01-31"} per a dates o {n:123.4} per a números. */
+function xlsxBlob(files){
+  const cells=files.map((fila,r)=>fila.map((v,c)=>{
+    const ref=colL(c)+(r+1);
+    if(v==null||v==="") return "";
+    if(typeof v==="object"&&v.d!=null) return `<c r="${ref}" s="1"><v>${serial(v.d)}</v></c>`;
+    if(typeof v==="object"&&v.n!=null) return `<c r="${ref}"><v>${v.n}</v></c>`;
+    if(typeof v==="number") return `<c r="${ref}"><v>${v}</v></c>`;
+    return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xEsc(v)}</t></is></c>`;
+  }).join(""));
+  const rows=cells.map((c,i)=>`<row r="${i+1}">${c}</row>`).join("");
+  const ncol=Math.max(...files.map(f=>f.length));
+  const dim=`A1:${colL(ncol-1)}${files.length}`;
+  return zip({
+    "[Content_Types].xml":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`+
+      `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>`+
+      `<Default Extension="xml" ContentType="application/xml"/>`+
+      `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>`+
+      `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`+
+      `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>`+
+      `</Types>`,
+    "_rels/.rels":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`+
+      `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>`+
+      `</Relationships>`,
+    "xl/workbook.xml":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+      `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" `+
+      `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`+
+      `<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    "xl/_rels/workbook.xml.rels":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`+
+      `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>`+
+      `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`+
+      `</Relationships>`,
+    "xl/styles.xml":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+      `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`+
+      `<numFmts count="1"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/></numFmts>`+
+      `<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>`+
+      `<fills count="1"><fill><patternFill patternType="none"/></fill></fills>`+
+      `<borders count="1"><border/></borders>`+
+      `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>`+
+      `<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>`+
+      `<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>`+
+      `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>`+
+      `</styleSheet>`,
+    "xl/worksheets/sheet1.xml":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+      `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`+
+      `<dimension ref="${dim}"/><sheetData>${rows}</sheetData></worksheet>`,
+  });
+}
+
+/* ---- l'export de la cartera, amb les columnes que espera l'app d'anàlisi ---- */
+const MES3=["Gen","Feb","Mar","Abr","Mai","Jun","Jul","Ago","Set","Oct","Nov","Des"];
+function exportaCartera(){
+  const A=S.data.assets;
+  if(!A.length){ alert("No hi ha cap actiu a la cartera."); return; }
+  const files=[["#","Actiu","Entitat","Comentari","Data Inici","ISIN / Ticker","Import","Últim","Balanç"]];
+  A.slice().sort((a,b)=>(a.n||0)-(b.n||0)).forEach((a,i)=>{
+    const inv=a.contributed||0, val=assetValue(a);
+    files.push([a.n||i+1, a.class||"", a.entity||"", a.name||"",
+      a.start?{d:a.start}:"", a.isin||"", {n:inv}, {n:val}, {n:+(val-inv).toFixed(2)}]);
+  });
+  const d=new Date(TODAY);
+  const nom="cartera"+String(d.getDate()).padStart(2,"0")+MES3[d.getMonth()]+d.getFullYear()+".xlsx";
+  const url=URL.createObjectURL(xlsxBlob(files));
+  const a=el("a",{href:url,download:nom});
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  flash(nom+" descarregat");
+}
+
+/* ================================================================== *
  *  Cartera                                                           *
  * ================================================================== */
 /** Últim valor conegut d'un actiu: la valoració més recent, o el camp `last`
@@ -2273,6 +2392,8 @@ function renderCartera(root){
       el("div",{class:"bar",style:"margin:0"},
         el("span",{style:"font-weight:600"},"Període:"), periodBar(),
         el("span",{style:"flex:1"}),
+        el("button",{class:"btn",style:"margin-right:8px",onclick:exportaCartera,
+          title:"Taula .xlsx per a l'app d'independència financera"},"Exportar .xlsx"),
         el("button",{class:"btn primary",onclick:valuationDialog},"Valoració del mes")),
     ),
     (()=>{const [pa,pb]=periodRange();

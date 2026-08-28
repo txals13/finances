@@ -259,6 +259,21 @@ Dues coses que se'n deriven:
   aportat que puja com més enrere vas. Per això el gràfic arrenca a la primera valoració
   que desis tu, i abans no ensenya res.
 
+## Exportar la cartera a .xlsx
+
+A **Cartera** hi ha el botó **Exportar .xlsx**. Genera la mateixa taula que fas servir a
+l'app d'independència financera, amb les columnes que espera:
+
+```
+# · Actiu · Entitat · Comentari · Data Inici · ISIN / Ticker · Import · Últim · Balanç
+```
+
+El fitxer surt anomenat com els teus, `carteraDDMmmAAAA.xlsx`, i el pots carregar
+directament a l'altra app per a l'anàlisi a fons. `Import` és l'aportat, `Últim` és
+l'última valoració de cada actiu i `Balanç` la diferència.
+
+Es genera sense cap llibreria externa, igual que els lectors d'extractes.
+
 ## La feina de cada mes
 
 1. Baixa't els dos extractes del banc i importa'ls.
