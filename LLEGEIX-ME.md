@@ -259,6 +259,19 @@ Dues coses que se'n deriven:
   aportat que puja com més enrere vas. Per això el gràfic arrenca a la primera valoració
   que desis tu, i abans no ensenya res.
 
+## Importar taules de cartera
+
+**Cartera → Importar .xlsx** admet les taules `carteraDDMmmAAAA.xlsx` que ja tens
+guardades, i **en pots deixar anar unes quantes de cop**. La data surt del nom del
+fitxer; si no s'endevina, la poses tu abans d'importar.
+
+De cada fitxer s'agafa, per a cada actiu, el **valor** i l'**aportat** d'aquell dia, i el
+total del dia passa a ser la suma. Els actius es lliguen pel seu ISIN i, si no en tenen,
+per entitat i nom; el que no coincideixi surt avisat abans de fer res.
+
+Això és la manera de **recuperar l'historial de l'aportat** que del full de càlcul no es
+podia treure: aquelles taules sí que porten l'aportat datat.
+
 ## Exportar la cartera a .xlsx
 
 A **Cartera** hi ha el botó **Exportar .xlsx**. Genera la mateixa taula que fas servir a

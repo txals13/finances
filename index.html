@@ -1407,7 +1407,11 @@ function unesc(s){ return s.replace(/&lt;/g,"<").replace(/&gt;/g,">")
 function colIdx(ref){ let n=0; for(const ch of ref.replace(/\d+/g,"")) n=n*26+(ch.charCodeAt(0)-64); return n-1; }
 function parseSheet(xml,shared){
   const out=[];
-  for(const rm of xml.match(/<row[\s\S]*?(?:\/>|<\/row>)/g)||[]){
+  // El patró d'abans era /<row[\s\S]*?(?:\/>|<\/row>)/ i s'aturava al primer "/>",
+  // que a l'Excel és una cel·la buida auto-tancada: la fila quedava tallada allà i es
+  // perdien totes les columnes següents. Ara la fila auto-tancada i la normal són
+  // dues alternatives separades, i el "/>" només compta dins de l'etiqueta <row>.
+  for(const rm of xml.match(/<row(?=[ >])[^>]*\/>|<row(?=[ >])[^>]*>[\s\S]*?<\/row>/g)||[]){
     const cells=[];
     for(const cm of rm.matchAll(/<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)){
       const attrs=cm[1], body=cm[2]||"";
@@ -2295,6 +2299,145 @@ function xlsxBlob(files){
   });
 }
 
+/* ---- Importar taules de cartera (.xlsx) ---------------------------------
+   Els fitxers carteraDDMmmAAAA.xlsx porten, per a cada actiu, l'aportat i el
+   valor d'aquell dia. Importar-ne uns quants reconstrueix l'historial sencer,
+   inclòs el de l'aportat, que del full de càlcul no es podia treure. */
+const MES_CURT={gen:1,ene:1,feb:2,mar:3,abr:4,mai:5,may:5,jun:6,jul:7,ago:8,
+  set:9,sep:9,oct:10,nov:11,des:12,dic:12};
+/** Data a partir del nom: cartera28Ago2026.xlsx → 2026-08-28. */
+function dataDelNom(nom){
+  const m=nom.match(/(\d{1,2})\s*([a-zA-ZçÇàèéíòóúÀÈÉÍÒÓÚ]{3,10})\s*(20\d\d)/);
+  if(!m) return null;
+  const mes=MES_CURT[m[2].slice(0,3).toLowerCase()];
+  if(!mes) return null;
+  return m[3]+"-"+String(mes).padStart(2,"0")+"-"+String(+m[1]).padStart(2,"0");
+}
+const norm=s=>String(s??"").toLowerCase().normalize("NFD")
+  .replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]/g," ").replace(/\s+/g," ").trim();
+/** Busca una columna per qualsevol dels noms possibles, ignorant accents. */
+function colIdxPer(cap,noms){
+  const c=cap.map(norm);
+  for(const n of noms){ const i=c.indexOf(norm(n)); if(i>=0) return i; }
+  return -1;
+}
+/** Llegeix un fitxer de cartera i el deixa a punt, sense tocar res encara. */
+async function llegeixCartera(file){
+  const buf=await file.arrayBuffer();
+  const cap4=new Uint8Array(buf,0,4);
+  const fulls=(cap4[0]===0x50&&cap4[1]===0x4B)?await readXlsx(buf):await readXls(buf);
+  const full=fulls.find(f=>f.name==="Sheet1")||fulls.sort((a,b)=>b.rows.length-a.rows.length)[0];
+  const rows=full.rows;
+  const iCap=rows.findIndex(r=>colIdxPer(r,["Actiu"])>=0 && colIdxPer(r,["Import"])>=0);
+  if(iCap<0) throw new Error("no s'hi troba la capçalera (Actiu, Import, Últim…)");
+  const cap=rows[iCap];
+  const ix={classe:colIdxPer(cap,["Actiu"]),entitat:colIdxPer(cap,["Entitat"]),
+    nom:colIdxPer(cap,["Comentari"]),isin:colIdxPer(cap,["ISIN / Ticker","ISIN","Ticker"]),
+    inici:colIdxPer(cap,["Data Inici"]),aportat:colIdxPer(cap,["Import"]),
+    valor:colIdxPer(cap,["Últim","Ultim","Valor actual"])};
+  const linies=[];
+  for(let r=iCap+1;r<rows.length;r++){
+    const f=rows[r];
+    const nom=String(f[ix.nom]??"").trim(), ent=String(f[ix.entitat]??"").trim();
+    if(!nom && !ent) continue;
+    linies.push({classe:String(f[ix.classe]??"").trim(), entitat:ent, nom,
+      isin:String(f[ix.isin]??"").trim(), inici:toDate(f[ix.inici]),
+      aportat:toNum(f[ix.aportat])??0, valor:toNum(f[ix.valor])??0});
+  }
+  return {file:file.name, date:dataDelNom(file.name), linies};
+}
+/** L'actiu de la cartera que correspon a una línia: primer per ISIN, després pel nom. */
+function trobaActiu(l){
+  if(l.isin){
+    const a=S.data.assets.find(x=>x.isin && norm(x.isin)===norm(l.isin));
+    if(a) return a;
+  }
+  return S.data.assets.find(x=>norm(x.entity)===norm(l.entitat) && norm(x.name)===norm(l.nom));
+}
+function importaCarteraDialog(){
+  const inp=el("input",{type:"file",accept:".xlsx,.xls",multiple:true,style:"display:none"});
+  const zona=el("div",{class:"drop"},
+    "Arrossega-hi les taules de cartera (.xlsx). En pots posar unes quantes de cop.",
+    el("div",{style:"margin-top:12px"},
+      el("button",{class:"btn",onclick:()=>inp.click()},"…o tria-les")));
+  const cos=el("div",{},zona,inp);
+  const processa=async llista=>{
+    const lots=[];
+    for(const f of llista){
+      try{ lots.push(await llegeixCartera(f)); }
+      catch(e){ lots.push({file:f.name,error:e.message}); }
+    }
+    closeDialog(); previewCartera(lots);
+  };
+  inp.onchange=()=>{ if(inp.files.length) processa([...inp.files]); };
+  zona.addEventListener("dragover",e=>{e.preventDefault();zona.classList.add("over");});
+  zona.addEventListener("dragleave",()=>zona.classList.remove("over"));
+  zona.addEventListener("drop",e=>{e.preventDefault();zona.classList.remove("over");
+    if(e.dataTransfer.files.length) processa([...e.dataTransfer.files]);});
+  dialog("Importar taules de cartera",cos,[["Cancel·lar","btn",closeDialog]]);
+}
+function previewCartera(lots){
+  const bons=lots.filter(l=>!l.error);
+  const dates=new Map();
+  for(const l of bons){
+    const inp=el("input",{type:"date",value:l.date||TODAY,
+      onchange:e=>{ l.date=e.target.value; }});
+    if(!l.date) l.date=TODAY;
+    dates.set(l,inp);
+  }
+  const files=lots.map(l=>{
+    if(l.error) return el("tr",{},el("td",{class:"wrap"},l.file),
+      el("td",{colspan:4,class:"neg"},l.error));
+    const cone=l.linies.filter(x=>trobaActiu(x)).length;
+    const nous=l.linies.length-cone;
+    const tot=l.linies.reduce((s,x)=>s+x.valor,0);
+    return el("tr",{},
+      el("td",{class:"wrap"},l.file),
+      el("td",{},dates.get(l)),
+      el("td",{class:"r num"},l.linies.length),
+      el("td",{class:"r num "+(nous?"neg":"mut")},nous||"—"),
+      el("td",{class:"r num"},eur0(tot)));
+  });
+  const totalNous=bons.reduce((s,l)=>s+l.linies.filter(x=>!trobaActiu(x)).length,0);
+  dialog("Importar taules de cartera",el("div",{},
+    el("p",{class:"note",style:"margin:0 0 12px"},
+      "La data surt del nom del fitxer; si no s'endevina, o no és la bona, canvia-la aquí. "+
+      "De cada fitxer s'agafa el valor i l'aportat de cada actiu, i el total del dia serà "+
+      "la suma."),
+    totalNous?el("div",{class:"warnbox"},
+      totalNous+(totalNous===1?" línia no correspon":" línies no corresponen")+
+      " a cap actiu que ja tinguis. Es crearan actius nous. Si havien de coincidir, "+
+      "revisa'n l'ISIN o el nom abans de continuar."):null,
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},el("th",{},"Fitxer"),el("th",{},"Data"),
+        el("th",{class:"r"},"Línies"),el("th",{class:"r"},"Nous"),el("th",{class:"r"},"Total"))),
+      el("tbody",{},files))),
+  ),[
+    ["Cancel·lar","btn",closeDialog],
+    [`Importar ${bons.length} ${bons.length===1?"fitxer":"fitxers"}`,"btn primary",()=>{
+      let nSnap=0,nNous=0;
+      for(const l of bons.slice().sort((a,b)=>a.date<b.date?-1:1)){
+        for(const li of l.linies){
+          let a=trobaActiu(li);
+          if(!a){
+            a={id:uid(),n:S.data.assets.length+1,class:li.classe||"Altres",
+              entity:li.entitat,name:li.nom,isin:li.isin||null,start:li.inici||l.date,
+              contributed:li.aportat,last:li.valor,include:true,wallet:null};
+            S.data.assets.push(a); nNous++;
+          }
+          if(li.inici && !a.start) a.start=li.inici;
+          a.contributed=li.aportat;          // l'aportat d'aquell dia
+          setAssetValue(a,l.date,li.valor,li.aportat);
+          nSnap++;
+        }
+        recomputeTotal(l.date,true);          // instantània completa: el total és la suma
+      }
+      markDirty(); closeDialog(); render();
+      flash(nSnap+" valoracions importades"+(nNous?" i "+nNous+" actius nous":""));
+    }],
+  ]);
+}
+
 /* ---- l'export de la cartera, amb les columnes que espera l'app d'anàlisi ---- */
 const MES3=["Gen","Feb","Mar","Abr","Mai","Jun","Jul","Ago","Set","Oct","Nov","Des"];
 function exportaCartera(){
@@ -2392,6 +2535,8 @@ function renderCartera(root){
       el("div",{class:"bar",style:"margin:0"},
         el("span",{style:"font-weight:600"},"Període:"), periodBar(),
         el("span",{style:"flex:1"}),
+        el("button",{class:"btn",style:"margin-right:8px",onclick:importaCarteraDialog,
+          title:"Carregar taules carteraDDMmmAAAA.xlsx"},"Importar .xlsx"),
         el("button",{class:"btn",style:"margin-right:8px",onclick:exportaCartera,
           title:"Taula .xlsx per a l'app d'independència financera"},"Exportar .xlsx"),
         el("button",{class:"btn primary",onclick:valuationDialog},"Valoració del mes")),
@@ -2574,12 +2719,12 @@ function ensureTotal(date){
     Si aquell dia ja en tenia un d'apuntat i no s'assemblen, es pregunta: als mesos
     antics el total venia escrit a mà i incloïa actius que no desglossaves, o sigui
     que la suma pot ser molt més baixa sense que la xifra vella fos dolenta. */
-function recomputeTotal(date){
+function recomputeTotal(date,silenci){
   const total=Math.round(S.data.assets.reduce((s,x)=>s+assetValueAt(x,date),0)*100)/100;
   const t=(S.data.portfolioTotals||[]).find(t=>t.date===date);
   if(t){
     const dif=Math.abs(t.total-total), rel=t.total?dif/t.total:0;
-    if(dif>1 && rel>0.05 && !confirm(
+    if(!silenci && dif>1 && rel>0.05 && !confirm(
       "Aquell dia hi tenies apuntat un total de "+eur(t.total)+", i la suma de les "+
       "valoracions que acabes de desar és "+eur(total)+". Si als mesos antics no "+
       "desglossaves tots els actius, la xifra vella pot ser la bona. "+
