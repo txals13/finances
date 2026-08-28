@@ -212,6 +212,7 @@ const S = {
          sort:"date", dir:-1, limit:300 },
   period: { preset:"all", from:"", to:"" },
   real:   { card:"visa" },
+  origen: null,          // d'on s'han carregat les dades
   cartera:{ evol:"class" },
   imp: null,           // estat de l'assistent d'importació
 };
@@ -285,8 +286,11 @@ function setStatus(txt){
   if(txt!==undefined){ s.textContent=txt; s.classList.remove("dirty"); return; }
   if(!S.data){ s.textContent="sense fitxer"; return; }
   const n=S.data.movements.length;
-  const ro = driveOn() ? " · Drive" : serverWrite ? "" :
-    (!S.handle&&hasFS ? " · només lectura fins al primer Desar" : "");
+  const o=S.origen?.tipus;
+  const ro = o==="drive" ? " · Drive"
+    : o==="servidor" ? " · fitxer del PC"
+    : o==="fitxer" ? " · "+(S.origen.detall||"fitxer local")
+    : (!S.handle&&hasFS ? " · només lectura fins al primer Desar" : "");
   s.textContent=(S.dirty?"● canvis sense desar · ":"")+n+" moviments"+ro;
   s.classList.toggle("dirty",S.dirty);
 }
@@ -617,6 +621,65 @@ async function driveFirstUpload(){
     render();
   }catch(e){ alert("No s'ha pogut pujar: "+e.message); }
 }
+/** El Drive guarda les versions anteriors del fitxer. Amb l'scope drive.file
+    s'hi pot arribar, perquè el fitxer l'ha creat aquesta mateixa app. */
+async function driveRevisions(){
+  if(!await driveToken()) return;
+  if(!await driveEnsure() || !D.fileId){
+    alert("Encara no hi ha cap fitxer al Drive."); return;
+  }
+  let revs=[];
+  try{
+    const r=await dget("https://www.googleapis.com/drive/v3/files/"+D.fileId+
+      "/revisions?fields=revisions(id,modifiedTime,size)&pageSize=200");
+    if(!r.ok) throw new Error("el Drive no ha volgut donar l'historial");
+    revs=((await r.json()).revisions||[]).reverse();
+  }catch(e){ alert("No s'ha pogut llegir l'historial: "+e.message); return; }
+  if(!revs.length){ alert("El Drive no en guarda cap versió anterior."); return; }
+
+  const carrega=async rev=>{
+    try{
+      const r=await dget("https://www.googleapis.com/drive/v3/files/"+D.fileId+
+        "/revisions/"+rev.id+"?alt=media");
+      if(!r.ok) throw new Error("no s'ha pogut baixar");
+      const dades=await r.json();
+      if(!Array.isArray(dades.movements)) throw new Error("no sembla un fitxer de Finances");
+      closeDialog();
+      dialog("Recuperar aquesta versió",el("div",{},
+        el("p",{},"La versió del ",el("b",{},new Date(rev.modifiedTime).toLocaleString("ca-ES")),
+          " té ",NF0.format(dades.movements.length)," moviments i ",
+          NF0.format((dades.snapshots||[]).length)," valoracions."),
+        el("p",{class:"note"},"Ara en tens "+NF0.format(S.data?.movements.length||0)+" i "+
+          NF0.format(S.data?.snapshots.length||0)+". Si la carregues, substitueix el que hi ha "+
+          "obert; no es toca el Drive fins que premis Desar."),
+      ),[
+        ["Cancel·lar","btn",closeDialog],
+        ["Carregar-la","btn primary",()=>{
+          loadData(dades); marcaOrigen("drive","versió del "+
+            new Date(rev.modifiedTime).toLocaleDateString("ca-ES"));
+          S.dirty=true; $("#bSave").disabled=false; $("#bSave").textContent="● Desar";
+          closeDialog(); render(); setStatus();
+          flash("Versió carregada — prem Desar per fixar-la");
+        }],
+      ]);
+    }catch(e){ alert("No s'ha pogut obrir aquella versió: "+e.message); }
+  };
+
+  dialog("Versions al Drive",el("div",{},
+    el("p",{class:"note",style:"margin:0 0 12px"},
+      "El Drive guarda les versions anteriors del fitxer. Tria'n una per veure què hi ha "+
+      "dins abans de carregar-la."),
+    el("div",{class:"tw",style:"max-height:52vh;overflow:auto"},el("table",{},
+      el("thead",{},el("tr",{},el("th",{},"Quan"),el("th",{class:"r"},"Mida"),el("th",{},""))),
+      el("tbody",{},revs.map((rev,i)=>el("tr",{},
+        el("td",{},new Date(rev.modifiedTime).toLocaleString("ca-ES"),
+          i===0?el("span",{class:"pill",style:"margin-left:7px"},"actual"):null),
+        el("td",{class:"r num mut"},rev.size?NF0.format(Math.round(rev.size/1024))+" KB":""),
+        el("td",{class:"r"},el("button",{class:"btn ghost",onclick:()=>carrega(rev)},"Mirar-la")),
+      )))),
+    ),
+  ),[["Tancar","btn",closeDialog]]);
+}
 function driveDialog(){
   const con=driveOn(), org=driveOriginOK();
   dialog("Google Drive",el("div",{},
@@ -633,6 +696,7 @@ function driveDialog(){
       new Date(D.modified).toLocaleString("ca-ES")):null,
   ),[
     con?["Desconnectar","btn",()=>{ clearTok(); closeDialog(); render(); setStatus(); }]:null,
+    con?["Versions anteriors","btn",async()=>{ await driveRevisions(); }]:null,
     con?["Pujar-hi el que tinc ara","btn",async()=>{ closeDialog(); await driveFirstUpload(); }]:null,
     !con&&org.ok?["Connectar","btn primary",async()=>{
       closeDialog();
@@ -3774,33 +3838,70 @@ if("serviceWorker" in navigator && location.protocol!=="file:"){
   addEventListener("load",()=>navigator.serviceWorker
     .register("./sw.js",{scope:"./",updateViaCache:"none"}).catch(()=>{}));
 }
+/* D'on han sortit les dades que tens a la pantalla. Abans no es deia enlloc, i
+   això amagava el problema: si tenies un fitxer local recordat, l'app el carregava
+   i ni mirava el Drive, o sigui que sempre veies la mateixa versió antiga. */
+function marcaOrigen(tipus,detall){ S.origen={tipus,detall,quan:new Date()}; }
+
 (async function boot(){
   pintaOcult();
   try{ const t=localStorage.getItem("finances:theme");
     if(t) document.documentElement.setAttribute("data-theme",t); }catch{}
   // Llegir la còpia ABANS de carregar el fitxer: carregar-lo la sobreescriu.
   const pendent=readBackup();
-  if(hasFS){
+  await checkServer();
+  loadTok();
+
+  // 1) El Drive mana sempre: si hi tens les dades, són la versió bona.
+  if(D.fileId || driveOn()){
+    if(driveOn()){
+      try{
+        if(await driveLoad()) marcaOrigen("drive");
+      }catch(e){ console.warn("Drive:",e); }
+    }
+    if(!S.data){
+      // Hi ha dades al Drive però ara no s'hi pot arribar. Abans es carregava el
+      // fitxer local en silenci i acabaves editant una còpia vella sense saber-ho.
+      render(); setStatus();
+      dialog("Les teves dades són al Drive",el("div",{},
+        el("p",{},"La sessió de Google ha caducat, o no s'hi ha pogut connectar."),
+        el("p",{class:"note"},"No es carrega res d'enlloc més per no deixar-te editant "+
+          "una còpia antiga sense adonar-te'n."),
+      ),[
+        ["Obrir un fitxer local","btn",()=>{ closeDialog(); openFile(); }],
+        ["Connectar-me al Drive","btn primary",async()=>{
+          closeDialog();
+          if(await driveLogin()){
+            try{ if(await driveLoad()) marcaOrigen("drive"); }
+            catch(e){ alert("No s'hi ha pogut llegir: "+e.message); }
+            render(); setStatus();
+          }
+        }],
+      ]);
+      return;
+    }
+  }
+
+  // 2) Sense Drive: el fitxer que tinguessis obert, i si no el del costat.
+  if(!S.data && hasFS){
     const h=await idb.get("handle").catch(()=>null);
     if(h){
       try{
         const perm=await h.queryPermission({mode:"readwrite"});
-        if(perm==="granted"){ S.handle=h; await loadFromHandle(h); return; }
-        S.handle=h;
-        $("#bOpen").textContent="Reobrir "+h.name;
-        $("#bOpen").onclick=async()=>{
-          if(await h.requestPermission({mode:"readwrite"})==="granted") await loadFromHandle(h);
-          else openFile();
-        };
+        if(perm==="granted"){ S.handle=h; await loadFromHandle(h); marcaOrigen("fitxer",h.name); }
+        else{
+          S.handle=h;
+          $("#bOpen").textContent="Reobrir "+h.name;
+          $("#bOpen").onclick=async()=>{
+            if(await h.requestPermission({mode:"readwrite"})==="granted"){
+              await loadFromHandle(h); marcaOrigen("fitxer",h.name); render(); setStatus();
+            } else openFile();
+          };
+        }
       }catch{}
     }
   }
-  await checkServer();
-  loadTok();
-  if(driveOn()){
-    try{ await driveLoad(); }catch(e){ console.warn("Drive:",e); }
-  }
-  if(!S.data) await autoLoad();
+  if(!S.data && await autoLoad()) marcaOrigen(serverWrite?"servidor":"fitxer","finances.json");
   render(); setStatus();
   offerBackup(pendent);
 })();

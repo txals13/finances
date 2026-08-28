@@ -55,6 +55,25 @@ amagats i el PC no. El botó es queda encès mentre ho està.
 que si no els fitxers no servirien de res. I mentre està actiu, les caselles de previsió de
 la pestanya Mesos no es poden editar — no té sentit teclejar xifres que no veus.
 
+## D'on surten les dades
+
+A dalt, al costat del nombre de moviments, hi diu sempre d'on s'han carregat: **Drive**,
+**fitxer del PC** o el nom del fitxer que hagis obert. Si no és el que esperaves, ja ho
+saps abans de posar-t'hi a treballar.
+
+L'ordre és: **el Drive mana**. Si hi tens les dades i la sessió ha caducat, l'app **no
+carrega res d'enlloc més**: t'ho diu i et deixa triar entre reconnectar-t'hi o obrir un
+fitxer local. Abans carregava el fitxer del PC en silenci i acabaves editant una còpia
+antiga sense saber-ho.
+
+## Recuperar una versió anterior
+
+**Drive → Versions anteriors.** El Drive en guarda l'historial i l'app el llegeix: tries
+una versió per la data, et diu quants moviments i valoracions té, i si et convenç la
+carregues. No es toca el Drive fins que premis Desar.
+
+I si treballes amb el `servir.cmd`, cada desada deixa una còpia datada a `copies/`.
+
 ## Veure vs desar
 
 Són dues coses diferents:
