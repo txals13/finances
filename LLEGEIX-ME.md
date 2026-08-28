@@ -42,6 +42,19 @@ la manera segura és una VPN entre els teus dispositius (Tailscale o similar), n
 > i els canvis es descarreguen a la carpeta de baixades en comptes de desar-se. Per això
 > hi ha el `servir.cmd`.
 
+## Amagar els imports
+
+El botó **•••** de dalt a la dreta amaga tots els imports de la pantalla: KPIs, taules,
+eixos dels gràfics, tot. Serveix per obrir l'app en un lloc on et poden llegir per sobre
+l'espatlla, sobretot al mòbil.
+
+Queda desat en aquell aparell, o sigui que el mòbil pot anar sempre amb els imports
+amagats i el PC no. El botó es queda encès mentre ho està.
+
+**El que exportes no s'amaga mai**: el CSV i l'`.xlsx` porten sempre les xifres de veritat,
+que si no els fitxers no servirien de res. I mentre està actiu, les caselles de previsió de
+la pestanya Mesos no es poden editar — no té sentit teclejar xifres que no veus.
+
 ## Veure vs desar
 
 Són dues coses diferents:

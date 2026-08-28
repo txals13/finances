@@ -173,6 +173,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <button class="btn" id="bImport" title="Importar un extracte del banc">Importar</button>
     <button class="btn primary" id="bSave" disabled>Desar</button>
     <button class="btn" id="bDrive" title="Google Drive">Drive</button>
+    <button class="btn ghost" id="bHide" title="Amagar els imports">•••</button>
     <button class="btn ghost" id="bTheme" title="Tema">◐</button>
   </div>
 </header>
@@ -240,8 +241,15 @@ const el = (t,a={},...kids)=>{
 };
 const NF = new Intl.NumberFormat("ca-ES",{minimumFractionDigits:2,maximumFractionDigits:2});
 const NF0= new Intl.NumberFormat("ca-ES",{maximumFractionDigits:0});
-const eur  = v => (v==null||isNaN(v)) ? "—" : NF.format(v)+" €";
-const eur0 = v => (v==null||isNaN(v)) ? "—" : NF0.format(v)+" €";
+/* Mode discret: amaga els imports de la pantalla. És una preferència d'aquest
+   aparell, no de les dades, així que va al navegador i no al fitxer. El que
+   exportes (CSV, xlsx) no es toca mai: si l'amagués, el fitxer seria inútil. */
+let ocult = (()=>{ try{ return localStorage.getItem("finances:ocult")==="1"; }catch{ return false; } })();
+const MASCARA = "•••";
+const eurRaw  = v => (v==null||isNaN(v)) ? "—" : NF.format(v)+" €";
+const eur0Raw = v => (v==null||isNaN(v)) ? "—" : NF0.format(v)+" €";
+const eur  = v => ocult ? ((v==null||isNaN(v))?"—":MASCARA) : eurRaw(v);
+const eur0 = v => ocult ? ((v==null||isNaN(v))?"—":MASCARA) : eur0Raw(v);
 const pct  = v => (v==null||!isFinite(v)) ? "—" : (v*100).toFixed(1).replace(".",",")+" %";
 const MESOS = ["gen","feb","mar","abr","mai","jun","jul","ago","set","oct","nov","des"];
 const mLabel = k => MESOS[+k.slice(5,7)-1] + " " + k.slice(2,4);
@@ -1293,9 +1301,13 @@ function renderMesos(root){
   const rows=totes.filter(r=>r.month>=pa.slice(0,7)&&r.month<=pb.slice(0,7));
   const rowsUi=rows.map(r=>{
     const mo=S.data.months.find(x=>x.month===r.month);
-    const inp=(val,on)=>el("input",{type:"number",step:"50",value:val??"",placeholder:"—",
-      style:"text-align:right",onchange:e=>{on(e.target.value===""?null:+e.target.value);
-        markDirty(); render();}});
+    // Amb el mode discret actiu, les caselles de previsió ensenyarien la xifra
+    // dins d'una taula tota emmascarada: es mostren com la resta i prou.
+    const inp=(val,on)=>ocult
+      ? el("span",{class:"num mut"},val==null?"":eur(val))
+      : el("input",{type:"number",step:"50",value:val??"",placeholder:"—",
+          style:"text-align:right",onchange:e=>{on(e.target.value===""?null:+e.target.value);
+            markDirty(); render();}});
     const ensure=()=>{ let m=S.data.months.find(x=>x.month===r.month);
       if(!m) S.data.months.push(m={month:r.month,investment:0,forecastExpense:null,
         forecastInvestment:null,note:""}); return m; };
@@ -3729,6 +3741,17 @@ $("#bSave").onclick=save;
 $("#bImport").onclick=startImport;
 $("#dlgX").onclick=closeDialog;
 $("#bDrive").onclick=driveDialog;
+$("#bHide").onclick=()=>{
+  ocult=!ocult;
+  try{ localStorage.setItem("finances:ocult",ocult?"1":"0"); }catch{}
+  pintaOcult(); render();
+};
+function pintaOcult(){
+  const b=$("#bHide");
+  b.classList.toggle("primary",ocult);
+  b.classList.toggle("ghost",!ocult);
+  b.title=ocult?"Tornar a mostrar els imports":"Amagar els imports";
+}
 $("#bTheme").onclick=()=>{
   const cur=document.documentElement.getAttribute("data-theme");
   const nxt=cur==="dark"?"light":cur==="light"?null:"dark";
@@ -3752,6 +3775,7 @@ if("serviceWorker" in navigator && location.protocol!=="file:"){
     .register("./sw.js",{scope:"./",updateViaCache:"none"}).catch(()=>{}));
 }
 (async function boot(){
+  pintaOcult();
   try{ const t=localStorage.getItem("finances:theme");
     if(t) document.documentElement.setAttribute("data-theme",t); }catch{}
   // Llegir la còpia ABANS de carregar el fitxer: carregar-lo la sobreescriu.
