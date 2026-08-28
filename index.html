@@ -1190,8 +1190,54 @@ function exportCsv(rows){
 /* ================================================================== *
  *  Pestanya: Mesos                                                   *
  * ================================================================== */
+/** Totals i mitjanes de cada columna. Les mitjanes es reparteixen entre els mesos
+    que compten per a cada cosa: els reals, entre els que tenen moviments; els
+    previstos, entre els que tenen previsió. Dividir-ho tot pel mateix nombre de
+    mesos rebaixaria les xifres sense motiu. */
+function peuMesos(rows){
+  if(!rows.length) return null;
+  const reals=rows.filter(r=>r.nMov);
+  const ambPrev=k=>rows.filter(r=>r[k]);
+  const suma=(llista,k)=>llista.reduce((a,r)=>a+(r[k]||0),0);
+  const T={income:suma(reals,"income"),expense:suma(reals,"expense"),
+    invest:suma(reals,"invest"),saving:suma(reals,"saving"),surplus:suma(reals,"surplus"),
+    fExpense:suma(rows,"fExpense"),fInvest:suma(rows,"fInvest"),fIncome:suma(rows,"fIncome"),
+    mov:suma(reals,"nMov")};
+  const n=reals.length||1;
+  const saldos=reals.filter(r=>r.lastBalance!=null);
+  const mitjaSaldo=saldos.length?saldos.reduce((a,r)=>a+r.lastBalance,0)/saldos.length:null;
+  const mitjaPrev=k=>{ const l=ambPrev(k); return l.length?T[k]/l.length:null; };
+  const cel=(v,cls)=>el("td",{class:"r num "+(cls||"")},v==null?"":v);
+  return el("tfoot",{},
+    el("tr",{class:"tot"},
+      el("td",{},"Total"),
+      cel(NF0.format(T.mov)),
+      cel(eur(T.income),"pos"), cel(eur(T.expense),"neg"), cel(eur(T.invest),"invc"),
+      cel(eur(T.saving),sgn(T.saving)),
+      cel(pct(T.income?T.saving/T.income:null)),
+      cel(eur(T.surplus),sgn(T.surplus)),
+      cel(""),
+      cel(T.fExpense?eur(T.fExpense):"","mut"),
+      cel(T.fInvest?eur(T.fInvest):"","mut"),
+      cel(T.fIncome?eur(T.fIncome):"","mut")),
+    el("tr",{class:"tot"},
+      el("td",{},"Mitjana",el("div",{class:"mut",style:"font-size:11px;font-weight:400"},
+        "de "+n+(n===1?" mes":" mesos"))),
+      cel(NF0.format(Math.round(T.mov/n))),
+      cel(eur(T.income/n),"pos"), cel(eur(T.expense/n),"neg"), cel(eur(T.invest/n),"invc"),
+      cel(eur(T.saving/n),sgn(T.saving)),
+      cel(pct(T.income?T.saving/T.income:null)),
+      cel(eur(T.surplus/n),sgn(T.surplus)),
+      cel(mitjaSaldo!=null?eur(mitjaSaldo):"","mut"),
+      cel(mitjaPrev("fExpense")!=null?eur(mitjaPrev("fExpense")):"","mut"),
+      cel(mitjaPrev("fInvest")!=null?eur(mitjaPrev("fInvest")):"","mut"),
+      cel(mitjaPrev("fIncome")!=null?eur(mitjaPrev("fIncome")):"","mut")),
+  );
+}
 function renderMesos(root){
-  const rows=derive();
+  const [pa,pb]=periodRange();
+  const totes=derive();
+  const rows=totes.filter(r=>r.month>=pa.slice(0,7)&&r.month<=pb.slice(0,7));
   const rowsUi=rows.map(r=>{
     const mo=S.data.months.find(x=>x.month===r.month);
     const inp=(val,on)=>el("input",{type:"number",step:"50",value:val??"",placeholder:"—",
@@ -1221,6 +1267,12 @@ function renderMesos(root){
 
   root.replaceChildren(
     el("div",{class:"card"},
+      el("div",{class:"bar",style:"margin:0"},
+        el("span",{style:"font-weight:600"},"Període:"), periodBar(),
+        el("span",{class:"mut",style:"font-size:12px"},
+          rows.length+(rows.length===1?" mes":" mesos"))),
+    ),
+    el("div",{class:"card"},
       el("h2",{},"Real per mes i previsió"),
       el("p",{class:"note",style:"margin-bottom:12px"},
         "Les xifres de l'esquerra surten dels moviments reals. Les dues columnes editables són la "+
@@ -1231,7 +1283,8 @@ function renderMesos(root){
           ["Mes","Mov.","Ingressos","Pagaments","Inversió","Estalvi","% estalvi","Sobrant","Saldo final",
            "Desp. prevista","Inv. prevista","Ingr. previstos"]
           .map((h,i)=>el("th",{class:i?"r":""},h)))),
-        el("tbody",{},rowsUi))),
+        el("tbody",{},rowsUi),
+        peuMesos(rows))),
     ),
     card("Real vs previsió per any",
       barChart(years,[

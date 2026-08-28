@@ -81,7 +81,9 @@ L'app també en desa una còpia al `localStorage` del navegador cada cop que car
   quantes**: obre'l, cerca si en tens moltes, i marca les que vulguis. Amb el cercador
   actiu, el botó *Totes* selecciona només les que hi surten. El que exportes a CSV és
   sempre el que tens filtrat.
-- **Mesos** — el real de cada mes i, per als mesos que encara no han passat, la previsió editable.
+- **Mesos** — el real de cada mes i, per als mesos que encara no han passat, la previsió
+  editable. Té el mateix selector de període que la resta, i al peu de la taula hi ha el
+  **total i la mitjana de cada columna**.
 - **Real** — ingressos i despeses imputats al mes que els toca, no al del cobrament o
   del càrrec. Mira'n l'apartat de sota.
 - **Cartera** — valor, aportat i balanç; evolució en el temps, repartiment per classe i
@@ -97,7 +99,7 @@ L'app també en desa una còpia al `localStorage` del navegador cada cop que car
 
 ## Període
 
-A **Resum** i a **Moviments** hi ha el mateix selector de període, i els dos comparteixen
+A **Resum**, **Moviments**, **Mesos** i **Cartera** hi ha el mateix selector de període, i els dos comparteixen
 el que hi triïs: aquest mes, últims 3 / 6 / 12 mesos, aquest any, l'any passat, tot
 l'històric, o **dates concretes** amb dos calendaris.
 
