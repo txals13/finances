@@ -930,12 +930,12 @@ function barChart(rows,series,{h=210,fmt=eur0}={}){
       const v=q.get(r)||0, Y=y(v), x=P.l+i*bw+(bw-gw)/2+j*sw;
       const rect=sv("rect",{x,y:Math.min(Y,zero),width:Math.max(1,sw-1.5),
         height:Math.max(1,Math.abs(Y-zero)),fill:q.color,opacity:q.faint?.42:.9,rx:1.5});
-      s.append(tip(rect,`${r.month||r.year} · ${q.label}: ${fmt(v)}`));
+      s.append(tip(rect,`${r.label||r.month||r.year} · ${q.label}: ${fmt(v)}`));
     });
     const step=Math.ceil(rows.length/16);
     if(i%step===0||i===rows.length-1){
       const t=sv("text",{x:P.l+i*bw+bw/2,y:h-6,"text-anchor":"middle"});
-      t.textContent=r.month?mLabel(r.month):r.year; s.append(t);
+      t.textContent=r.label||(r.month?mLabel(r.month):r.year); s.append(t);
     }
   });
   return s;
@@ -2639,6 +2639,13 @@ function previewCartera(lots){
       el("td",{class:"r num"},eur0(tot)));
   });
   const totalNous=bons.reduce((s,l)=>s+l.linies.filter(x=>!trobaActiu(x)).length,0);
+  // Actius que tens i que el fitxer no menciona. No es toquen: es queden amb
+  // l'últim valor conegut i el total del dia els segueix comptant. Si n'has
+  // venut un i l'has tret del full, el total quedaria inflat sense avisar.
+  const ultim=bons.length?bons.slice().sort((a,b)=>a.date<b.date?-1:1).at(-1):null;
+  const absents=ultim
+    ? S.data.assets.filter(a=>!ultim.linies.some(li=>trobaActiu(li)===a))
+    : [];
   dialog("Importar taules de cartera",el("div",{},
     el("p",{class:"note",style:"margin:0 0 12px"},
       "La data surt del nom del fitxer; si no s'endevina, o no és la bona, canvia-la aquí. "+
@@ -2648,6 +2655,12 @@ function previewCartera(lots){
       totalNous+(totalNous===1?" línia no correspon":" línies no corresponen")+
       " a cap actiu que ja tinguis. Es crearan actius nous. Si havien de coincidir, "+
       "revisa'n l'ISIN o el nom abans de continuar."):null,
+    absents.length?el("div",{class:"warnbox"},
+      "El fitxer no diu res de "+absents.map(a=>a.entity+" "+a.name).join(", ")+". "+
+      (absents.length===1?"Aquest actiu es queda":"Aquests actius es queden")+
+      " amb l'últim valor que en sabies ("+eur0(absents.reduce((t,a)=>t+assetValue(a),0))+
+      " en total), i el total del dia els seguirà comptant. Si ja no els tens, "+
+      "posa'ls a 0 al full o esborra'ls de la cartera."):null,
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},el("th",{},"Fitxer"),el("th",{},"Data"),
         el("th",{class:"r"},"Línies"),el("th",{class:"r"},"Nous"),el("th",{class:"r"},"Total"))),
@@ -2718,6 +2731,26 @@ function assetStats(a){
     years,
     cagr: (inv>0 && value>0 && years>0.08) ? Math.pow(value/inv,1/years)-1 : null };
 }
+/** Etiquetes per a una sèrie de valoracions. Les valoracions es desen amb data
+    sencera, no per mes: importar una cartera n'afegeix una del dia que sigui.
+    Si en un mes n'hi ha més d'una i totes s'etiqueten "ago 26", el gràfic surt
+    amb tres punts indistingibles i sembla trencat. Quan passa, aquell mes porta
+    el dia al davant. */
+function dateLabels(dates){
+  const n=new Map();
+  for(const d of dates){ const m=d.slice(0,7); n.set(m,(n.get(m)||0)+1); }
+  return dates.map(d=>n.get(d.slice(0,7))>1
+    ? (+d.slice(8,10))+" "+MESOS[+d.slice(5,7)-1]
+    : mLabel(d.slice(0,7)));
+}
+/** Una valoració per mes: l'última de cada mes. El que es presenta com a
+    mensual ho ha de ser: si no, dues valoracions del mateix agost compten com
+    dos mesos i la variació entre elles, de tres dies, es llegeix com la del mes. */
+function monthlySeries(){
+  const m=new Map();
+  for(const p of portfolioSeries()) m.set(p.date.slice(0,7),p);
+  return [...m.values()];
+}
 function portfolioSeries(){
   const byDate=new Map();
   for(const t of (S.data.portfolioTotals||[])) byDate.set(t.date,t.total);
@@ -2763,7 +2796,9 @@ function renderCartera(root){
       kpi("Aportat",eur(inv),A.length+" actius"),
       kpi("Balanç",eur(value-inv),pct(inv?(value-inv)/inv:null),sgn(value-inv)),
       kpi("Balanç sense els il·líquids",eur(lVal-lInv),pct(lInv?(lVal-lInv)/lInv:null),sgn(lVal-lInv)),
-      kpi("Valoracions",NF0.format(new Set(S.data.snapshots.map(s=>s.date)).size),"mesos registrats"),
+      (()=>{const nd=new Set(S.data.snapshots.map(s=>s.date)).size;
+        const nm=new Set(S.data.snapshots.map(s=>s.date.slice(0,7))).size;
+        return kpi("Valoracions",NF0.format(nd),nm===nd?"mesos registrats":nm+" mesos registrats");})(),
     ),
     zero.length ? el("div",{class:"warnbox"},
       zero.map(a=>a.entity+" "+a.name).join(" i ")+
@@ -2786,7 +2821,8 @@ function renderCartera(root){
       const p0=f[0],p1=f.at(-1);
       return el("div",{class:"card"},
         el("h2",{},"Evolució del valor total"),
-        lineChart(f.map(p=>({k:mLabel(p.date.slice(0,7)),v:p.total})),{color:"var(--inv)"}),
+        (()=>{const et=dateLabels(f.map(p=>p.date));
+          return lineChart(f.map((p,i)=>({k:et[i],v:p.total})),{color:"var(--inv)"});})(),
         p0&&p1&&f.length>1?el("p",{class:"note"},
           "De "+dCa(p0.date)+" a "+dCa(p1.date)+": "+eur0(p0.total)+" → "+eur0(p1.total)+
           " ("+(p1.total>=p0.total?"+":"")+eur0(p1.total-p0.total)+", "+
@@ -2913,17 +2949,20 @@ function assetCostAt(a,date){
     if(x.assetId===a.id && x.date>base.date && x.date<=date) c+=x.amount;
   return c;
 }
-/** Aportat de tota la cartera en una data, o null si encara no n'hi havia registre. */
+/** Aportat de tota la cartera en una data. Només val si el sabem de TOTS els
+    actius: sumar-ne uns quants dona una xifra que no es pot comparar amb la
+    d'una altra data. Passava al 28/08/2026, on Hospitality i Renovables encara
+    no tenien valoració: l'aportat sortia 128.972 € en comptes de 197.798 € i el
+    balanç feia un salt de 68.826 € que no havia passat mai. */
 function portfolioCostAt(date){
-  const amb=S.data.assets.map(a=>assetCostAt(a,date)).filter(v=>v!=null);
-  return amb.length?amb.reduce((s,v)=>s+v,0):null;
+  const c=S.data.assets.map(a=>assetCostAt(a,date));
+  return c.length && !c.some(v=>v==null) ? c.reduce((s,v)=>s+v,0) : null;
 }
-/** La primera data en què tenim l'aportat desat de debò, no reconstruït. */
+/** La primera data en què tenim l'aportat de tota la cartera, no d'uns quants. */
 function firstCostDate(){
-  let d=null;
-  for(const s of S.data.snapshots)
-    if(s.cost!=null && (!d||s.date<d)) d=s.date;
-  return d;
+  for(const d of [...new Set(S.data.snapshots.map(s=>s.date))].sort())
+    if(portfolioCostAt(d)!=null) return d;
+  return null;
 }
 /** Valor d'un actiu tal com era en una data: l'última valoració que no la sobrepassa. */
 function assetValueAt(a,date){
@@ -3054,11 +3093,11 @@ function areaChart(dates,series,{h=230,fmt=eur0}={}){
     const path=sv("path",{d,fill:q.color,opacity:.85,stroke:"var(--panel)","stroke-width":.5});
     s.append(tip(path,q.label));
   }
-  const step=Math.ceil(dates.length/12);
+  const step=Math.ceil(dates.length/12), et=dateLabels(dates);
   dates.forEach((d,i)=>{
     if(i%step===0||i===dates.length-1){
       const t=sv("text",{x:x(i),y:h-6,"text-anchor":"middle"});
-      t.textContent=mLabel(d.slice(0,7)); s.append(t);
+      t.textContent=et[i]; s.append(t);
     }
   });
   return s;
@@ -3179,16 +3218,16 @@ function renderValorAportat(){
         "reconstruir enrere sense inventar-se-la. A partir de la propera valoració que "+
         "desis, cada punt es guardarà amb l'aportat d'aquell moment i aquest gràfic "+
         "es començarà a omplir.")));
-  const dates=snapshotDates().filter(d=>d>=fcd);
+  const dates=snapshotDates().filter(d=>d>=fcd && portfolioCostAt(d)!=null);
   if(dates.length<2) return el("div",{class:"card"},
     el("h2",{},"El que hi has posat contra el que val"),
     el("div",{class:"empty"},
       el("p",{},"Hi ha un punt amb l'aportat desat, del "+dCa(fcd)+"."),
       el("p",{class:"note"},"A la propera valoració ja hi haurà línia.")));
   const valor=dates.map(valorA);
-  const cost =dates.map(d=>portfolioCostAt(d)??0);
+  const cost =dates.map(d=>portfolioCostAt(d));
   const balanc=dates.map((_,i)=>valor[i]-cost[i]);
-  const labels=dates.map(d=>mLabel(d.slice(0,7)));
+  const labels=dateLabels(dates);
   const i0=0;
   return el("div",{class:"card"},
     el("h2",{},"El que hi has posat contra el que val"),
@@ -3200,7 +3239,7 @@ function renderValorAportat(){
       el("span",{},el("i",{style:"background:var(--inv)"}),"Valor de la cartera"),
       el("span",{},el("i",{style:"background:var(--muted)"}),"Diners aportats")),
     el("h2",{style:"margin-top:20px"},"Balanç"),
-    barChart(dates.map((d,i)=>({month:d.slice(0,7),v:balanc[i]})),
+    barChart(dates.map((d,i)=>({month:d.slice(0,7),label:labels[i],v:balanc[i]})),
       [{label:"Balanç",color:"var(--pos)",get:r=>r.v}],{h:150}),
     el("p",{class:"note"},
       "Avui: "+eur0(valor.at(-1))+" de valor sobre "+eur0(cost.at(-1))+" aportats, "+
@@ -3216,7 +3255,7 @@ function renderMatriu(){
   const A=S.data.assets.filter(a=>S.data.snapshots.some(s=>s.assetId===a.id));
   const rec=new Map((S.data.portfolioTotals||[]).map(t=>[t.date,t.total]));
   return el("div",{class:"card"},
-    el("h2",{},"Valoracions mes a mes"),
+    el("h2",{},"Valoracions"),
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},el("th",{},"Data"),
         A.map(a=>el("th",{class:"r"},a.name)),
@@ -3243,8 +3282,10 @@ function renderMatriu(){
             cost==null?"·":eur0(total-cost)));
       })),
     )),
-    el("p",{class:"note"},"Un punt vol dir que aquell mes no en vas registrar el valor; "+
-      "al total s'hi compta l'últim que en sabies."),
+    el("p",{class:"note"},"Una fila per valoració desada, amb la seva data: d'un mateix mes "+
+      "n'hi pot haver més d'una, i la variació és contra la valoració anterior, no contra el "+
+      "mes anterior. Un punt vol dir que aquell dia no en vas registrar el valor; al total "+
+      "s'hi compta l'últim que en sabies."),
   );
 }
 
@@ -3264,7 +3305,7 @@ function renderRendiment(root){
     (Math.max(0,Math.min(cagr,0.12))/0.12)*70 + (Math.max(0,Math.min(ret,0.40))/0.40)*30);
   const nota=score==null?"—":score>=75?"Fort":score>=50?"Bo":score>0?"Fluix":"Revisar";
 
-  const series=portfolioSeries();
+  const series=monthlySeries();
   const monthly=series.map((p,i)=>({month:p.date.slice(0,7),
     pct:i? (series[i-1].total? (p.total-series[i-1].total)/series[i-1].total : 0) : 0,
     eur:i? p.total-series[i-1].total : 0})).slice(1);
