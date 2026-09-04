@@ -222,6 +222,7 @@ const S = {
   dirty: false,
   tab: "resum",
   mov: { q:"", account:"", cats:[], catOpen:false, catQ:"", kind:"",
+         tags:[], tagOpen:false, tagQ:"",
          sort:"date", dir:-1, limit:300 },
   period: { preset:"all", from:"", to:"" },
   real:   { card:"visa" },
@@ -1121,14 +1122,16 @@ function filtered(){
     if(m.date<pa || m.date>pb) return false;
     if(f.account && m.account!==f.account) return false;
     if(f.cats.length && !f.cats.includes(m.category)) return false;
+    if(f.tags.length && !(m.tags||[]).some(t=>f.tags.includes(t))) return false;
     if(f.kind==="planned"?!m.planned:f.kind&&m.kind!==f.kind) return false;
-    if(q && !((m.concept||"")+" "+m.category+" "+(m.city||"")+" "+(m.note||""))
-      .toLowerCase().includes(q)) return false;
+    if(q && !((m.concept||"")+" "+m.category+" "+(m.city||"")+" "+(m.note||"")+
+      " "+(m.tags||[]).join(" ")).toLowerCase().includes(q)) return false;
     return true;
   });
   const k=f.sort;
   out.sort((a,b)=>{
     let r = k==="amount" ? a.amount-b.amount
+          : k==="tag" ? (a.tags||[]).join(" ").localeCompare((b.tags||[]).join(" "))
           : k==="category" ? a.category.localeCompare(b.category)
           : k==="concept" ? (a.concept||"").localeCompare(b.concept||"")
           : a.date<b.date?-1:a.date>b.date?1:0;
@@ -1137,7 +1140,7 @@ function filtered(){
   return out;
 }
 function renderMoviments(root){
-  const cats=totesCats();
+  const cats=totesCats(), tags=totesTags();
   const f=S.mov, all=filtered(), show=all.slice(0,f.limit);
   const real=all.filter(m=>!m.planned), flow=real.filter(m=>m.kind!=="transfer");
   const inc=flow.filter(m=>m.amount>0).reduce((a,m)=>a+m.amount,0);
@@ -1153,10 +1156,12 @@ function renderMoviments(root){
     periodBar(),
     sel(f.account,[["","Tots els comptes"],...S.data.accounts.map(a=>[a.id,a.name])],v=>set("account",v)),
     filtreCategories(cats,renderInto),
+    tags.length?filtreEtiquetes(tags,renderInto):null,
     sel(f.kind,[["","Tot"],["expense","Pagaments"],["income","Ingressos"],
       ["transfer","Traspassos"],["planned","Previstos"]],v=>set("kind",v)),
     el("button",{class:"btn ghost",onclick:()=>{
-      S.mov={...S.mov,q:"",account:"",cats:[],catOpen:false,catQ:"",kind:"",limit:300};
+      S.mov={...S.mov,q:"",account:"",cats:[],catOpen:false,catQ:"",kind:"",
+        tags:[],tagOpen:false,tagQ:"",limit:300};
       S.period={preset:"all",from:"",to:""}; render();}},"Netejar"),
     el("span",{style:"flex:1"}),
     el("button",{class:"btn primary",onclick:()=>movDialog()},"Afegir moviment"),
@@ -1169,8 +1174,9 @@ function renderMoviments(root){
 
   const tbl=el("table",{},
     el("thead",{},el("tr",{},th("Data","date"),el("th",{},"Compte"),th("Concepte","concept"),
-      th("Categoria","category"),th("Import","amount",1),el("th",{class:"r"},"Saldo"),el("th",{},""))),
-    el("tbody",{},show.map(m=>movRow(m,cats))));
+      th("Categoria","category"),th("Etiqueta","tag"),
+      th("Import","amount",1),el("th",{class:"r"},"Saldo"),el("th",{},""))),
+    el("tbody",{},show.map(m=>movRow(m,cats,tags))));
 
   posa(root,
     el("div",{class:"grid kpis",style:"margin-bottom:14px"},
@@ -1199,47 +1205,48 @@ function mAvg(v){
 let foraCat=null;   // l'escoltador que tanca el panell, per no acumular-ne
 /** Filtre de categories amb selecció múltiple. Amb prop de cinquanta,
     una llista de xips no s'hi val: cal cercador i comptadors. */
-function filtreCategories(cats,refresca){
-  const f=S.mov;
-  const n=f.cats.length;
+/** Filtre de selecció múltiple. El mateix panell serveix per a categories i per
+    a etiquetes: amb prop de cinquanta valors, un select múltiple és inservible i
+    calen cerca, comptadors i «Totes/Cap». */
+function filtreMulti({valors,compta,claus,text,refresca}){
+  const f=S.mov, tria=f[claus.sel];
+  const n=tria.length;
   const boto=el("button",{class:"btn"+(n?" primary":""),"data-catfiltre":"1",
-    onclick:e=>{ e.stopPropagation(); f.catOpen=!f.catOpen; refresca(); }},
-    n===0?"Totes les categories":n===1?f.cats[0]:n+" categories");
-  if(!f.catOpen) return boto;
+    onclick:e=>{ e.stopPropagation(); f[claus.open]=!f[claus.open]; refresca(); }},
+    n===0?text.cap:n===1?tria[0]:n+" "+text.molts);
+  if(!f[claus.open]) return boto;
 
-  const compta=new Map();
-  for(const m of S.data.movements) compta.set(m.category,(compta.get(m.category)||0)+1);
-  const q=f.catQ.trim().toLowerCase();
-  const llista=cats.filter(c=>!q||c.toLowerCase().includes(q));
+  const q=f[claus.q].trim().toLowerCase();
+  const llista=valors.filter(c=>!q||c.toLowerCase().includes(q));
   const marca=(c,on)=>{
-    f.cats = on ? [...f.cats,c] : f.cats.filter(x=>x!==c);
+    f[claus.sel] = on ? [...tria,c] : tria.filter(x=>x!==c);
     f.limit=300; refresca();
   };
   const panell=el("div",{"data-catfiltre":"1",
       style:"position:absolute;z-index:30;top:calc(100% + 6px);left:0;"+
       "background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);"+
       "box-shadow:0 8px 28px rgba(0,0,0,.18);padding:10px;width:290px;max-width:86vw"},
-    el("input",{type:"search",id:"catCerca",placeholder:"Cerca una categoria…",value:f.catQ,
+    el("input",{type:"search",id:"catCerca",placeholder:text.cerca,value:f[claus.q],
       style:"width:100%;background:var(--bg);border:1px solid var(--line);"+
         "border-radius:8px;padding:6px 9px;margin-bottom:8px",
-      oninput:e=>{ f.catQ=e.target.value; refresca();
+      oninput:e=>{ f[claus.q]=e.target.value; refresca();
         const i=$("#catCerca");      // el panell es refà: cal tornar-hi el cursor
         if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } }}),
     el("div",{class:"bar",style:"margin:0 0 8px;gap:6px"},
-      el("button",{class:"btn ghost",onclick:()=>{ f.cats=llista.slice(); refresca(); }},
+      el("button",{class:"btn ghost",onclick:()=>{ f[claus.sel]=llista.slice(); refresca(); }},
         "Totes"+(q?" les trobades":"")),
-      el("button",{class:"btn ghost",onclick:()=>{ f.cats=[]; refresca(); }},"Cap"),
+      el("button",{class:"btn ghost",onclick:()=>{ f[claus.sel]=[]; refresca(); }},"Cap"),
       el("span",{style:"flex:1"}),
-      el("button",{class:"btn ghost",onclick:()=>{ f.catOpen=false; refresca(); }},"Tancar")),
+      el("button",{class:"btn ghost",onclick:()=>{ f[claus.open]=false; refresca(); }},"Tancar")),
     el("div",{style:"max-height:270px;overflow:auto"},
       llista.length?llista.map(c=>{
-        const on=f.cats.includes(c);
+        const on=tria.includes(c);
         return el("label",{style:"display:flex;align-items:center;gap:8px;padding:4px 2px;"+
           "cursor:pointer;font-size:13px;border-radius:6px"},
           el("input",{type:"checkbox",checked:on,onchange:e=>marca(c,e.target.checked)}),
           el("span",{style:"flex:1"},c),
           el("span",{class:"mut num",style:"font-size:11px"},compta.get(c)||0));
-      }):el("div",{class:"mut",style:"padding:8px"},"Cap categoria amb aquest text.")),
+      }):el("div",{class:"mut",style:"padding:8px"},text.buit)),
   );
   // Clicar fora el tanca. Es mira si el clic ha caigut dins del filtre mirant els
   // ascendents de l'element clicat: val també si el panell ja s'ha refet i el node
@@ -1248,12 +1255,30 @@ function filtreCategories(cats,refresca){
   foraCat=e=>{
     if(e.target.closest && e.target.closest("[data-catfiltre]")) return;   // a dins: res
     document.removeEventListener("click",foraCat); foraCat=null;
-    if(S.mov.catOpen){ S.mov.catOpen=false; refresca(); }
+    if(S.mov[claus.open]){ S.mov[claus.open]=false; refresca(); }
   };
   setTimeout(()=>{ if(foraCat) document.addEventListener("click",foraCat); },0);
   return el("span",{style:"position:relative;display:inline-flex"},boto,panell);
 }
-function movRow(m,cats){
+function filtreCategories(cats,refresca){
+  const compta=new Map();
+  for(const m of S.data.movements) compta.set(m.category,(compta.get(m.category)||0)+1);
+  return filtreMulti({valors:cats,compta,refresca,
+    claus:{sel:"cats",open:"catOpen",q:"catQ"},
+    text:{cap:"Totes les categories",molts:"categories",
+      cerca:"Cerca una categoria…",buit:"Cap categoria amb aquest text."}});
+}
+function filtreEtiquetes(tags,refresca){
+  const compta=new Map();
+  for(const m of S.data.movements)
+    for(const t of m.tags||[]) compta.set(t,(compta.get(t)||0)+1);
+  return filtreMulti({valors:tags,compta,refresca,
+    claus:{sel:"tags",open:"tagOpen",q:"tagQ"},
+    text:{cap:"Totes les etiquetes",molts:"etiquetes",
+      cerca:"Cerca una etiqueta…",buit:"Cap etiqueta amb aquest text."}});
+}
+
+function movRow(m,cats,tags){
   const tr=el("tr",{class:m.planned?"fut":""},
     el("td",{},dCa(m.date)),
     el("td",{},el("span",{class:"pill"},m.account==="targeta"?"targeta":"compte")),
@@ -1266,6 +1291,18 @@ function movRow(m,cats){
         m.category=v; asseguraCat(v,m.kind); markDirty(); render();
       }});
       return c;
+    })()),
+    el("td",{},(()=>{
+      // Una etiqueta per esdeveniment: Colombia, Boda Yago-Patri… La categoria
+      // segueix dient QUÈ és (restaurant, benzina) i l'etiqueta PER A QUÈ era,
+      // o sigui que agrupar per esdeveniment no espatlla l'anàlisi per categoria.
+      const t=combo((m.tags||[]).join(", "),tags,{id:"dl-tags",upper:false,
+        placeholder:"—",on:v=>{
+          const nous=[...new Set(v.split(",").map(tagCanonica).filter(Boolean))];
+          if(nous.join("|")===(m.tags||[]).join("|")) return;
+          m.tags=nous; markDirty(); render();
+        }});
+      return t;
     })()),
     el("td",{class:"r num "+sgn(m.amount)},eur(m.amount)),
     el("td",{class:"r num mut"},m.balance!=null?eur(m.balance):""),
@@ -1312,6 +1349,15 @@ function asseguraCat(id,kind){
   if(!S.data.categories.some(c=>c.id===id))
     S.data.categories.push({id,kind:kind==="transfer"?"transfer":kind==="income"?"income":"expense"});
 }
+/** Si l'etiqueta ja existeix escrita d'una altra manera, s'hi ajusta. Les
+    categories es passen a majúscules i prou, però una etiqueta és un nom propi
+    —Boda Yago-Patri— i la vols tal com l'escrius; el que no vols és que
+    «Colombia» i «COLOMBIA» acabin sent dos esdeveniments. */
+function tagCanonica(v){
+  const k=String(v||"").trim();
+  if(!k) return "";
+  return totesTags().find(t=>t.toLowerCase()===k.toLowerCase()) || k;
+}
 /** Totes les etiquetes que ja has fet servir. */
 function totesTags(){
   return [...new Set(S.data.movements.flatMap(m=>m.tags||[]))].filter(Boolean).sort();
@@ -1323,7 +1369,7 @@ function tagsField(inicials){
   const caixa=el("span",{class:"tags"});
   const inp=combo("",totesTags(),{id:"dl-tags",placeholder:"escriu o tria…",upper:false});
   const afegir=()=>{
-    const v=inp.value.trim();
+    const v=tagCanonica(inp.value);
     if(v && !llista.includes(v)) llista.push(v);
     inp.value=""; pinta(); inp.focus();
   };
@@ -1539,6 +1585,64 @@ function renderMesos(root){
 /* ================================================================== *
  *  Pestanya: Categories i regles                                     *
  * ================================================================== */
+/** Els esdeveniments: què t'ha costat cada etiqueta i en què se n'ha anat.
+    La categoria diu QUÈ has comprat i l'etiqueta PER A QUÈ era; per això un
+    viatge es pot sumar sencer sense treure els seus restaurants de RESTAURANT. */
+function renderEsdeveniments(){
+  const T=transferCats();
+  const ev=new Map();
+  for(const m of S.data.movements){
+    for(const t of m.tags||[]){
+      let e=ev.get(t);
+      if(!e) ev.set(t,e={n:0,out:0,in:0,d1:"",d2:"",cats:new Map()});
+      e.n++;
+      if(!T.has(m.category)){
+        if(m.amount<0) e.out+=-m.amount; else e.in+=m.amount;
+        e.cats.set(m.category,(e.cats.get(m.category)||0)+(m.amount<0?-m.amount:0));
+      }
+      if(!e.d1||m.date<e.d1) e.d1=m.date;
+      if(m.date>e.d2) e.d2=m.date;
+    }
+  }
+  if(!ev.size) return el("div",{class:"card"},
+    el("h2",{},"Esdeveniments"),
+    el("div",{class:"empty"},
+      el("p",{},"Encara no has posat cap etiqueta."),
+      el("p",{class:"note",style:"max-width:56ch;margin:0 auto"},
+        "A Moviments hi ha una columna Etiqueta al costat de la categoria. "+
+        "Hi poses el nom de l'esdeveniment —Colombia, Boda Yago-Patri— i aquí en "+
+        "surt el cost sencer. La categoria no es toca: un sopar del viatge segueix "+
+        "sent RESTAURANT i compta a l'anàlisi de categories com sempre.")));
+  const files=[...ev].sort((a,b)=>b[1].out-a[1].out);
+  return el("div",{class:"card"},
+    el("h2",{},"Esdeveniments · "+files.length),
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},["Etiqueta","Mov.","Despesa","Ingrés","Net","Període","On se n'ha anat",""]
+        .map((h,i)=>el("th",{class:i&&i<5?"r":""},h)))),
+      el("tbody",{},files.map(([t,e])=>{
+        const top=[...e.cats].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,3);
+        return el("tr",{},
+          el("td",{},el("b",{},t)),
+          el("td",{class:"r num mut"},NF0.format(e.n)),
+          el("td",{class:"r num neg"},eur(e.out)),
+          el("td",{class:"r num "+(e.in?"pos":"mut")},e.in?eur(e.in):"—"),
+          el("td",{class:"r num "+sgn(e.in-e.out)},eur(e.in-e.out)),
+          el("td",{class:"mut"},e.d1===e.d2?dCa(e.d1):dCa(e.d1)+" → "+dCa(e.d2)),
+          el("td",{class:"wrap mut"},top.map(([c,v],i)=>
+            (i?" · ":"")+c+" "+eur0(v)).join("")||"—"),
+          el("td",{class:"r"},el("button",{class:"btn ghost",onclick:()=>{
+            S.mov={...S.mov,tags:[t],cats:[],q:"",account:"",kind:"",limit:300};
+            S.period={preset:"all",from:"",to:""};
+            S.tab="moviments"; render();
+          }},"Veure")),
+        );
+      })),
+    )),
+    el("p",{class:"note"},"Els traspassos no s'hi compten, igual que a la resta de "+
+      "totals. «On se n'ha anat» són les tres categories on més has gastat de "+
+      "l'esdeveniment: la despesa segueix comptant a la seva categoria de sempre."),
+  );
+}
 function renderCategories(root){
   const T=transferCats();
   const use=new Map();
@@ -1558,11 +1662,14 @@ function renderCategories(root){
         .map(([v,l])=>el("option",{value:v,selected:(v==="transfer")===T.has(c)},l)))),
     el("td",{class:"r"},
       el("button",{class:"btn ghost",onclick:()=>renameCat(c)},"Reanomenar"),
-      el("button",{class:"btn ghost",onclick:()=>mergeCat(c,cats.map(x=>x[0]))},"Fusionar")),
+      el("button",{class:"btn ghost",onclick:()=>mergeCat(c,cats.map(x=>x[0]))},"Fusionar"),
+      el("button",{class:"btn ghost",title:"Posar el nom com a etiqueta als seus moviments",
+        onclick:()=>etiquetaCat(c,e.n)},"→ Etiqueta")),
   ));
 
   posa(root,
     sospitoses(),
+    renderEsdeveniments(),
     el("div",{class:"card"},
       el("h2",{},"Categories · "+cats.length),
       el("div",{class:"tw"},el("table",{},
@@ -1704,6 +1811,30 @@ function renameCat(c){
       const cc=S.data.categories.find(x=>x.id===c); if(cc) cc.id=nou;
       for(const r of S.data.rules) if(r.category===c) r.category=nou;
       markDirty(); closeDialog(); render(); flash(c+" → "+nou);
+    }],
+  ]);
+}
+/** Copia el nom d'una categoria a les etiquetes dels seus moviments. Les
+    categories que en realitat son esdeveniments —COLOMBIA, LLANÇA-CADAQUÉS—
+    s'emporten els seus sopars i benzines fora de RESTAURANT i T4_BENZINA, i
+    l'analisi per categoria en surt tocada. Amb l'etiqueta posada ja pots
+    recategoritzar-los un a un sense perdre de vista de quin viatge eren. */
+function etiquetaCat(c,n){
+  dialog("Convertir en etiqueta",el("div",{},
+    el("p",{},"«",el("b",{},c),"» s'afegirà com a etiqueta als seus ",
+      el("b",{},NF0.format(n))," moviments."),
+    el("p",{class:"note"},"La categoria no es toca: després pots filtrar per "+
+      "l'etiqueta a Moviments i anar posant-los la categoria que els toqui "+
+      "(RESTAURANT, BENZINA…). L'esdeveniment se seguirà sumant sencer a la "+
+      "taula d'Esdeveniments."),
+  ),[
+    ["Cancel·lar","btn",closeDialog],
+    ["Posar l'etiqueta","btn primary",()=>{
+      let k=0;
+      for(const m of S.data.movements)
+        if(m.category===c && !(m.tags||[]).includes(c)){ (m.tags ||= []).push(c); k++; }
+      markDirty(); closeDialog(); render();
+      flash(k+(k===1?" moviment etiquetat com a ":" moviments etiquetats com a ")+c);
     }],
   ]);
 }
