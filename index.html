@@ -97,6 +97,13 @@ td select:focus,td input:focus{border-color:var(--accent);outline:none;backgroun
 .pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
   border:1px solid var(--line);color:var(--muted)}
 .empty{padding:40px;text-align:center;color:var(--muted)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tags .pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 6px 3px 9px;
+  color:var(--fg);background:var(--bg)}
+.tags .pill button{border:0;background:none;color:var(--muted);cursor:pointer;padding:0 2px;
+  font-size:13px;line-height:1}
+.tags .pill button:hover{color:var(--neg)}
+.tags input{flex:1;min-width:120px}
 
 /* ---------- mòbil ----------
    El problema no eren les taules (ja fan scroll dins del seu contenidor) sinó la
@@ -148,6 +155,12 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .drop.over{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,transparent)}
 .map{display:grid;grid-template-columns:150px 1fr;gap:9px 12px;align-items:center}
 .map select,.map input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+/* Un <input list> és un camp de text als ulls de qui el mira: la fletxa diu que
+   hi ha desplegable. Va després de .map input, que amb la drecera background
+   esborraria la imatge. */
+input[list]{background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 9px center;padding-right:24px}
+input[list]::-webkit-calendar-picker-indicator{opacity:0;width:20px;margin-right:-22px;cursor:pointer}
 .note{font-size:12px;color:var(--muted);margin:8px 0 0}
 .warnbox{border:1px solid var(--warn);border-radius:8px;padding:9px 12px;font-size:13px;
   color:var(--warn);background:color-mix(in srgb,var(--warn) 8%,transparent);margin-bottom:12px}
@@ -992,7 +1005,7 @@ function renderResum(root){
   const perMonth=v=>span?v/span.days*365.25/12:null;
   const perYear=v=>span?v/span.days*365.25:null;
 
-  root.replaceChildren(
+  posa(root,
     el("div",{class:"card"},
       el("div",{class:"bar",style:"margin:0"},
         el("span",{style:"font-weight:600"},"Període:"), periodBar(),
@@ -1124,7 +1137,7 @@ function filtered(){
   return out;
 }
 function renderMoviments(root){
-  const cats=[...new Set(S.data.movements.map(m=>m.category))].sort();
+  const cats=totesCats();
   const f=S.mov, all=filtered(), show=all.slice(0,f.limit);
   const real=all.filter(m=>!m.planned), flow=real.filter(m=>m.kind!=="transfer");
   const inc=flow.filter(m=>m.amount>0).reduce((a,m)=>a+m.amount,0);
@@ -1159,7 +1172,7 @@ function renderMoviments(root){
       th("Categoria","category"),th("Import","amount",1),el("th",{class:"r"},"Saldo"),el("th",{},""))),
     el("tbody",{},show.map(m=>movRow(m,cats))));
 
-  root.replaceChildren(
+  posa(root,
     el("div",{class:"grid kpis",style:"margin-bottom:14px"},
       kpi("Moviments",NF0.format(all.length),all.length!==S.data.movements.length
         ?"de "+NF0.format(S.data.movements.length):"tots"),
@@ -1246,8 +1259,14 @@ function movRow(m,cats){
     el("td",{},el("span",{class:"pill"},m.account==="targeta"?"targeta":"compte")),
     el("td",{class:"wrap"},m.concept||"—",
       m.city?el("span",{class:"mut"}," · "+m.city):null),
-    el("td",{},el("select",{onchange:e=>{m.category=e.target.value;markDirty();render();}},
-      cats.map(c=>el("option",{value:c,selected:c===m.category},c)))),
+    el("td",{},(()=>{
+      const c=combo(m.category,cats,{on:v=>{
+        if(!v){ c.value=m.category; return; }   // buidar-lo no vol dir res
+        if(v===m.category) return;
+        m.category=v; asseguraCat(v,m.kind); markDirty(); render();
+      }});
+      return c;
+    })()),
     el("td",{class:"r num "+sgn(m.amount)},eur(m.amount)),
     el("td",{class:"r num mut"},m.balance!=null?eur(m.balance):""),
     el("td",{class:"r"},el("button",{class:"btn ghost",title:"Detall",
@@ -1259,11 +1278,71 @@ function sel(value,opts,on){
   return el("select",{onchange:e=>on(e.target.value)},
     opts.map(([v,l])=>el("option",{value:v,selected:v===value},l)));
 }
+/** Un sol <datalist> per llista, penjat del body i refrescat cada cop. Es pot
+    compartir entre tots els camps que en facin servir la mateixa llista, que
+    si no, una taula de 300 files en faria 300. */
+function datalist(id,valors){
+  let d=document.getElementById(id);
+  if(!d){ d=el("datalist",{id}); document.body.append(d); }
+  d.replaceChildren(...valors.map(v=>el("option",{value:v})));
+  return id;
+}
+/** Camp de text amb el desplegable dels valors que ja fas servir. Pots triar-ne
+    un o escriure'n un de nou: el desplegable estalvia teclejar i evita acabar
+    amb dues categories que només es diferencien per un accent. */
+function combo(value,valors,{id="dl-cats",placeholder,on,upper=true}={}){
+  const inp=el("input",{type:"text",value:value??"",list:datalist(id,valors),
+    placeholder:placeholder||"",autocomplete:"off",
+    onfocus:e=>e.target.select(),
+    onchange:e=>{
+      if(upper) e.target.value=e.target.value.trim().toUpperCase();
+      on?.(e.target.value);
+    }});
+  return inp;
+}
+/** Totes les categories: les del catàleg i les que facin servir els moviments,
+    que no sempre són les mateixes. */
+function totesCats(){
+  return [...new Set([...S.data.categories.map(c=>c.id),
+                      ...S.data.movements.map(m=>m.category)])].filter(Boolean).sort();
+}
+/** Registra una categoria nova si encara no hi és. */
+function asseguraCat(id,kind){
+  if(!id) return;
+  if(!S.data.categories.some(c=>c.id===id))
+    S.data.categories.push({id,kind:kind==="transfer"?"transfer":kind==="income"?"income":"expense"});
+}
+/** Totes les etiquetes que ja has fet servir. */
+function totesTags(){
+  return [...new Set(S.data.movements.flatMap(m=>m.tags||[]))].filter(Boolean).sort();
+}
+/** Editor d'etiquetes: les que hi ha com a pastilles i un camp per afegir-ne,
+    amb desplegable de les que ja fas servir. */
+function tagsField(inicials){
+  const llista=[...(inicials||[])];
+  const caixa=el("span",{class:"tags"});
+  const inp=combo("",totesTags(),{id:"dl-tags",placeholder:"escriu o tria…",upper:false});
+  const afegir=()=>{
+    const v=inp.value.trim();
+    if(v && !llista.includes(v)) llista.push(v);
+    inp.value=""; pinta(); inp.focus();
+  };
+  inp.onchange=afegir;
+  inp.onkeydown=e=>{ if(e.key==="Enter"||e.key===","){ e.preventDefault(); afegir(); } };
+  const pinta=()=>caixa.replaceChildren(
+    ...llista.map(t=>el("span",{class:"pill"},t,
+      el("button",{type:"button",title:"Treure",onclick:()=>{
+        llista.splice(llista.indexOf(t),1); pinta(); }},"✕"))),
+    inp);
+  pinta();
+  caixa.valors=()=>llista;
+  return caixa;
+}
 /** El mateix diàleg serveix per editar-ne un i per crear-ne un de nou:
     si no se'n passa cap, se'n prepara un de buit i el botó és Afegir. */
 function movDialog(m){
   const nou=!m;
-  const cats=[...new Set(S.data.movements.map(x=>x.category))].sort();
+  const cats=totesCats();
   // Per defecte, la categoria que tinguis filtrada; si no, la que més fas servir.
   // La primera per ordre alfabètic no ajudaria gens.
   const habitual=(()=>{
@@ -1289,7 +1368,8 @@ function movDialog(m){
       lbl("Compte", f.account=sel(m.account,S.data.accounts.map(a=>[a.id,a.name]),v=>f.account.value=v)),
       lbl("Concepte", f.concept=el("input",{type:"text",value:m.concept||"",
         placeholder:nou?"On o a qui":""})),
-      lbl("Categoria", f.category=sel(m.category,cats.map(c=>[c,c]),v=>f.category.value=v)),
+      lbl("Categoria", f.category=combo(m.category,cats,
+        {placeholder:"escriu-ne una de nova o tria'n una"})),
       lbl("Import (€)", f.amount=el("input",{type:"number",step:"0.01",
         value:m.amount??"",placeholder:nou?"negatiu si és una despesa":"",
         oninput:()=>sincronitza()})),
@@ -1297,8 +1377,7 @@ function movDialog(m){
         placeholder:"opcional"})),
       lbl("Tipus", f.kind=sel(m.kind,[["expense","Pagament"],["income","Ingrés"],
         ["transfer","Traspàs (no compta com a despesa)"]],v=>f.kind.value=v)),
-      lbl("Etiquetes", f.tags=el("input",{type:"text",value:(m.tags||[]).join(", "),
-        placeholder:"separades per comes"})),
+      lbl("Etiquetes", f.tags=tagsField(m.tags)),
       lbl("Nota", f.note=el("input",{type:"text",value:m.note||""})),
     ), avis,
     nou?el("p",{class:"note"},"Els moviments que hi afegeixis a mà es tracten igual que "+
@@ -1313,15 +1392,15 @@ function movDialog(m){
       if(isNaN(imp)||imp===0){ avis.textContent="L'import no pot ser zero ni estar buit."; return; }
       m.date=f.date.value; m.opDate=m.opDate||m.date;
       m.account=f.account.value; m.concept=f.concept.value.trim();
-      m.category=f.category.value; m.amount=imp;
+      m.category=f.category.value.trim().toUpperCase()||m.category;
+      asseguraCat(m.category,f.kind.value);
+      m.amount=imp;
       m.balance=f.balance.value===""?null:+f.balance.value; m.kind=f.kind.value;
-      m.tags=f.tags.value.split(",").map(s=>s.trim()).filter(Boolean); m.note=f.note.value;
+      m.tags=f.tags.valors(); m.note=f.note.value;
       if(nou){
         m.planned=false;                       // el que hi poses tu ja ha passat
         S.data.movements.push(m);
         S.data.movements.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
-        if(!S.data.categories.some(c=>c.id===m.category))
-          S.data.categories.push({id:m.category,kind:"expense"});
       }
       markDirty(); closeDialog(); render();
       if(nou) flash("Moviment afegit");
@@ -1329,6 +1408,8 @@ function movDialog(m){
   ].filter(Boolean));
 }
 const lbl=(t,n)=>[el("label",{},t),n];
+/** Com replaceChildren, però sense escriure "null" quan un bloc opcional no hi és. */
+const posa=(root,...kids)=>root.replaceChildren(...kids.flat(Infinity).filter(k=>k!=null));
 
 function exportCsv(rows){
   const head=["Data","Compte","Concepte","Població","Categoria","Import","Saldo","Tipus","Etiquetes"];
@@ -1422,7 +1503,7 @@ function renderMesos(root){
   });
   const years=byYear(rows);
 
-  root.replaceChildren(
+  posa(root,
     el("div",{class:"card"},
       el("div",{class:"bar",style:"margin:0"},
         el("span",{style:"font-weight:600"},"Període:"), periodBar(),
@@ -1480,7 +1561,7 @@ function renderCategories(root){
       el("button",{class:"btn ghost",onclick:()=>mergeCat(c,cats.map(x=>x[0]))},"Fusionar")),
   ));
 
-  root.replaceChildren(
+  posa(root,
     sospitoses(),
     el("div",{class:"card"},
       el("h2",{},"Categories · "+cats.length),
@@ -2293,7 +2374,7 @@ function renderReal(root){
   const gap=r=>r.buys&&r.visa?Math.abs(r.buys-r.visa)/Math.max(r.buys,r.visa):0;
   const dolentes=all.filter(r=>gap(r)>0.25 && (r.buys>200||r.visa>200));
 
-  root.replaceChildren(
+  posa(root,
     el("div",{class:"card"},
       el("div",{class:"bar",style:"margin:0"},
         el("span",{style:"font-weight:600"},"Període:"), periodBar()),
@@ -2914,7 +2995,7 @@ function breakdown(rows,total,color){
 }
 function renderCartera(root){
   const A=S.data.assets;
-  if(!A.length){ root.replaceChildren(el("div",{class:"card"},
+  if(!A.length){ posa(root,el("div",{class:"card"},
     el("div",{class:"empty"},"Cap actiu a la cartera."))); return; }
   const st=new Map(A.map(a=>[a.id,assetStats(a)]));
   const value=A.reduce((s,a)=>s+st.get(a.id).value,0);
@@ -2931,7 +3012,7 @@ function renderCartera(root){
     .map(g=>[g.label,g.assets.reduce((s,a)=>s+st.get(a.id).value,0)])
     .filter(([,v])=>v>0).sort((x,y)=>y[1]-x[1]);
 
-  root.replaceChildren(
+  posa(root,
     el("div",{class:"grid kpis",style:"margin-bottom:14px"},
       kpi("Valor actual",eur(value),lastDate?"valorat el "+dCa(lastDate):""),
       kpi("Aportat",eur(inv),A.length+" actius"),
@@ -3459,7 +3540,7 @@ function renderRendiment(root){
   }
   const excluded=S.data.assets.filter(a=>!a.include);
 
-  root.replaceChildren(
+  posa(root,
     el("div",{class:"grid kpis",style:"margin-bottom:14px"},
       kpi("Aportat",eur(inv),A.length+" actius que compten"),
       kpi("Valor actual",eur(val),""),
@@ -3707,7 +3788,7 @@ function renderFire(root){
   const barra=(v,color)=>el("div",{style:"height:10px;border-radius:5px;background:var(--line);margin-top:6px"},
     el("div",{style:`height:10px;border-radius:5px;background:${color};width:${Math.max(0,Math.min(100,v*100))}%`}));
 
-  root.replaceChildren(
+  posa(root,
     el("div",{class:"grid kpis",style:"margin-bottom:14px"},
       kpi("Capital actual",eur0(M.capital),"la teva cartera, avui"),
       kpi("Objectiu Coast FIRE",eur0(M.goal),"a assolir el "+M.coastYear),
@@ -3965,7 +4046,7 @@ function render(){
   for(const s of $$("main section")) s.hidden = s.id!=="tab-"+S.tab;
   const root=$("#tab-"+S.tab);
   if(!S.data){
-    root.replaceChildren(el("div",{class:"card"},el("div",{class:"empty"},
+    posa(root,el("div",{class:"card"},el("div",{class:"empty"},
       el("p",{},"Encara no hi ha dades carregades."),
       el("p",{},
         el("button",{class:"btn primary",style:"margin-right:8px",onclick:driveDialog},
