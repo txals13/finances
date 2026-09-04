@@ -722,6 +722,37 @@ function transferCats(){
 function blank(k){ return { month:k, income:0, expense:0, invest:0, maxBalance:null,
   lastBalance:null, nMov:0, fIncome:null, fExpense:null, fInvest:null }; }
 
+/** El saldo amb que es tanca un grup de moviments del mateix dia.
+    L'extracte no porta hora i, segons el dia, el banc els dona del mes nou al
+    mes vell: agafar l'ultim de la llista fa que el saldo del dia sigui el del
+    primer moviment, i el resum sembla no haver registrat els ultims. Com que
+    cada moviment porta implicit el saldo d'abans (saldo menys import), el de
+    tancament es l'unic saldo que no es el "d'abans" de cap altre. Si el dia no
+    ho resol de manera unica, es torna a l'ordre de la llista. */
+function closingBalance(ms){
+  if(!ms.length) return null;
+  const c=v=>Math.round(v*100);
+  const previs=new Set(ms.map(m=>c(m.balance-m.amount)));
+  const fi=ms.filter(m=>!previs.has(c(m.balance)));
+  return fi.length===1 ? fi[0].balance : ms[ms.length-1].balance;
+}
+/** Els moviments de compte amb saldo d'una llista, agrupats per dia. */
+function balancesPerDia(movs){
+  const d=new Map();
+  for(const m of movs)
+    if(!m.planned && m.account==="compte" && m.balance!=null){
+      let a=d.get(m.date); if(!a) d.set(m.date,a=[]);
+      a.push(m);
+    }
+  return d;
+}
+/** El saldo de tancament de l'ultim dia amb moviments d'una llista. */
+function lastClosing(movs){
+  const d=balancesPerDia(movs);
+  if(!d.size) return null;
+  const dia=[...d.keys()].sort().at(-1);
+  return closingBalance(d.get(dia));
+}
 /** Agrega els moviments reals per mes i hi afegeix la previsió. */
 function derive(){
   const T=transferCats(), map=new Map();
@@ -741,7 +772,7 @@ function derive(){
     else e.expense+=-m.amount;
     if(m.account==="compte" && m.balance!=null){
       if(e.maxBalance==null||m.balance>e.maxBalance) e.maxBalance=m.balance;
-      e.lastBalance=m.balance;
+      (e.ccMovs ||= []).push(m);
     }
   }
   for(const mo of S.data.months){
@@ -759,6 +790,8 @@ function derive(){
     .sort((a,b)=>a.month<b.month?-1:1);
   let last=null;
   for(const r of rows){
+    r.lastBalance = r.ccMovs ? lastClosing(r.ccMovs) : null;
+    delete r.ccMovs;
     r.saving  = r.income-r.expense;
     r.rate    = r.income>=MIN_INCOME_FOR_RATE ? r.saving/r.income : null;
     r.surplus = r.saving-r.invest;
@@ -786,12 +819,7 @@ function byYear(rows){
   }
   return [...m.values()];
 }
-function currentBalance(){
-  let b=null;
-  for(const m of S.data.movements)
-    if(!m.planned && m.account==="compte" && m.balance!=null) b=m.balance;
-  return b;
-}
+function currentBalance(){ return lastClosing(S.data.movements); }
 
 /* ================================================================== *
  *  Període: un sol interval de dates que governa Resum i Moviments    *
