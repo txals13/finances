@@ -1585,6 +1585,28 @@ function renderMesos(root){
 /* ================================================================== *
  *  Pestanya: Categories i regles                                     *
  * ================================================================== */
+/** Treu una etiqueta de tots els seus moviments. Les etiquetes no viuen en cap
+    catàleg: existeixen mentre hi hagi un moviment que les porti, o sigui que
+    esborrar-ne una vol dir treure-la d'aquests moviments. Ni els moviments ni
+    les seves categories es toquen: només deixen d'estar agrupats. */
+function esborraTag(t,n){
+  if(!confirm("Treure l'etiqueta «"+t+"» dels seus "+n+
+    (n===1?" moviment?":" moviments?")+" "+
+    "Els moviments i les seves categories no es toquen: només deixaran d'estar "+
+    "agrupats en aquest esdeveniment.")) return;
+  let k=0;
+  for(const m of S.data.movements)
+    if((m.tags||[]).includes(t)){ m.tags=m.tags.filter(x=>x!==t); k++; }
+  S.mov.tags=S.mov.tags.filter(x=>x!==t);      // que el filtre no quedi en un buit
+  markDirty(); render();
+  flash("«"+t+"» treta de "+k+(k===1?" moviment":" moviments"));
+}
+/** Les categories del catàleg que no fa servir cap moviment. Esborrar-les no
+    toca cap dada: només deixen de sortir als desplegables. */
+function categoriesBuides(){
+  const use=new Set(S.data.movements.map(m=>m.category));
+  return S.data.categories.map(c=>c.id).filter(id=>!use.has(id)).sort();
+}
 /** Els esdeveniments: què t'ha costat cada etiqueta i en què se n'ha anat.
     La categoria diu QUÈ has comprat i l'etiqueta PER A QUÈ era; per això un
     viatge es pot sumar sencer sense treure els seus restaurants de RESTAURANT. */
@@ -1617,7 +1639,7 @@ function renderEsdeveniments(){
   return el("div",{class:"card"},
     el("h2",{},"Esdeveniments · "+files.length),
     el("div",{class:"tw"},el("table",{},
-      el("thead",{},el("tr",{},["Etiqueta","Mov.","Despesa","Ingrés","Net","Període","On se n'ha anat",""]
+      el("thead",{},el("tr",{},["Etiqueta","Mov.","Despesa","Ingrés","Net","Període","On se n'ha anat","",""]
         .map((h,i)=>el("th",{class:i&&i<5?"r":""},h)))),
       el("tbody",{},files.map(([t,e])=>{
         const top=[...e.cats].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,3);
@@ -1635,6 +1657,9 @@ function renderEsdeveniments(){
             S.period={preset:"all",from:"",to:""};
             S.tab="moviments"; render();
           }},"Veure")),
+          el("td",{class:"r"},el("button",{class:"btn ghost",
+            title:"Treure aquesta etiqueta de tots els seus moviments",
+            onclick:()=>esborraTag(t,e.n)},"✕")),
         );
       })),
     )),
@@ -1676,6 +1701,33 @@ function renderCategories(root){
         el("thead",{},el("tr",{},["Categoria","Moviments","Net","Últim ús","Tractament",""]
           .map((h,i)=>el("th",{class:i?"r":""},h)))),
         el("tbody",{},rows))),
+      // Les que no fa servir ningú no surten a la taula de dalt —es fa dels
+      // moviments— però sí als desplegables, i s'hi acumulen.
+      (()=>{
+        const b=categoriesBuides();
+        if(!b.length) return null;
+        const treu=ids=>{
+          const set=new Set(ids);
+          S.data.categories=S.data.categories.filter(c=>!set.has(c.id));
+          S.mov.cats=S.mov.cats.filter(c=>!set.has(c));
+          markDirty(); render();
+          flash(ids.length===1 ? "«"+ids[0]+"» esborrada"
+                               : ids.length+" categories esborrades");
+        };
+        return el("div",{style:"margin-top:14px"},
+          el("p",{class:"note",style:"margin:0 0 8px"},
+            b.length===1 ? "Hi ha una categoria que no fa servir cap moviment"
+                         : "Hi ha "+b.length+" categories que no fa servir cap moviment",
+            ", i segueixen sortint als desplegables. Esborrar-les no toca cap moviment."),
+          el("div",{class:"tags"},
+            b.map(id=>el("span",{class:"pill"},id,
+              el("button",{type:"button",title:"Esborrar «"+id+"»",
+                onclick:()=>treu([id])},"✕"))),
+            el("button",{class:"btn ghost",onclick:()=>{
+              if(confirm("Esborrar les "+b.length+" categories que no fa servir "+
+                "cap moviment? "+b.join(", "))) treu(b);
+            }},"Esborrar-les totes")));
+      })(),
     ),
     el("div",{class:"card"},
       el("h2",{},"Regles d'autocategorització"),
