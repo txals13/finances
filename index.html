@@ -2622,13 +2622,120 @@ function trobaActiu(l){
   }
   return S.data.assets.find(x=>norm(x.entity)===norm(l.entitat) && norm(x.name)===norm(l.nom));
 }
+/* ---- Actualitzacio automatica de la cartera -----------------------------
+   A la carpeta de les dades hi vius el cartera.xlsx: el manteniment el fas al
+   full de calcul i l'app se'l mira sola en obrir-se. Nomes s'importa si el
+   fitxer s'ha tocat des de l'ultim cop, i la valoracio es data amb la data de
+   modificacio del fitxer, no amb la d'avui: si el full fa una setmana que no el
+   toques, els seus imports son d'aquell dia i no dels d'ara. */
+const CARTERA_AUTO="cartera.xlsx";
+/** Data local (no UTC) d'una marca de temps. */
+const diaDe=t=>{ const d=new Date(t);
+  return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); };
+
+/** La carpeta de dades que hagi triat, si encara hi tenim permis. */
+async function carpetaDades(demanar){
+  const h=await idb.get("dir").catch(()=>null);
+  if(!h) return null;
+  try{
+    let perm=await h.queryPermission({mode:"read"});
+    if(perm!=="granted" && demanar) perm=await h.requestPermission({mode:"read"});
+    return perm==="granted" ? h : null;
+  }catch{ return null; }
+}
+async function triaCarpetaDades(){
+  if(!hasFS || !("showDirectoryPicker" in window)){
+    alert("Aquest navegador no deixa triar carpetes. L'actualització automàtica "+
+      "de la cartera només va a l'ordinador, amb Chrome o Edge."); return;
+  }
+  try{
+    const h=await showDirectoryPicker({mode:"read"});
+    await idb.set("dir",h);
+    flash("Carpeta desada: "+h.name);
+    const r=await carteraAuto(true);
+    render();
+    if(!r) alert("A «"+h.name+"» no s'hi ha trobat cap "+CARTERA_AUTO+".");
+  }catch(e){ if(e.name!=="AbortError") alert("No s'ha pogut obrir la carpeta: "+e.message); }
+}
+/** El cartera.xlsx de la carpeta de dades, o el del costat de l'app si se'n serveix. */
+async function fitxerCarteraAuto(){
+  const dir=await carpetaDades(false);
+  if(dir){
+    try{
+      const fh=await dir.getFileHandle(CARTERA_AUTO);
+      const f=await fh.getFile();
+      return {file:f, mtime:f.lastModified, on:dir.name};
+    }catch{ /* no hi es */ }
+  }
+  if(location.protocol!=="file:"){         // servit des de la mateixa carpeta
+    try{
+      const r=await fetch(CARTERA_AUTO,{cache:"no-store"});
+      if(r.ok){
+        const lm=Date.parse(r.headers.get("Last-Modified")||"")||Date.now();
+        return {file:new File([await r.blob()],CARTERA_AUTO), mtime:lm, on:"la carpeta de l'app"};
+      }
+    }catch{}
+  }
+  return null;
+}
+/** Mira el cartera.xlsx i, si s'ha tocat des de l'ultim cop, l'importa. */
+async function carteraAuto(forcar){
+  if(!S.data) return null;
+  let f;
+  try{ f=await fitxerCarteraAuto(); }catch{ return null; }
+  if(!f) return null;
+  const fet=S.data.carteraAuto||null;
+  if(!forcar && fet && fet.mtime===f.mtime) return null;   // ja importat
+  let lot;
+  try{ lot=await llegeixCartera(f.file); }
+  catch(e){ console.warn("cartera.xlsx:",e); return null; }
+  lot.date=diaDe(f.mtime);
+  // Si a l'app hi ha valoracions mes noves que el full, el full es el vell:
+  // importar-lo faria recular la cartera sense dir res. Val mes no tocar-ho.
+  const ultima=S.data.snapshots.reduce((d,x)=>x.date>d?x.date:d,"");
+  if(!forcar && ultima && lot.date<ultima){
+    console.info("cartera.xlsx del "+lot.date+" mes vell que l'última valoració ("+ultima+"): no s'importa");
+    S.data.carteraAuto={...(S.data.carteraAuto||{}),mtime:f.mtime,vell:true};
+    return null;
+  }
+  const {nSnap,nNous}=aplicaCartera([lot]);
+  S.data.carteraAuto={mtime:f.mtime, date:lot.date, n:nSnap};
+  markDirty();
+  flash("Cartera al dia des de "+CARTERA_AUTO+" ("+dCa(lot.date)+"): "+nSnap+
+        " valoracions"+(nNous?" i "+nNous+" actius nous":"")+". Recorda desar.");
+  return {nSnap,nNous,date:lot.date};
+}
 function importaCarteraDialog(){
   const inp=el("input",{type:"file",accept:".xlsx,.xls",multiple:true,style:"display:none"});
   const zona=el("div",{class:"drop"},
     "Arrossega-hi les taules de cartera (.xlsx). En pots posar unes quantes de cop.",
     el("div",{style:"margin-top:12px"},
       el("button",{class:"btn",onclick:()=>inp.click()},"…o tria-les")));
-  const cos=el("div",{},zona,inp);
+  const auto=el("div",{class:"note",style:"margin-top:14px;line-height:1.6"});
+  (async()=>{
+    const dir=await carpetaDades(false);
+    const fet=S.data.carteraAuto;
+    auto.replaceChildren(
+      el("b",{},"Actualització automàtica. "),
+      dir ? "En obrir l'app es mira el "+CARTERA_AUTO+" de la carpeta «"+dir.name+
+            "» i, si l'has tocat des de l'últim cop, l'importa sol. "
+          : "Tria la carpeta on tens el finances.json i el "+CARTERA_AUTO+", i en obrir "+
+            "l'app la cartera es posarà al dia sola. ",
+      fet ? el("span",{},"Últim cop: "+dCa(fet.date)+", "+fet.n+" valoracions. ") : null,
+      el("div",{style:"margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"},
+        el("button",{class:"btn",onclick:async()=>{ closeDialog(); await triaCarpetaDades(); }},
+          dir?"Canviar la carpeta":"Triar la carpeta…"),
+        dir?el("button",{class:"btn",onclick:async()=>{
+          closeDialog();
+          if(!await carteraAuto(true)) alert("No s'hi ha trobat cap "+CARTERA_AUTO+".");
+          render();
+        }},"Mirar-ho ara"):null,
+        dir?el("button",{class:"btn ghost",onclick:async()=>{
+          await idb.set("dir",null).catch(()=>{});
+          closeDialog(); flash("Actualització automàtica desactivada");
+        }},"Desactivar"):null));
+  })();
+  const cos=el("div",{},zona,inp,auto);
   const processa=async llista=>{
     const lots=[];
     for(const f of llista){
@@ -2643,6 +2750,28 @@ function importaCarteraDialog(){
   zona.addEventListener("drop",e=>{e.preventDefault();zona.classList.remove("over");
     if(e.dataTransfer.files.length) processa([...e.dataTransfer.files]);});
   dialog("Importar taules de cartera",cos,[["Cancel·lar","btn",closeDialog]]);
+}
+/** Escriu a la cartera el que diuen unes quantes taules ja llegides. */
+function aplicaCartera(lots){
+  let nSnap=0,nNous=0;
+  for(const l of lots.slice().sort((a,b)=>a.date<b.date?-1:1)){
+    for(const li of l.linies){
+      let a=trobaActiu(li);
+      if(!a){
+        a={id:uid(),n:S.data.assets.length+1,class:li.classe||"Altres",
+          entity:li.entitat,name:li.nom,isin:li.isin||null,start:li.inici||l.date,
+          contributed:li.aportat,last:li.valor,include:true,wallet:null};
+        S.data.assets.push(a); nNous++;
+      }
+      if(li.inici && !a.start) a.start=li.inici;
+      a.contributed=li.aportat;          // l'aportat d'aquell dia
+      setAssetValue(a,l.date,li.valor,li.aportat);
+      nSnap++;
+    }
+    recomputeTotal(l.date,true);          // instantània completa: el total és la suma
+  }
+  markDirty();
+  return {nSnap,nNous};
 }
 function previewCartera(lots){
   const bons=lots.filter(l=>!l.error);
@@ -2696,24 +2825,8 @@ function previewCartera(lots){
   ),[
     ["Cancel·lar","btn",closeDialog],
     [`Importar ${bons.length} ${bons.length===1?"fitxer":"fitxers"}`,"btn primary",()=>{
-      let nSnap=0,nNous=0;
-      for(const l of bons.slice().sort((a,b)=>a.date<b.date?-1:1)){
-        for(const li of l.linies){
-          let a=trobaActiu(li);
-          if(!a){
-            a={id:uid(),n:S.data.assets.length+1,class:li.classe||"Altres",
-              entity:li.entitat,name:li.nom,isin:li.isin||null,start:li.inici||l.date,
-              contributed:li.aportat,last:li.valor,include:true,wallet:null};
-            S.data.assets.push(a); nNous++;
-          }
-          if(li.inici && !a.start) a.start=li.inici;
-          a.contributed=li.aportat;          // l'aportat d'aquell dia
-          setAssetValue(a,l.date,li.valor,li.aportat);
-          nSnap++;
-        }
-        recomputeTotal(l.date,true);          // instantània completa: el total és la suma
-      }
-      markDirty(); closeDialog(); render();
+      const {nSnap,nNous}=aplicaCartera(bons);
+      closeDialog(); render();
       flash(nSnap+" valoracions importades"+(nNous?" i "+nNous+" actius nous":""));
     }],
   ]);
@@ -3681,13 +3794,20 @@ function fireFases(M,anysFase1){
   );
 }
 
+/** Un matalas pot anar lligat al compte en comptes d'a un actiu de la cartera. */
+const COMPTE="#compte";
 /** Els matalassos de liquiditat. L'import real surt de la cartera, no es teclegen. */
 function fireLiquidity(){
   const f=S.data.fire;
   if(!f.liquidity) f.liquidity=defaultLiquidity();
   const rows=f.liquidity.map(b=>{
-    const a=S.data.assets.find(x=>x.id===b.assetId);
-    const actual=a?assetValue(a):0;
+    const compte=b.assetId===COMPTE;
+    const a=compte?null:S.data.assets.find(x=>x.id===b.assetId);
+    // El saldo del compte el sap l'app pels moviments; el valor d'un actiu de la
+    // cartera es queda quiet fins que la tornes a valorar. Per al matalas del
+    // compte corrent aixo volia dir ensenyar la xifra de l'ultima valoracio i no
+    // la d'ara: el matalas semblava cobert quan no ho estava.
+    const actual=compte?(currentBalance()||0):(a?assetValue(a):0);
     const target=+b.target||0;
     const dif=actual-target;
     return {b,a,actual,target,dif};
@@ -3696,12 +3816,15 @@ function fireLiquidity(){
   const totT=rows.reduce((s,r)=>s+r.target,0);
   const inp=(val,on)=>el("input",{type:"number",step:"100",value:val??"",style:"text-align:right",
     onchange:e=>{on(e.target.value===""?0:+e.target.value); markDirty(); render();}});
-  const assets=S.data.assets.map(a=>[a.id,a.entity+" · "+a.name]);
+  const assets=[[COMPTE,"Saldo real del compte"],
+    ...S.data.assets.map(a=>[a.id,a.entity+" · "+a.name])];
   return el("div",{class:"card"},
     el("h2",{},"Matalassos de liquiditat"),
     el("p",{class:"note",style:"margin:0 0 12px"},
-      "L'import real de cada matalàs és el valor de l'actiu que hi has assignat, "+
-      "o sigui que es posa al dia sol quan actualitzes la cartera."),
+      "L'import real surt de l'actiu que hi assignes, i es posa al dia quan "+
+      "valores la cartera. Per al compte corrent tria «Saldo real del compte»: "+
+      "aleshores surt el saldo d'ara mateix, calculat dels moviments, sense "+
+      "haver d'esperar cap valoració."),
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},["Matalàs","Actiu","Real","Objectiu","Diferència","Cobertura",""]
         .map((h,i)=>el("th",{class:i>1?"r":""},h)))),
@@ -3988,6 +4111,8 @@ function marcaOrigen(tipus,detall){ S.origen={tipus,detall,quan:new Date()}; }
   if(!S.data && await autoLoad()) marcaOrigen(serverWrite?"servidor":"fitxer","finances.json");
   render(); setStatus();
   offerBackup(pendent);
+  try{ if(await carteraAuto()){ render(); setStatus(); } }
+  catch(e){ console.warn("cartera automàtica:",e); }
 })();
 /** Si l'última sessió va quedar amb canvis sense desar, proposa recuperar-los. */
 function offerBackup(b){
