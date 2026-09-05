@@ -1458,10 +1458,18 @@ const lbl=(t,n)=>[el("label",{},t),n];
 const posa=(root,...kids)=>root.replaceChildren(...kids.flat(Infinity).filter(k=>k!=null));
 
 function exportCsv(rows){
-  const head=["Data","Compte","Concepte","Població","Categoria","Import","Saldo","Tipus","Etiquetes"];
+  const head=["Data","Compte","Concepte","Població","Categoria","Etiquetes",
+    "Import","Saldo","Tipus","Nota"];
   const esc=v=>{ const s=v==null?"":String(v); return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  // Coma decimal a totes les xifres. El saldo se n'escapava i sortia amb punt:
+  // amb l'Excel en catala la columna quedava com a text i no se'n podia sumar res.
+  const num=v=>v==null?"":String(v).replace(".",",");
+  // Les etiquetes, separades per coma i no per espai: n'hi ha amb espais a dins
+  // ("2026 BODA YAGO-PATRI + RUTA") i unides per espai no se sabria on acaba una.
+  // Amb coma tornen a entrar tal qual al camp d'etiquetes de la taula.
   const body=rows.map(m=>[m.date,m.account,m.concept,m.city||"",m.category,
-    String(m.amount).replace(".",","),m.balance??"",m.kind,(m.tags||[]).join(" ")].map(esc).join(";"));
+    (m.tags||[]).join(", "),num(m.amount),num(m.balance),m.kind,m.note||""]
+    .map(esc).join(";"));
   const txt="﻿"+[head.join(";"),...body].join("\r\n");
   const a=el("a",{href:URL.createObjectURL(new Blob([txt],{type:"text/csv"})),
     download:"moviments.csv"}); document.body.append(a); a.click(); a.remove();
