@@ -1078,7 +1078,7 @@ function table(head,rows,foot){
     el("tbody",{},rows.map(r=>el("tr",{class:r.cls||""},
       r.filter(c=>c!==undefined).map((c,i)=>{
         const [txt,cls]=Array.isArray(c)?c:[c,""];
-        return el("td",{class:(i?"r ":"")+cls},txt==null?"—":String(txt));
+        return el("td",{class:(i?"r ":"")+cls},txt==null?"—":(txt.nodeType?txt:String(txt)));
       })))),
   );
   if(foot) t.append(el("tfoot",{},foot));
@@ -1094,18 +1094,27 @@ function totalRow(years){
 }
 function catTable(perMonth){
   const T=transferCats(), map=new Map();
-  let tot=0;
+  let tot=0, nTot=0;
   for(const m of S.data.movements){
     if(m.planned||m.amount>=0||T.has(m.category)||!inPeriod(m.date)) continue;
-    map.set(m.category,(map.get(m.category)||0)+(-m.amount)); tot+=-m.amount;
+    let e=map.get(m.category);
+    if(!e) map.set(m.category,e={v:0,n:0});
+    e.v+=-m.amount; e.n++; tot+=-m.amount; nTot++;
   }
-  const rows=[...map].sort((a,b)=>b[1]-a[1]);
+  const rows=[...map].sort((a,b)=>b[1].v-a[1].v);
   if(!rows.length) return el("div",{class:"empty"},"Cap despesa en aquest període.");
-  return el("div",{class:"tw"},table(["Categoria","Import","% del total","€/mes"],
-    rows.map(([c,v])=>[c,[eur(v),"neg"],pct(v/tot),eur(perMonth(v))]),
-    el("tr",{class:"tot"},["Total",eur(tot),"100 %",eur(perMonth(tot))]
+  /* El període ja el comparteixen Resum i Moviments, o sigui que per veure d'on
+     surt una xifra només cal posar-hi la categoria i canviar de pestanya. */
+  const veure=c=>el("button",{class:"btn ghost",title:"Veure'n els moviments",
+    onclick:()=>{ S.mov={...S.mov,cats:[c],tags:[],q:"",account:"",kind:"",limit:300};
+      S.tab="moviments"; render(); }},"Veure");
+  return el("div",{class:"tw"},table(["Categoria","Mov.","Import","% del total","€/mes",""],
+    rows.map(([c,e])=>[c,[NF0.format(e.n),"mut"],[eur(e.v),"neg"],pct(e.v/tot),
+      eur(perMonth(e.v)),veure(c)]),
+    el("tr",{class:"tot"},["Total",NF0.format(nTot),eur(tot),"100 %",eur(perMonth(tot)),""]
       .map((c,i)=>el("td",{class:i?"r":""},c)))));
 }
+
 function addMonths(k,n){
   let[y,m]=k.split("-").map(Number); m+=n;
   while(m<1){m+=12;y--;} while(m>12){m-=12;y++;}
