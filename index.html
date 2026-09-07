@@ -253,6 +253,7 @@ const S = {
   origen: null,          // d'on s'han carregat les dades
   cartera:{ evol:"class" },
   rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
+  desp:   { mode:"cat", cat:null, tag:null },   // evolucio de la despesa
   imp: null,           // estat de l'assistent d'importació
 };
 const TODAY = new Date().toISOString().slice(0,10);
@@ -1101,6 +1102,7 @@ function renderResum(root){
         totalRow(years))),
     ),
     card("Despesa per categoria",catTable(perMonth)),
+    blocDespesa(),
   );
 }
 function kpi(lbl,val,sub,cls){
@@ -3597,11 +3599,20 @@ function linesChart(labels,series,{h=200,fmt=eur0}={}){
     s.append(sv("line",{x1:P.l,x2:W-P.r,y1:Y,y2:Y,stroke:"var(--line)","stroke-width":1}));
     const t=sv("text",{x:W-P.r+6,y:Y+3.5}); t.textContent=fmt(v); s.append(t);
   }
+  /* Una serie pot no cobrir tot l'eix: un actiu que encara no tenies, o del qual
+     no se sap l'aportat en aquell tram. Es dibuixa a trossos i on no hi ha dada
+     no s'hi posa res, en comptes d'obligar totes les linies a compartir el tros
+     mes curt de totes. */
   for(const q of series){
-    const d=q.values.map((v,i)=>(i?"L":"M")+x(i)+" "+y(v)).join(" ");
-    s.append(sv("path",{d,fill:"none",stroke:q.color,"stroke-width":2,
+    let d="",obert=false;
+    q.values.forEach((v,i)=>{
+      if(v==null){ obert=false; return; }
+      d+=(obert?"L":"M")+x(i)+" "+y(v)+" "; obert=true;
+    });
+    if(d) s.append(sv("path",{d:d.trim(),fill:"none",stroke:q.color,"stroke-width":2,
       "stroke-dasharray":q.dash||null,"stroke-linejoin":"round","stroke-linecap":"round"}));
     q.values.forEach((v,i)=>{
+      if(v==null) return;
       const c=sv("circle",{cx:x(i),cy:y(v),r:2.2,fill:q.color,opacity:.9});
       s.append(tip(c,`${labels[i]} · ${q.label}: ${fmt(v)}`));
     });
@@ -3773,6 +3784,65 @@ function renderMatriu(){
 /* ================================================================== *
  *  Rendiment                                                         *
  * ================================================================== */
+/** La despesa mes a mes de cada categoria o de cada esdeveniment, per veure si
+    puja o baixa. Una linia nomes existeix mentre alla hi hagi hagut despesa: un
+    viatge de dos mesos no ha de dibuixar una ratlla plana a zero per tot
+    l'historic, i per aixo fora del seu tram el valor es null i no pas 0. */
+function blocDespesa(){
+  const T=transferCats(), [pa,pb]=periodRange();
+  const mode=S.desp.mode, clau=mode;               // "cat" o "tag"
+  const per=new Map(), mesos=new Set();
+  for(const m of S.data.movements){
+    if(m.planned||m.amount>=0||T.has(m.category)||m.date<pa||m.date>pb) continue;
+    const mes=m.date.slice(0,7); mesos.add(mes);
+    for(const k of (mode==="cat"?[m.category]:(m.tags||[]))){
+      let e=per.get(k); if(!e) per.set(k,e=new Map());
+      e.set(mes,(e.get(mes)||0)+(-m.amount));
+    }
+  }
+  const llista=[...mesos].sort();
+  const ordenats=[...per].map(([k,e])=>({k,e,tot:[...e.values()].reduce((a,b)=>a+b,0)}))
+    .sort((a,b)=>b.tot-a.tot);
+  if(S.desp[clau]===null) S.desp[clau]=ordenats.slice(0,5).map(g=>g.k);
+  const tria=S.desp[clau];
+  const xips=el("div",{class:"bar",style:"margin:0 0 10px;gap:6px"},
+    ordenats.map(g=>{
+      const on=tria.includes(g.k);
+      return el("button",{class:"chip"+(on?" on":""),title:eur0(g.tot),
+        onclick:()=>{ S.desp[clau]= on?tria.filter(x=>x!==g.k):[...tria,g.k]; render(); }},g.k);
+    }),
+    el("span",{style:"flex:1"}),
+    el("button",{class:"btn ghost",onclick:()=>{S.desp[clau]=ordenats.slice(0,5).map(g=>g.k);render();}},"Les 5 grosses"),
+    el("button",{class:"btn ghost",onclick:()=>{S.desp[clau]=[];render();}},"Cap"));
+  const tri=ordenats.filter(g=>tria.includes(g.k));
+  let cos;
+  if(!tri.length) cos=el("div",{class:"empty"},"Tria què vols veure.");
+  else if(llista.length<2) cos=el("div",{class:"empty"},"Calen almenys dos mesos amb despesa.");
+  else{
+    const series=tri.map(g=>{
+      const amb=[...g.e.keys()].sort();
+      const d1=amb[0], d2=amb.at(-1);
+      return {label:g.k,color:PALETA[ordenats.indexOf(g)%PALETA.length],
+        values:llista.map(m=> (m<d1||m>d2) ? null : (g.e.get(m)||0))};
+    });
+    cos=el("div",{},
+      linesChart(llista.map(m=>mLabel(m)),series,{h:230}),
+      el("div",{class:"legend"},series.map(q=>el("span",{},
+        el("i",{style:"background:"+q.color}),
+        q.label+" · "+eur0(q.values.filter(v=>v!=null).reduce((a,b)=>a+b,0))))));
+  }
+  return el("div",{class:"card"},
+    el("div",{class:"bar",style:"margin:0 0 8px"},
+      el("h2",{style:"margin:0;flex:1"},"Com evoluciona la despesa"),
+      sel(mode,[["cat","Per categoria"],["tag","Per esdeveniment"]],
+        v=>{ S.desp.mode=v; render(); })),
+    xips, cos,
+    el("p",{class:"note"},mode==="cat"
+      ? "Despesa de cada mes, dins del període triat. Els traspassos no hi compten. "+
+        "A la llegenda, el total del període."
+      : "Només hi surt el que has etiquetat. Cada línia viu entre el primer i "+
+        "l'últim mes amb despesa d'aquell esdeveniment."));
+}
 /** Evolucio del valor de cada grup al llarg del temps, amb un filtre de que es
     dibuixa. Amb tretze linies alhora no s'hi veu res, o sigui que de primer
     surten els cinc de mes valor i des d'alli ja tries. Les dates son les de les
@@ -3816,7 +3886,7 @@ function blocEvolucio(clau,grups,nota){
   const rend=S.rend.metric==="rendibilitat";
   // A rendibilitat només compten les dates on l'aportat ve desat de tots els
   // actius triats: on no se sap, no es dibuixa res.
-  const dts=rend ? dates.filter(d=>tri.every(g=>costGrup(g,d)!=null)) : dates;
+  const dts=rend ? dates.filter(d=>tri.some(g=>costGrup(g,d)!=null)) : dates;
   let cos;
   if(!tri.length) cos=el("div",{class:"empty"},"Tria què vols veure.");
   else if(dts.length<2) cos=el("div",{class:"empty"},
@@ -3836,13 +3906,14 @@ function blocEvolucio(clau,grups,nota){
         const v=g.assets.reduce((t,a)=>t+assetValueAt(a,d),0);
         if(!rend) return v;
         const c=costGrup(g,d);
-        return c ? (v-c)/c : 0;
+        return c ? (v-c)/c : null;      // sense aportat, forat a la línia
       })}));
     cos=el("div",{},
       linesChart(et,series,{h:230,fmt:rend?pct:eur0}),
       el("div",{class:"legend"},series.map(q=>el("span",{},
         el("i",{style:"background:"+q.color}),
-        q.label+" · "+(rend?pct(q.values.at(-1)):eur0(q.values.at(-1)))))));
+        q.label+" · "+(()=>{const u=q.values.filter(v=>v!=null).at(-1);
+          return u==null?"—":(rend?pct(u):eur0(u));})()))));
   }
   return el("div",{style:"margin-top:16px"},
     el("div",{class:"bar",style:"margin:0 0 8px"},
