@@ -252,6 +252,7 @@ const S = {
   real:   { card:"visa" },
   origen: null,          // d'on s'han carregat les dades
   cartera:{ evol:"class" },
+  rend:   { actius:null, carteres:null },   // que es dibuixa a cada evolucio
   imp: null,           // estat de l'assistent d'importació
 };
 const TODAY = new Date().toISOString().slice(0,10);
@@ -3754,6 +3755,47 @@ function renderMatriu(){
 /* ================================================================== *
  *  Rendiment                                                         *
  * ================================================================== */
+/** Evolucio del valor de cada grup al llarg del temps, amb un filtre de que es
+    dibuixa. Amb tretze linies alhora no s'hi veu res, o sigui que de primer
+    surten els cinc de mes valor i des d'alli ja tries. Les dates son les de les
+    valoracions desades, i el periode es el mateix que a la resta de pestanyes. */
+function blocEvolucio(clau,grups,nota){
+  const dates=snapshotDates();
+  const valorDe=g=>g.assets.reduce((t,a)=>t+assetValue(a),0);
+  const ordenats=grups.slice().sort((a,b)=>valorDe(b)-valorDe(a));
+  if(S.rend[clau]===null) S.rend[clau]=ordenats.slice(0,5).map(g=>g.key);
+  const tria=S.rend[clau];
+  const pinta=()=>{ render(); };
+  const xips=el("div",{class:"bar",style:"margin:0 0 10px;gap:6px"},
+    ordenats.map((g,i)=>{
+      const on=tria.includes(g.key);
+      return el("button",{class:"chip"+(on?" on":""),
+        title:eur0(valorDe(g)),
+        onclick:()=>{ S.rend[clau]= on ? tria.filter(k=>k!==g.key) : [...tria,g.key]; pinta(); }},
+        g.label);
+    }),
+    el("span",{style:"flex:1"}),
+    el("button",{class:"btn ghost",onclick:()=>{ S.rend[clau]=ordenats.map(g=>g.key); pinta(); }},"Tots"),
+    el("button",{class:"btn ghost",onclick:()=>{ S.rend[clau]=[]; pinta(); }},"Cap"));
+  const tri=ordenats.filter(g=>tria.includes(g.key));
+  let cos;
+  if(dates.length<2) cos=el("div",{class:"empty"},"Calen almenys dues valoracions dins del període.");
+  else if(!tri.length) cos=el("div",{class:"empty"},"Tria què vols veure.");
+  else{
+    const et=dateLabels(dates);
+    const series=tri.map((g,i)=>({label:g.label,color:PALETA[ordenats.indexOf(g)%PALETA.length],
+      values:dates.map(d=>g.assets.reduce((t,a)=>t+assetValueAt(a,d),0))}));
+    cos=el("div",{},
+      linesChart(et,series,{h:230}),
+      el("div",{class:"legend"},series.map(q=>el("span",{},
+        el("i",{style:"background:"+q.color}),q.label+" · "+eur0(q.values.at(-1))))));
+  }
+  return el("div",{style:"margin-top:16px"},
+    el("div",{class:"bar",style:"margin:0 0 8px"},
+      el("h2",{style:"margin:0;flex:1;font-size:15px"},"Evolució"), periodBar()),
+    xips, cos,
+    el("p",{class:"note"},nota));
+}
 function renderRendiment(root){
   const A=S.data.assets.filter(a=>a.include);
   const st=new Map(S.data.assets.map(a=>[a.id,assetStats(a)]));
@@ -3816,12 +3858,21 @@ function renderRendiment(root){
       el("p",{class:"note"},"El retorn és simple: valor actual contra diners aportats. No té en "+
         "compte quan va entrar cada aportació, així que en un actiu on hi vas posant diners "+
         "cada mes es queda curt. El CAGR anualitza aquest mateix retorn des de la data d'inici."),
+      blocEvolucio("actius",
+        A.map(a=>({key:a.id,label:a.name,assets:[a]})),
+        "Cada línia és el valor de l'actiu a cada valoració desada. Un actiu que "+
+        "encara no tenies surt a zero fins a la primera valoració seva."),
     ),
     card("Per cartera",
       el("div",{class:"tw"},table(["Cartera","Actius","Aportat","Valor","Benefici","Retorn"],
         [...wallets].sort((a,b)=>b[1].inv-a[1].inv).map(([k,w])=>[
           k.replace(/^Wallet\d_/,""),w.n,eur(w.inv),eur(w.val),
           [eur(w.val-w.inv),sgn(w.val-w.inv)],[pct(w.inv?(w.val-w.inv)/w.inv:null),sgn(w.val-w.inv)]]))),
+      blocEvolucio("carteres",
+        [...new Set(A.map(a=>a.wallet||"Sense cartera"))].map(k=>({
+          key:k, label:k.replace(/^Wallet\d_/,""),
+          assets:A.filter(a=>(a.wallet||"Sense cartera")===k)})),
+        "Cada línia és la suma dels actius d'aquella cartera a cada valoració desada."),
     ),
     card("Variació mensual de la cartera",
       barChart(monthly,[{label:"Variació",color:"var(--inv)",get:r=>r.eur}],{h:180}),
