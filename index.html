@@ -252,7 +252,7 @@ const S = {
   real:   { card:"visa" },
   origen: null,          // d'on s'han carregat les dades
   cartera:{ evol:"class" },
-  rend:   { actius:null, carteres:null },   // que es dibuixa a cada evolucio
+  rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
   imp: null,           // estat de l'assistent d'importació
 };
 const TODAY = new Date().toISOString().slice(0,10);
@@ -3406,11 +3406,29 @@ function assetCostAt(a,date){
   let base=null;
   for(const s of S.data.snapshots)
     if(s.assetId===a.id && s.cost!=null && s.date<=date && (!base||s.date>base.date)) base=s;
-  if(!base) return null;
-  let c=base.cost;
-  for(const x of S.data.contributions)
-    if(x.assetId===a.id && x.date>base.date && x.date<=date) c+=x.amount;
-  return c;
+  if(base){
+    let c=base.cost;
+    for(const x of S.data.contributions)
+      if(x.assetId===a.id && x.date>base.date && x.date<=date) c+=x.amount;
+    return c;
+  }
+  /* Encara no hi ha cap valoracio amb l'aportat desat en aquesta data. Es pot
+     anar cap enrere restant les aportacions, pero nomes si d'aquest actiu en
+     sabem el registre sencer: `contribFrom` diu des de quan ho es, i el posa qui
+     importa l'extracte del compte d'on surten les compres. Sense aixo no es
+     reconstrueix res, que amb un registre a mitges surten aportats negatius. */
+  if(a.contribFrom && date>=a.contribFrom){
+    let post=null;
+    for(const s of S.data.snapshots)
+      if(s.assetId===a.id && s.cost!=null && s.date>date && (!post||s.date<post.date)) post=s;
+    if(post){
+      let c=post.cost;
+      for(const x of S.data.contributions)
+        if(x.assetId===a.id && x.date>date && x.date<=post.date) c-=x.amount;
+      return Math.abs(c)<0.005 ? 0 : c;
+    }
+  }
+  return null;
 }
 /** Aportat de tota la cartera en una data. Només val si el sabem de TOTS els
     actius: sumar-ne uns quants dona una xifra que no es pot comparar amb la
@@ -3759,6 +3777,23 @@ function renderMatriu(){
     dibuixa. Amb tretze linies alhora no s'hi veu res, o sigui que de primer
     surten els cinc de mes valor i des d'alli ja tries. Les dates son les de les
     valoracions desades, i el periode es el mateix que a la resta de pestanyes. */
+/** L'aportat d'un grup en una data, i nomes si ve desat de debo a la valoracio
+    d'aquell dia i de tots els seus actius. No es reconstrueix: el registre
+    d'aportacions no quadra amb l'aportat real —a l'ETP Btc hi ha 13.118 €
+    registrats contra 1.058 € de debo— i qualsevol corba que en surti seria
+    inventada. Amb aixo la rendibilitat nomes es dibuixa on se sap. */
+function costGrup(g,d){
+  let t=0;
+  for(const a of g.assets){
+    // Sense cap valoracio d'aquest actiu en aquesta data no hi ha rendibilitat
+    // que valgui: el valor sortiria zero i la corba arrencaria a -100 %.
+    if(!S.data.snapshots.some(x=>x.assetId===a.id && x.date<=d)) return null;
+    const c=assetCostAt(a,d);
+    if(c==null) return null;
+    t+=c;
+  }
+  return t;
+}
 function blocEvolucio(clau,grups,nota){
   const dates=snapshotDates();
   const valorDe=g=>g.assets.reduce((t,a)=>t+assetValue(a),0);
@@ -3778,23 +3813,49 @@ function blocEvolucio(clau,grups,nota){
     el("button",{class:"btn ghost",onclick:()=>{ S.rend[clau]=ordenats.map(g=>g.key); pinta(); }},"Tots"),
     el("button",{class:"btn ghost",onclick:()=>{ S.rend[clau]=[]; pinta(); }},"Cap"));
   const tri=ordenats.filter(g=>tria.includes(g.key));
+  const rend=S.rend.metric==="rendibilitat";
+  // A rendibilitat només compten les dates on l'aportat ve desat de tots els
+  // actius triats: on no se sap, no es dibuixa res.
+  const dts=rend ? dates.filter(d=>tri.every(g=>costGrup(g,d)!=null)) : dates;
   let cos;
-  if(dates.length<2) cos=el("div",{class:"empty"},"Calen almenys dues valoracions dins del període.");
-  else if(!tri.length) cos=el("div",{class:"empty"},"Tria què vols veure.");
+  if(!tri.length) cos=el("div",{class:"empty"},"Tria què vols veure.");
+  else if(dts.length<2) cos=el("div",{class:"empty"},
+    rend
+      ? el("div",{},
+          el("p",{},"Encara no hi ha prou historial d'aportat per dibuixar la rendibilitat."),
+          el("p",{class:"note",style:"max-width:56ch;margin:0 auto"},
+            "El valor d'un actiu el saps de cada mes, però per saber-ne la "+
+            "rendibilitat cal també l'aportat d'aquell dia, i això només es desa "+
+            "d'ençà que importes les taules de cartera. Cada importació hi afegeix "+
+            "un punt; en unes quantes ja hi haurà corba."))
+      : "Calen almenys dues valoracions dins del període.");
   else{
-    const et=dateLabels(dates);
-    const series=tri.map((g,i)=>({label:g.label,color:PALETA[ordenats.indexOf(g)%PALETA.length],
-      values:dates.map(d=>g.assets.reduce((t,a)=>t+assetValueAt(a,d),0))}));
+    const et=dateLabels(dts);
+    const series=tri.map(g=>({label:g.label,color:PALETA[ordenats.indexOf(g)%PALETA.length],
+      values:dts.map(d=>{
+        const v=g.assets.reduce((t,a)=>t+assetValueAt(a,d),0);
+        if(!rend) return v;
+        const c=costGrup(g,d);
+        return c ? (v-c)/c : 0;
+      })}));
     cos=el("div",{},
-      linesChart(et,series,{h:230}),
+      linesChart(et,series,{h:230,fmt:rend?pct:eur0}),
       el("div",{class:"legend"},series.map(q=>el("span",{},
-        el("i",{style:"background:"+q.color}),q.label+" · "+eur0(q.values.at(-1))))));
+        el("i",{style:"background:"+q.color}),
+        q.label+" · "+(rend?pct(q.values.at(-1)):eur0(q.values.at(-1)))))));
   }
   return el("div",{style:"margin-top:16px"},
     el("div",{class:"bar",style:"margin:0 0 8px"},
-      el("h2",{style:"margin:0;flex:1;font-size:15px"},"Evolució"), periodBar()),
+      el("h2",{style:"margin:0;flex:1;font-size:15px"},"Evolució"),
+      sel(S.rend.metric,[["valor","Valor €"],["rendibilitat","Rendibilitat %"]],
+        v=>{ S.rend.metric=v; render(); }),
+      periodBar()),
     xips, cos,
-    el("p",{class:"note"},nota));
+    el("p",{class:"note"},rend
+      ? "Rendibilitat = (valor − aportat) / aportat a cada data, amb l'aportat "+
+        "que va quedar desat en aquella valoració. Només surten les dates on el "+
+        "sabem de tots els actius triats."
+      : nota));
 }
 function renderRendiment(root){
   const A=S.data.assets.filter(a=>a.include);
