@@ -253,7 +253,7 @@ const S = {
   origen: null,          // d'on s'han carregat les dades
   cartera:{ evol:"class" },
   rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
-  desp:   { mode:"cat", cat:null, tag:null },   // evolucio de la despesa
+  desp:   { mode:"cat", cat:null, tag:null, total:false },  // evolucio de la despesa
   imp: null,           // estat de l'assistent d'importació
 };
 const TODAY = new Date().toISOString().slice(0,10);
@@ -3801,6 +3801,14 @@ function blocDespesa(){
     }
   }
   const llista=[...mesos].sort();
+  // El total de cada mes compta TOTA la despesa, també la de les categories que
+  // ara no estiguin triades: es la xifra de Pagaments del Resum, no la suma del
+  // que es veu al gràfic.
+  const totalMes=new Map();
+  for(const m of S.data.movements){
+    if(m.planned||m.amount>=0||T.has(m.category)||m.date<pa||m.date>pb) continue;
+    const k=m.date.slice(0,7); totalMes.set(k,(totalMes.get(k)||0)+(-m.amount));
+  }
   const ordenats=[...per].map(([k,e])=>({k,e,tot:[...e.values()].reduce((a,b)=>a+b,0)}))
     .sort((a,b)=>b.tot-a.tot);
   if(S.desp[clau]===null) S.desp[clau]=ordenats.slice(0,5).map(g=>g.k);
@@ -3812,19 +3820,25 @@ function blocDespesa(){
         onclick:()=>{ S.desp[clau]= on?tria.filter(x=>x!==g.k):[...tria,g.k]; render(); }},g.k);
     }),
     el("span",{style:"flex:1"}),
+    el("button",{class:"btn"+(S.desp.total?" primary":" ghost"),
+      title:"La despesa total de cada mes, tot inclòs",
+      onclick:()=>{ S.desp.total=!S.desp.total; render(); }},"Totes"),
     el("button",{class:"btn ghost",onclick:()=>{S.desp[clau]=ordenats.slice(0,5).map(g=>g.k);render();}},"Les 5 grosses"),
     el("button",{class:"btn ghost",onclick:()=>{S.desp[clau]=[];render();}},"Cap"));
   const tri=ordenats.filter(g=>tria.includes(g.k));
   let cos;
-  if(!tri.length) cos=el("div",{class:"empty"},"Tria què vols veure.");
+  if(!tri.length && !S.desp.total) cos=el("div",{class:"empty"},"Tria què vols veure.");
   else if(llista.length<2) cos=el("div",{class:"empty"},"Calen almenys dos mesos amb despesa.");
   else{
-    const series=tri.map(g=>{
-      const amb=[...g.e.keys()].sort();
-      const d1=amb[0], d2=amb.at(-1);
-      return {label:g.k,color:PALETA[ordenats.indexOf(g)%PALETA.length],
-        values:llista.map(m=> (m<d1||m>d2) ? null : (g.e.get(m)||0))};
-    });
+    const series=[
+      ...(S.desp.total?[{label:"Totes les despeses",color:"var(--neg)",
+        values:llista.map(m=>totalMes.get(m)||0)}]:[]),
+      ...tri.map(g=>{
+        const amb=[...g.e.keys()].sort();
+        const d1=amb[0], d2=amb.at(-1);
+        return {label:g.k,color:PALETA[ordenats.indexOf(g)%PALETA.length],
+          values:llista.map(m=> (m<d1||m>d2) ? null : (g.e.get(m)||0))};
+      })];
     cos=el("div",{},
       linesChart(llista.map(m=>mLabel(m)),series,{h:230}),
       el("div",{class:"legend"},series.map(q=>el("span",{},
@@ -3837,11 +3851,13 @@ function blocDespesa(){
       sel(mode,[["cat","Per categoria"],["tag","Per esdeveniment"]],
         v=>{ S.desp.mode=v; render(); })),
     xips, cos,
-    el("p",{class:"note"},mode==="cat"
+    el("p",{class:"note"},(mode==="cat"
       ? "Despesa de cada mes, dins del període triat. Els traspassos no hi compten. "+
         "A la llegenda, el total del període."
       : "Només hi surt el que has etiquetat. Cada línia viu entre el primer i "+
-        "l'últim mes amb despesa d'aquell esdeveniment."));
+        "l'últim mes amb despesa d'aquell esdeveniment.")+
+      (S.desp.total?" «Totes les despeses» compta tot el que has gastat cada mes, "+
+        "també el de les categories que ara no surtin dibuixades.":"")));
 }
 /** Evolucio del valor de cada grup al llarg del temps, amb un filtre de que es
     dibuixa. Amb tretze linies alhora no s'hi veu res, o sigui que de primer
