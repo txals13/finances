@@ -253,7 +253,7 @@ const S = {
   origen: null,          // d'on s'han carregat les dades
   cartera:{ evol:"class" },
   rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
-  desp:   { mode:"cat", cat:null, tag:null, total:false },  // evolucio de la despesa
+  desp:   { mode:"cat", cat:null, tag:null, total:false, sumar:false },  // evolucio de la despesa
   imp: null,           // estat de l'assistent d'importació
 };
 const TODAY = new Date().toISOString().slice(0,10);
@@ -3820,6 +3820,9 @@ function blocDespesa(){
         onclick:()=>{ S.desp[clau]= on?tria.filter(x=>x!==g.k):[...tria,g.k]; render(); }},g.k);
     }),
     el("span",{style:"flex:1"}),
+    el("button",{class:"btn"+(S.desp.sumar?" primary":" ghost"),
+      title:"Una sola línia amb la suma del que hagis triat",
+      onclick:()=>{ S.desp.sumar=!S.desp.sumar; render(); }},"Sumar-les"),
     el("button",{class:"btn"+(S.desp.total?" primary":" ghost"),
       title:"La despesa total de cada mes, tot inclòs",
       onclick:()=>{ S.desp.total=!S.desp.total; render(); }},"Totes"),
@@ -3830,15 +3833,27 @@ function blocDespesa(){
   if(!tri.length && !S.desp.total) cos=el("div",{class:"empty"},"Tria què vols veure.");
   else if(llista.length<2) cos=el("div",{class:"empty"},"Calen almenys dos mesos amb despesa.");
   else{
+    /* Sumades, els triats fan una sola línia: és com es veu el cost d'un cotxe,
+       que viu escampat entre T4_BENZINA, T4_MANT, T4_ITV i T4_ASSAGURANÇA. El
+       tram va del primer mes amb despesa de qualsevol d'ells a l'últim. */
+    const sumades=()=>{
+      const amb=tri.flatMap(g=>[...g.e.keys()]).sort();
+      const d1=amb[0], d2=amb.at(-1);
+      return [{label: tri.length<=3 ? tri.map(g=>g.k).join(" + ")
+                 : tri.length+(mode==="cat"?" categories":" esdeveniments"),
+        color:"var(--inv)",
+        values:llista.map(m=> (m<d1||m>d2) ? null
+          : tri.reduce((t,g)=>t+(g.e.get(m)||0),0))}];
+    };
     const series=[
       ...(S.desp.total?[{label:"Totes les despeses",color:"var(--neg)",
         values:llista.map(m=>totalMes.get(m)||0)}]:[]),
-      ...tri.map(g=>{
+      ...(S.desp.sumar && tri.length>1 ? sumades() : tri.map(g=>{
         const amb=[...g.e.keys()].sort();
         const d1=amb[0], d2=amb.at(-1);
         return {label:g.k,color:PALETA[ordenats.indexOf(g)%PALETA.length],
           values:llista.map(m=> (m<d1||m>d2) ? null : (g.e.get(m)||0))};
-      })];
+      }))];
     cos=el("div",{},
       linesChart(llista.map(m=>mLabel(m)),series,{h:230}),
       el("div",{class:"legend"},series.map(q=>el("span",{},
@@ -3856,6 +3871,8 @@ function blocDespesa(){
         "A la llegenda, el total del període."
       : "Només hi surt el que has etiquetat. Cada línia viu entre el primer i "+
         "l'últim mes amb despesa d'aquell esdeveniment.")+
+      (S.desp.sumar&&tri.length>1?" Amb «Sumar-les», els que triïs fan una sola "+
+        "línia amb el total; a la llegenda, la suma del període.":"")+
       (S.desp.total?" «Totes les despeses» compta tot el que has gastat cada mes, "+
         "també el de les categories que ara no surtin dibuixades.":"")));
 }
