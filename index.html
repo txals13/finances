@@ -2618,6 +2618,98 @@ function esborraPrevisio(k){
   mo.forecastIncome=null; mo.forecastExpense=null; mo.forecastInvestment=null;
   markDirty(); render();
 }
+/* ---- Compte corrent: que et quedara despres de la nomina i la VISA -------
+   El proces es: cobres, et carreguen la VISA, al compte hi han de quedar uns
+   3.000 €, i el que en sobri va al DCA si aquest ja te el seu minim, o es queda
+   liquid si hi ha algun esdeveniment. Els dos llindars son els matalassos de la
+   pestanya FIRE, que es on es decideixen: aqui nomes es llegeixen. */
+function llindar(re,defecte){
+  const l=(S.data.fire.liquidity||[]).find(b=>re.test(b.name||"")||
+    (b.assetId===COMPTE&&re.test("compte")));
+  return l && +l.target ? +l.target : defecte;
+}
+function actiuDCA(){
+  const l=(S.data.fire.liquidity||[]).find(b=>/dca/i.test(b.name||""));
+  return (l&&S.data.assets.find(a=>a.id===l.assetId)) || S.data.assets.find(a=>/^dca$/i.test(a.name));
+}
+/** La propera VISA que et carregaran: la d'un cicle ja tancat i encara no cobrat,
+    si n'hi ha, i si no, la del cicle obert al ritme que portes. */
+function properaVisa(){
+  const obert=openCycle();
+  const tancat=realTable().find(r=>r.month<obert.month && !r.settled && r.buys>0
+    && addMonths(r.month,1)+"-01">=TODAY);
+  if(tancat) return {import:tancat.buys,data:addMonths(tancat.month,1)+"-01",cicle:tancat.month,tancat:true};
+  return {import:obert.pace??obert.spent,data:obert.charge,cicle:obert.month,tancat:false,
+    gastat:obert.spent,dia:obert.done,total:obert.total};
+}
+/** La nomina que encara ha d'entrar. Es paga a final de mes i les variables a
+    mitjan del seguent, o sigui que en pot quedar pendent la d'aquest mes i la de
+    l'anterior; no se'n miren mes, que un mes de nomina mes baixa que la prevista
+    no s'ha de quedar per sempre com a "pendent". */
+function nominaPendent(){
+  const R=new Map(realTable().map(r=>[r.month,r])), P=new Map(derive().map(r=>[r.month,r]));
+  const m0=TODAY.slice(0,7), det=[];
+  for(const k of [addMonths(m0,-1),m0]){
+    const p=P.get(k); if(!p||p.fIncome==null) continue;
+    const falta=p.fIncome-((R.get(k)||{}).income||0);
+    if(falta>0.5){
+      const d=S.data.plan.filter(x=>x.planned&&x.amount>0&&x.date.slice(0,7)===k)
+        .map(x=>x.date).sort().at(-1)||null;
+      det.push({mes:k,import:falta,data:d});
+    }
+  }
+  return {tot:det.reduce((a,x)=>a+x.import,0),det};
+}
+function panellCompte(){
+  const cc=currentBalance();
+  if(cc==null) return null;
+  const obj=llindar(/compte/i,3000), minDca=llindar(/dca/i,2500);
+  const nom=nominaPendent(), visa=properaVisa();
+  const despres=cc+nom.tot-visa.import, sobra=despres-obj;
+  const dca=actiuDCA(), valDca=dca?assetValue(dca):null;
+  const dataDca=dca?S.data.snapshots.filter(x=>x.assetId===dca.id).map(x=>x.date).sort().at(-1):null;
+  const faltaDca=valDca!=null?Math.max(0,minDca-valDca):0;
+  // Les cel·les de la taula no parteixen mai (nowrap) i al mòbil la línia de
+  // detall de la VISA la feia 412 px d'ample: aquí sí que han de partir.
+  const fila=(et,val,det,cls)=>el("tr",{},
+    el("td",{style:"white-space:normal"},et,
+      det?el("div",{class:"mut",style:"font-size:12px"},det):null),
+    el("td",{class:"r num "+(cls||""),style:"vertical-align:top"},val));
+  let consell;
+  if(sobra<=0) consell="Després de cobrar i pagar la VISA el compte quedarà "+eur(-sobra)+
+    " per sota de l'objectiu. Aquest cicle no hi ha res per moure.";
+  else if(valDca==null) consell="Et sobraran "+eur(sobra)+".";
+  else if(faltaDca>0){
+    const primer=Math.min(sobra,faltaDca), resta=sobra-primer;
+    consell="Primer, "+eur(primer)+" al DCA per arribar al mínim de "+eur(minDca)+
+      (resta>0?". La resta, "+eur(resta)+", la pots invertir des del DCA o deixar-la "+
+        "al compte si tens algun esdeveniment a la vista.":
+        (primer<faltaDca?"; encara li'n faltaran "+eur(faltaDca-primer)+".":"."));
+  } else consell="El DCA ja té el seu mínim: els "+eur(sobra)+" els pots passar al DCA per "+
+    "invertir-los, o deixar-los al compte si tens algun esdeveniment a la vista.";
+  return el("div",{class:"card"},
+    el("h2",{},"Compte corrent · després de la nòmina i la VISA"),
+    el("div",{class:"tw"},el("table",{style:"max-width:560px"},el("tbody",{},
+      fila("Ara al compte",eur(cc)),
+      nom.det.length ? nom.det.map(x=>fila("+ Nòmina de "+mLabel(x.mes),eur(x.import),
+          x.data?"prevista el "+dCa(x.data):"prevista","pos"))
+        : fila("+ Nòmina",eur(0),"no n'hi ha cap de pendent","mut"),
+      fila("− VISA del cicle de "+mLabel(visa.cicle),"−"+eur(visa.import),
+        "l'"+dCa(visa.data)+(visa.tancat?" · cicle tancat":" · portes "+eur(visa.gastat)+
+          ", dia "+visa.dia+" de "+visa.total+", al ritme d'ara"),"neg"),
+      el("tr",{class:"tot"},el("td",{},"Quedarà al compte"),el("td",{class:"r num"},eur(despres))),
+      fila("Objectiu",eur(obj),"el matalàs del compte corrent, a FIRE","mut"),
+      el("tr",{class:"tot"},el("td",{},sobra>=0?"Per moure":"Per sota de l'objectiu"),
+        el("td",{class:"r num "+sgn(sobra)},eur(sobra))),
+    ))),
+    valDca!=null ? el("p",{style:"margin:12px 0 0"},
+      el("b",{},"DCA: "+eur(valDca)),
+      el("span",{class:"mut"}," · mínim "+eur(minDca)+
+        (faltaDca>0?" · en falten "+eur(faltaDca):" · complert")+
+        (dataDca?" · valorat el "+dCa(dataDca):""))) : null,
+    el("p",{class:"note",style:"margin:8px 0 0;font-size:13px;color:var(--ink)"},consell),
+  );
+}
 function renderReal(root){
   const [pa,pb]=periodRange();
   const all=realTable();
@@ -2642,6 +2734,21 @@ function renderReal(root){
     fInvest:a.fInvest+(r.fInvest||0),fSurplus:a.fSurplus+(r.fSurplus||0)}),
     {income:0,bank:0,card:0,expense:0,invest:0,fIncome:0,fExpense:0,fInvest:0,fSurplus:0});
   T.saving=T.income-T.expense; T.surplus=T.saving-T.invest;
+  /* El compte previst a final de mes. Arrenca del que hi quedara despres de la
+     propera nomina i la propera VISA —el mateix que el panell de dalt—, hi resta
+     el que encara falti moure aquest mes segons la teva previsio d'inversio, i
+     cada mes seguent hi suma el seu «Queda previst». Diu si el pla deixa el
+     compte a l'objectiu, o si s'hi acumulen diners que podries moure. */
+  const m0=TODAY.slice(0,7), obj=llindar(/compte/i,3000), ccPer=new Map();
+  if(currentBalance()!=null){
+    let cc=currentBalance()+nominaPendent().tot-properaVisa().import;
+    for(const r of rows){
+      if(r.month<m0) continue;
+      if(r.month===m0) cc-=Math.max(0,(r.fInvest||0)-(r.invest||0));
+      else cc+=r.fSurplus||0;
+      ccPer.set(r.month,cc);
+    }
+  }
 
   const gap=r=>r.buys&&r.visa?Math.abs(r.buys-r.visa)/Math.max(r.buys,r.visa):0;
   const dolentes=all.filter(r=>gap(r)>0.25 && (r.buys>200||r.visa>200));
@@ -2666,6 +2773,7 @@ function renderReal(root){
         " El cicle que encara s'està acumulant surt sempre per compres, perquè encara "+
         "no s'ha cobrat."),
     ),
+    panellCompte(),
     openCyclePanel(all),
     el("div",{class:"grid kpis",style:"margin-bottom:14px"},
       kpi("Ingressos",eur(T.income),"imputats al seu mes","pos"),
@@ -2686,11 +2794,13 @@ function renderReal(root){
         "són la mateixa resta, una amb el real i l'altra amb el previst. Tot s'edita, també "+
         "dels mesos passats: buidar una casella la treu i la ✕ esborra la previsió del mes. "+
         "Els ingressos previstos surten en gris del calendari de nòmines; si hi escrius una "+
-        "xifra, mana la teva."),
+        "xifra, mana la teva. «CC previst» és el compte a final de mes si segueixes el pla: "+
+        "arrenca del panell de dalt i cada mes hi suma el seu «Queda previst». Si creix per "+
+        "sobre de l'objectiu, el pla hi deixa diners que podries passar al DCA."),
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},["Mes","Ingressos","Compte","Targeta","Despeses","Inversió",
           "Estalvi","% estalvi","Sobrant","Ingr. previstos","Desp. prevista","Inv. prevista",
-          "Queda previst",""].map((h,i)=>el("th",{class:i?"r":""},h)))),
+          "Queda previst","CC previst",""].map((h,i)=>el("th",{class:i?"r":""},h)))),
         el("tbody",{},rows.map(r=>el("tr",{class:r.future?"fut":""},
           el("td",{},mLabel(r.month),
             r.open?el("span",{class:"pill",style:"margin-left:7px"},"en curs")
@@ -2709,6 +2819,13 @@ function renderReal(root){
           el("td",{class:"r"},celaPrevisio(r.month,"forecastInvestment")),
           el("td",{class:"r num "+(r.fSurplus==null?"mut":sgn(r.fSurplus))},
             r.fSurplus!=null?eur(r.fSurplus):""),
+          (()=>{ const cc=ccPer.get(r.month);
+            if(cc==null) return el("td",{});
+            const d=cc-obj;
+            return el("td",{class:"r num"},eur(cc),
+              el("div",{class:sgn(d),style:"font-size:11px"},
+                (d>=0?"+"+eur(d)+" sobre ":eur(d)+" per sota de ")+eur0(obj)));
+          })(),
           el("td",{class:"r"},teVisioManual(r.month)&&!ocult?el("button",{class:"btn ghost",
             title:"Esborrar la previsió que hi has escrit",
             onclick:()=>esborraPrevisio(r.month)},"✕"):""),
@@ -2717,7 +2834,7 @@ function renderReal(root){
           ["Total",eur(T.income),eur(T.bank),eur(T.card),eur(T.expense),eur(T.invest),
            eur(T.saving),pct(T.income?T.saving/T.income:null),eur(T.surplus),
            T.fIncome?eur(T.fIncome):"",T.fExpense?eur(T.fExpense):"",
-           T.fInvest?eur(T.fInvest):"",T.fSurplus?eur(T.fSurplus):"",""]
+           T.fInvest?eur(T.fInvest):"",T.fSurplus?eur(T.fSurplus):"","",""]
           .map((c,i)=>el("td",{class:i?"r":""},c)))),
       )),
     ),
