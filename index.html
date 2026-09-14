@@ -2710,8 +2710,51 @@ function panellCompte(){
     el("p",{class:"note",style:"margin:8px 0 0;font-size:13px;color:var(--ink)"},consell),
   );
 }
+/** A Real el futur compta: la previsio es justament del que encara no ha passat.
+    "Aquest any" hi va fins al 31 de desembre en comptes d'aturar-se avui, que es
+    el que fan les altres pestanyes per no comptar mesos buits. "Tot l'historic" ja
+    no te sostre, i a "Dates concretes" manen les teves. */
+function periodRangeReal(){
+  const [a,b]=periodRange();
+  return S.period.preset==="year" ? [a,TODAY.slice(0,4)+"-12-31"] : [a,b];
+}
+/** El que et sobra en el periode triat: el real dels mesos que ja han passat i
+    la previsio del mes en curs i dels que vindran. Sumar el total de «Sobrant» i
+    el de «Queda previst» comptaria dos cops els mesos que tenen totes dues coses
+    (l'agost i el setembre, per exemple): cada mes compta una sola vegada, amb la
+    millor xifra que se'n te. */
+function resultatPeriode(rows,ccPer,m0,obj){
+  if(!rows.length) return null;
+  const pas=rows.filter(r=>r.month<m0&&!r.buit), ve=rows.filter(r=>r.month>=m0);
+  if(!ve.length && !pas.length) return null;
+  const real=pas.reduce((a,r)=>a+r.surplus,0);
+  const prev=ve.reduce((a,r)=>a+(r.fSurplus!=null?r.fSurplus:(r.buit?0:r.surplus)),0);
+  const tot=real+prev;
+  const ultim=rows.at(-1), ccFi=ccPer.get(ultim.month);
+  const tram=l=>l.length===1?mLabel(l[0].month):mLabel(l[0].month)+" a "+mLabel(l.at(-1).month);
+  return el("div",{style:"margin-top:14px;padding:12px 14px;border-radius:var(--radius);"+
+      "background:var(--bg);border:1px solid var(--line)"},
+    // Negatiu no vol dir que perdis diners: vol dir que en passes a inversio mes
+    // dels que et queden de la nomina, i la diferencia surt del que ja tenies.
+    el("div",{style:"display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"},
+      el("span",{},el("b",{},"Resultat del període"),
+        el("span",{class:"mut",style:"font-size:12px"}," · ingressos − despeses − inversió")),
+      el("span",{class:"num "+sgn(tot),style:"font-size:20px;font-weight:650"},eur(tot))),
+    el("div",{style:"font-size:13px;margin-top:2px"},
+      tot>=0 ? "Et sobren "+eur(tot)+" després d'invertir."
+             : "Hi inverteixes "+eur(-tot)+" més del que estalvies: la diferència surt del "+
+               "que ja tenies."),
+    el("div",{class:"mut",style:"font-size:12px;margin-top:4px"},
+      (pas.length?"real de "+tram(pas)+": "+eur(real):"")+
+      (pas.length&&ve.length?" · ":"")+
+      (ve.length?"previst de "+tram(ve)+": "+eur(prev):"")),
+    ccFi!=null ? el("div",{style:"font-size:13px;margin-top:6px"},
+      "Al compte, a final de "+mLabel(ultim.month)+": ",el("b",{},eur(ccFi)),
+      el("span",{class:sgn(ccFi-obj)},
+        " ("+(ccFi-obj>=0?"+":"")+eur(ccFi-obj)+" respecte de l'objectiu)")) : null);
+}
 function renderReal(root){
-  const [pa,pb]=periodRange();
+  const [pa,pb]=periodRangeReal();
   const all=realTable();
   const prev=new Map(derive().map(r=>[r.month,r]));
   const perMes=new Map(all.map(r=>[r.month,r]));
@@ -2719,12 +2762,12 @@ function renderReal(root){
     if(!perMes.has(k) && (p.fIncome!=null||p.fExpense!=null||p.fInvest!=null))
       perMes.set(k,{month:k,income:0,bank:0,card:0,visa:0,buys:0,invest:0,
         expense:0,saving:0,surplus:0,rate:null,buit:true});
-  const rows=[...perMes.values()].sort((a,b)=>a.month<b.month?-1:1)
-    .filter(r=>r.month>=pa.slice(0,7)&&r.month<=pb.slice(0,7))
+  const totes=[...perMes.values()].sort((a,b)=>a.month<b.month?-1:1)
     .map(r=>{ const p=prev.get(r.month)||{};
       return {...r,fIncome:p.fIncome??null,fIncomeAuto:p.fIncomeAuto??null,
         fExpense:p.fExpense??null,fInvest:p.fInvest??null,fSurplus:p.fSurplus??null,
         future:r.month>TODAY.slice(0,7)}; });
+  const rows=totes.filter(r=>r.month>=pa.slice(0,7)&&r.month<=pb.slice(0,7));
   // Només les nòmines: en un bizum de 26 € el mes d'imputació no canvia res.
   const dubtes=S.data.movements.filter(m=>!m.planned&&m.amount>0&&
     m.category==="NOMINA"&&!accrual(m).sure);
@@ -2741,8 +2784,10 @@ function renderReal(root){
      compte a l'objectiu, o si s'hi acumulen diners que podries moure. */
   const m0=TODAY.slice(0,7), obj=llindar(/compte/i,3000), ccPer=new Map();
   if(currentBalance()!=null){
+    // Sobre tots els mesos i no nomes els filtrats: si el filtre comenca al
+    // novembre, el compte del novembre ha de portar el setembre i l'octubre a sobre.
     let cc=currentBalance()+nominaPendent().tot-properaVisa().import;
-    for(const r of rows){
+    for(const r of totes){
       if(r.month<m0) continue;
       if(r.month===m0) cc-=Math.max(0,(r.fInvest||0)-(r.invest||0));
       else cc+=r.fSurplus||0;
@@ -2837,6 +2882,7 @@ function renderReal(root){
            T.fInvest?eur(T.fInvest):"",T.fSurplus?eur(T.fSurplus):"","",""]
           .map((c,i)=>el("td",{class:i?"r":""},c)))),
       )),
+      resultatPeriode(rows,ccPer,m0,obj),
     ),
     card("Real contra previsió",
       barChart(rows.slice(-18),[
