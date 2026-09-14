@@ -837,6 +837,14 @@ function derive(){
     if(!p.planned) continue;
     const e=at(p.date.slice(0,7)); e.fIncome=(e.fIncome||0)+p.amount;
   }
+  /* La previsio d'ingressos que escriguis a ma substitueix la del calendari de
+     nomines, no s'hi suma: si hi poses 2.500, vol dir que aquell mes n'esperes
+     2.500 en total. La del calendari es guarda a part per ensenyar-la de pista. */
+  for(const mo of S.data.months){
+    const e=at(mo.month);
+    e.fIncomeAuto=e.fIncome;
+    if(mo.forecastIncome!=null) e.fIncome=Math.abs(mo.forecastIncome);
+  }
   const rows=[...map.values()]
     .filter(r=>r.nMov||r.income||r.expense||r.invest||r.fIncome!=null||r.fExpense!=null||r.fInvest!=null)
     .sort((a,b)=>a.month<b.month?-1:1);
@@ -848,7 +856,14 @@ function derive(){
     r.rate    = r.income>=MIN_INCOME_FOR_RATE ? r.saving/r.income : null;
     r.surplus = r.saving-r.invest;
     r.future  = r.month>TODAY.slice(0,7);
+    if(!("fIncomeAuto" in r)) r.fIncomeAuto=r.fIncome;
     r.fSaving = (r.fIncome!=null||r.fExpense!=null) ? (r.fIncome||0)-(r.fExpense||0) : null;
+    /* El que queda del mes segons la previsio: ingressos menys despeses menys
+       inversio. Nomes si hi ha ingressos previstos: molts mesos passats porten la
+       previsio de despesa del full antic i cap d'ingressos, i restar-los de zero
+       feia sortir -900 € a cadascun, com si els haguessis perdut. */
+    r.fSurplus = r.fIncome!=null
+      ? r.fIncome-(r.fExpense||0)-(r.fInvest||0) : null;
     if(r.lastBalance!=null) last=r.lastBalance; else r.lastBalance=null;
     r.carried = last;
   }
@@ -1542,6 +1557,7 @@ function peuMesos(rows){
   const T={income:suma(reals,"income"),expense:suma(reals,"expense"),
     invest:suma(reals,"invest"),saving:suma(reals,"saving"),surplus:suma(reals,"surplus"),
     fExpense:suma(rows,"fExpense"),fInvest:suma(rows,"fInvest"),fIncome:suma(rows,"fIncome"),
+    fSurplus:suma(rows,"fSurplus"),
     mov:suma(reals,"nMov")};
   const n=reals.length||1;
   const saldos=reals.filter(r=>r.lastBalance!=null);
@@ -1557,9 +1573,10 @@ function peuMesos(rows){
       cel(pct(T.income?T.saving/T.income:null)),
       cel(eur(T.surplus),sgn(T.surplus)),
       cel(""),
+      cel(T.fIncome?eur(T.fIncome):"","mut"),
       cel(T.fExpense?eur(T.fExpense):"","mut"),
       cel(T.fInvest?eur(T.fInvest):"","mut"),
-      cel(T.fIncome?eur(T.fIncome):"","mut")),
+      cel(T.fSurplus?eur(T.fSurplus):"",sgn(T.fSurplus)), cel("")),
     el("tr",{class:"tot"},
       el("td",{},"Mitjana",el("div",{class:"mut",style:"font-size:11px;font-weight:400"},
         "de "+n+(n===1?" mes":" mesos"))),
@@ -1569,9 +1586,10 @@ function peuMesos(rows){
       cel(pct(T.income?T.saving/T.income:null)),
       cel(eur(T.surplus/n),sgn(T.surplus)),
       cel(mitjaSaldo!=null?eur(mitjaSaldo):"","mut"),
+      cel(mitjaPrev("fIncome")!=null?eur(mitjaPrev("fIncome")):"","mut"),
       cel(mitjaPrev("fExpense")!=null?eur(mitjaPrev("fExpense")):"","mut"),
       cel(mitjaPrev("fInvest")!=null?eur(mitjaPrev("fInvest")):"","mut"),
-      cel(mitjaPrev("fIncome")!=null?eur(mitjaPrev("fIncome")):"","mut")),
+      cel(mitjaPrev("fSurplus")!=null?eur(mitjaPrev("fSurplus")):"",sgn(T.fSurplus)), cel("")),
   );
 }
 function renderMesos(root){
@@ -1582,14 +1600,20 @@ function renderMesos(root){
     const mo=S.data.months.find(x=>x.month===r.month);
     // Amb el mode discret actiu, les caselles de previsió ensenyarien la xifra
     // dins d'una taula tota emmascarada: es mostren com la resta i prou.
-    const inp=(val,on)=>ocult
+    // Totes les previsions s'editen sempre, també dels mesos passats: aixi les
+    // pots corregir o esborrar un cop saps com ha anat. Buidar la casella = treure-la.
+    const inp=(val,on,pista)=>ocult
       ? el("span",{class:"num mut"},val==null?"":eur(val))
-      : el("input",{type:"number",step:"50",value:val??"",placeholder:"—",
+      : el("input",{type:"number",step:"50",value:val??"",
+          placeholder:pista!=null?NF0.format(Math.round(pista)):"—",
+          title:pista!=null&&val==null?"Del calendari de nòmines: "+eur(pista)+
+            ". Escriu-hi per canviar-ho.":"",
           style:"text-align:right",onchange:e=>{on(e.target.value===""?null:+e.target.value);
             markDirty(); render();}});
     const ensure=()=>{ let m=S.data.months.find(x=>x.month===r.month);
       if(!m) S.data.months.push(m={month:r.month,investment:0,forecastExpense:null,
-        forecastInvestment:null,note:""}); return m; };
+        forecastInvestment:null,forecastIncome:null,note:""}); return m; };
+    const teManual=mo && (mo.forecastIncome!=null||mo.forecastExpense!=null||mo.forecastInvestment!=null);
     return el("tr",{class:r.future?"fut":""},
       el("td",{},mLabel(r.month)),
       el("td",{class:"r num"},r.nMov||""),
@@ -1600,11 +1624,15 @@ function renderMesos(root){
       el("td",{class:"r num"},r.nMov?pct(r.rate):""),
       el("td",{class:"r num "+sgn(r.surplus)},r.nMov?eur(r.surplus):""),
       el("td",{class:"r num mut"},r.lastBalance!=null?eur(r.lastBalance):""),
-      el("td",{class:"r"},r.future?inp(mo?.forecastExpense,v=>ensure().forecastExpense=v)
-        :el("span",{class:"mut num"},r.fExpense?eur(r.fExpense):"")),
-      el("td",{class:"r"},r.future?inp(mo?.forecastInvestment,v=>ensure().forecastInvestment=v)
-        :el("span",{class:"mut num"},r.fInvest?eur(r.fInvest):"")),
-      el("td",{class:"r num mut"},r.fIncome?eur(r.fIncome):""),
+      el("td",{class:"r"},inp(mo?.forecastIncome,v=>ensure().forecastIncome=v,r.fIncomeAuto)),
+      el("td",{class:"r"},inp(mo?.forecastExpense,v=>ensure().forecastExpense=v)),
+      el("td",{class:"r"},inp(mo?.forecastInvestment,v=>ensure().forecastInvestment=v)),
+      el("td",{class:"r num "+(r.fSurplus==null?"mut":sgn(r.fSurplus))},
+        r.fSurplus!=null?eur(r.fSurplus):""),
+      el("td",{class:"r"},teManual&&!ocult?el("button",{class:"btn ghost",
+        title:"Esborrar la previsió que hi has escrit",
+        onclick:()=>{ mo.forecastIncome=null; mo.forecastExpense=null;
+          mo.forecastInvestment=null; markDirty(); render(); }},"✕"):""),
     );
   });
   const years=byYear(rows);
@@ -1619,13 +1647,15 @@ function renderMesos(root){
     el("div",{class:"card"},
       el("h2",{},"Real per mes i previsió"),
       el("p",{class:"note",style:"margin-bottom:12px"},
-        "Les xifres de l'esquerra surten dels moviments reals. Les dues columnes editables són la "+
-        "previsió dels mesos que encara no han passat; els ingressos previstos venen del calendari "+
-        "de nòmines importat del full."),
+        "Les xifres de l'esquerra surten dels moviments reals. A la dreta, la previsió: "+
+        "ingressos, despeses i inversió, i el que et quedaria. Tot s'edita, també dels mesos "+
+        "passats; buidar una casella la treu, i la ✕ esborra la previsió sencera del mes. "+
+        "Els ingressos previstos surten en gris del calendari de nòmines: si hi escrius una "+
+        "xifra, mana la teva."),
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},
           ["Mes","Mov.","Ingressos","Pagaments","Inversió","Estalvi","% estalvi","Sobrant","Saldo final",
-           "Desp. prevista","Inv. prevista","Ingr. previstos"]
+           "Ingr. previstos","Desp. prevista","Inv. prevista","Queda previst",""]
           .map((h,i)=>el("th",{class:i?"r":""},h)))),
         el("tbody",{},rowsUi),
         peuMesos(rows))),
