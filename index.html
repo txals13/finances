@@ -2718,6 +2718,36 @@ function periodRangeReal(){
   const [a,b]=periodRange();
   return S.period.preset==="year" ? [a,TODAY.slice(0,4)+"-12-31"] : [a,b];
 }
+/** Totals i mitjanes de la taula de Real, sobre les files que deixa el filtre.
+    La mitjana del real es fa amb els mesos tancats: el mes en curs encara no ha
+    cobrat la nomina ni la VISA, i fer-la entrar a la mitjana la rebaixaria sense
+    motiu. La de cada columna de previsio, amb els mesos que en tenen, que son
+    pocs i dividir pel total la faria inservible. */
+function peuReal(rows,T,m0){
+  const tancats=rows.filter(r=>!r.buit && r.month<m0), n=tancats.length;
+  const s=k=>tancats.reduce((a,r)=>a+(r[k]||0),0);
+  const mR=k=>n?s(k)/n:null;
+  const mF=k=>{ const l=rows.filter(r=>r[k]!=null);
+    return l.length?l.reduce((a,r)=>a+r[k],0)/l.length:null; };
+  const e=v=>v==null?"":eur(v);
+  const fila=(cels,cls)=>el("tr",{class:"tot"},cels.map((c,i)=>
+    el("td",{class:(i?"r num ":"")+(Array.isArray(c)?c[1]:"")},Array.isArray(c)?c[0]:c)));
+  return el("tfoot",{},
+    fila(["Total",[eur(T.income),"pos"],[eur(T.bank),"neg"],[eur(T.card),"neg"],
+      [eur(T.expense),"neg"],[eur(T.invest),"invc"],[eur(T.saving),sgn(T.saving)],
+      pct(T.income?T.saving/T.income:null),[eur(T.surplus),sgn(T.surplus)],
+      T.fIncome?eur(T.fIncome):"",T.fExpense?eur(T.fExpense):"",
+      T.fInvest?eur(T.fInvest):"",[T.fSurplus?eur(T.fSurplus):"",sgn(T.fSurplus)],"",""]),
+    fila([el("span",{},"Mitjana",el("div",{class:"mut",style:"font-size:11px;font-weight:400"},
+        n ? "de "+n+(n===1?" mes tancat":" mesos tancats") : "cap mes tancat")),
+      [e(mR("income")),"pos"],[e(mR("bank")),"neg"],[e(mR("card")),"neg"],
+      [e(mR("expense")),"neg"],[e(mR("invest")),"invc"],
+      [e(mR("saving")),sgn(s("saving"))],
+      pct(s("income")?s("saving")/s("income"):null),
+      [e(mR("surplus")),sgn(s("surplus"))],
+      e(mF("fIncome")),e(mF("fExpense")),e(mF("fInvest")),
+      [e(mF("fSurplus")),sgn(mF("fSurplus")||0)],"",""]));
+}
 /** El que et sobra en el periode triat: el real dels mesos que ja han passat i
     la previsio del mes en curs i dels que vindran. Sumar el total de «Sobrant» i
     el de «Queda previst» comptaria dos cops els mesos que tenen totes dues coses
@@ -2741,9 +2771,10 @@ function resultatPeriode(rows,ccPer,m0,obj){
         el("span",{class:"mut",style:"font-size:12px"}," · ingressos − despeses − inversió")),
       el("span",{class:"num "+sgn(tot),style:"font-size:20px;font-weight:650"},eur(tot))),
     el("div",{style:"font-size:13px;margin-top:2px"},
-      tot>=0 ? "Et sobren "+eur(tot)+" després d'invertir."
-             : "Hi inverteixes "+eur(-tot)+" més del que estalvies: la diferència surt del "+
-               "que ja tenies."),
+      (tot>=0 ? "Et sobren "+eur(tot)+" després d'invertir"
+              : "Hi inverteixes "+eur(-tot)+" més del que estalvies: la diferència surt del "+
+                "que ja tenies")+
+      " · de mitjana, "+eur(tot/(pas.length+ve.length))+" al mes."),
     el("div",{class:"mut",style:"font-size:12px;margin-top:4px"},
       (pas.length?"real de "+tram(pas)+": "+eur(real):"")+
       (pas.length&&ve.length?" · ":"")+
@@ -2875,12 +2906,7 @@ function renderReal(root){
             title:"Esborrar la previsió que hi has escrit",
             onclick:()=>esborraPrevisio(r.month)},"✕"):""),
         ))),
-        el("tfoot",{},el("tr",{class:"tot"},
-          ["Total",eur(T.income),eur(T.bank),eur(T.card),eur(T.expense),eur(T.invest),
-           eur(T.saving),pct(T.income?T.saving/T.income:null),eur(T.surplus),
-           T.fIncome?eur(T.fIncome):"",T.fExpense?eur(T.fExpense):"",
-           T.fInvest?eur(T.fInvest):"",T.fSurplus?eur(T.fSurplus):"","",""]
-          .map((c,i)=>el("td",{class:i?"r":""},c)))),
+        peuReal(rows,T,m0),
       )),
       resultatPeriode(rows,ccPer,m0,obj),
     ),
