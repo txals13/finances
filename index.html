@@ -1760,17 +1760,26 @@ function celaDataEv(t,e,camp){
     La categoria diu QUÈ has comprat i l'etiqueta PER A QUÈ era; per això un
     viatge es pot sumar sencer sense treure els seus restaurants de RESTAURANT. */
 function renderEsdeveniments(){
-  const T=transferCats();
-  const ev=new Map();
+  const T=transferCats(), f=S.ev;
+  const ev=new Map(), anys=new Set();
+  const buit=()=>({n:0,out:0,in:0,cats:new Map()});
+  const suma=(e,m)=>{
+    e.n++;
+    if(T.has(m.category)) return;
+    if(m.amount<0) e.out+=-m.amount; else e.in+=m.amount;
+    e.cats.set(m.category,(e.cats.get(m.category)||0)+(m.amount<0?-m.amount:0));
+  };
+  /* L'any es mira a cada moviment, com a Categories: triar 2025 vol dir els
+     moviments del 2025. Abans es mirava Inici–Final, i com que sense dates
+     escrites el Final és l'últim moviment, un Bizum de gener feia sortir el
+     viatge a l'any següent amb tot el seu import. */
   for(const m of S.data.movements){
     for(const t of m.tags||[]){
       let e=ev.get(t);
-      if(!e) ev.set(t,e={n:0,out:0,in:0,d1:"",d2:"",cats:new Map()});
-      e.n++;
-      if(!T.has(m.category)){
-        if(m.amount<0) e.out+=-m.amount; else e.in+=m.amount;
-        e.cats.set(m.category,(e.cats.get(m.category)||0)+(m.amount<0?-m.amount:0));
-      }
+      if(!e) ev.set(t,e={...buit(),d1:"",d2:"",any:null});
+      suma(e,m);
+      anys.add(m.date.slice(0,4));
+      if(f.any && m.date.slice(0,4)===f.any) suma(e.any ||= buit(),m);
       if(!e.d1||m.date<e.d1) e.d1=m.date;
       if(m.date>e.d2) e.d2=m.date;
     }
@@ -1784,32 +1793,30 @@ function renderEsdeveniments(){
         "Hi poses el nom de l'esdeveniment —Colombia, Boda Yago-Patri— i aquí en "+
         "surt el cost sencer. La categoria no es toca: un sopar del viatge segueix "+
         "sent RESTAURANT i compta a l'anàlisi de categories com sempre.")));
-  const f=S.ev, EV=S.data.events;
-  const files=[...ev].map(([t,e])=>{
-    const top=[...e.cats].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const EV=S.data.events;
+  // Sense moviments aquell any, l'esdeveniment no hi surt.
+  const files=[...ev].filter(([,e])=>!f.any||e.any).map(([t,e])=>{
+    const p=f.any?e.any:e;       // el que es veu: tot, o només l'any triat
+    const top=[...p.cats].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,3);
     // Dies comptats sencers, el primer i l'últim inclosos: de l'1 al 10 són 10.
-    // El cost és el net: el que t'han tornat (Bizums del grup) no és teu.
+    // El cost és el net: el que t'han tornat (Bizums del grup) no és teu. Dies i
+    // €/dia són sempre de l'esdeveniment sencer: el preu d'un dia de viatge no
+    // canvia perquè el vol es pagués l'any d'abans.
     const d=datesEv(t,e), cost=e.out-e.in;
     const dies=Math.round((Date.parse(d.to)-Date.parse(d.from))/86400000)+1;
-    return {t,e,top,d,cost,dies,nom:t,v:{tag:t,n:e.n,out:e.out,in:e.in,net:e.in-e.out,
+    return {t,e,p,top,d,cost,dies,nom:t,v:{tag:t,n:p.n,out:p.out,in:p.in,net:p.in-p.out,
       from:d.from,to:d.to,dies:dies>0?dies:null,dia:dies>0?cost/dies:null,
       on:top.length?top[0][0]:null}};
   });
-  // Un esdeveniment és de tots els anys que toca entre Inici i Final: un viatge
-  // de cap d'any surt als dos. Amb les dates girades, només el de l'Inici.
-  const anysDe=x=>{ const a=+x.d.from.slice(0,4), b=+(x.dies>0?x.d.to:x.d.from).slice(0,4);
-    return Array.from({length:b-a+1},(_,i)=>String(a+i)); };
-  const anys=[...new Set(files.flatMap(anysDe))].sort().reverse();
   const catsEv=new Map();       // quants esdeveniments han gastat en cada categoria
-  for(const x of files) for(const [c,v] of x.e.cats) if(v>0) catsEv.set(c,(catsEv.get(c)||0)+1);
+  for(const x of files) for(const [c,v] of x.p.cats) if(v>0) catsEv.set(c,(catsEv.get(c)||0)+1);
   const q=f.q.trim().toLowerCase();
   const vis=files.filter(x=>{
     if(q && !x.t.toLowerCase().includes(q)) return false;
-    if(f.any && !anysDe(x).includes(f.any)) return false;
     const o=EV[x.t]||{};
     if(f.dates==="completes" && !(o.from&&o.to)) return false;
     if(f.dates==="falten" && o.from&&o.to) return false;
-    if(f.cats.length && !f.cats.some(c=>(x.e.cats.get(c)||0)>0)) return false;
+    if(f.cats.length && !f.cats.some(c=>(x.p.cats.get(c)||0)>0)) return false;
     return true;
   });
   // Dates girades o cap despesa: sense Dies, €/dia ni On, i per tant al final.
@@ -1818,7 +1825,8 @@ function renderEsdeveniments(){
   const bar=el("div",{class:"bar"},
     el("input",{type:"search",id:"evCerca",placeholder:"Cerca un esdeveniment…",value:f.q,
       oninput:e=>{ f.q=e.target.value; render(); tornaCursor("evCerca"); }}),
-    sel(f.any,[["","Tots els anys"],...anys.map(y=>[y,y])],v=>{ f.any=v; render(); }),
+    sel(f.any,[["","Tots els anys"],...[...anys].sort().reverse().map(y=>[y,y])],
+      v=>{ f.any=v; render(); }),
     sel(f.dates,[["","Totes les dates"],["completes","Amb Inici i Final escrits"],
       ["falten","Hi falta alguna data"]],v=>{ f.dates=v; render(); }),
     filtreMulti({valors:[...catsEv.keys()].sort(),compta:catsEv,refresca:render,estat:f,
@@ -1830,25 +1838,25 @@ function renderEsdeveniments(){
       "Netejar"):null);
   // El total de €/dia és el net de tots junts entre tots els seus dies: el preu
   // mitjà d'un dia d'aquests esdeveniments, no la mitjana dels preus.
-  const suma=k=>vis.reduce((a,x)=>a+k(x),0);
+  const tot=k=>vis.reduce((a,x)=>a+k(x),0);
   const ambDies=vis.filter(x=>x.dies>0);
   const dT=ambDies.reduce((a,x)=>a+x.dies,0), cT=ambDies.reduce((a,x)=>a+x.cost,0);
   const th=(lbl,key,r)=>thOrdre(f,lbl,key,{r,text:key==="tag"||key==="on"});
   return el("div",{class:"card"},
-    el("h2",{},"Esdeveniments · "+(actiu?vis.length+" de "+files.length:files.length)),
+    el("h2",{},"Esdeveniments · "+(actiu?vis.length+" de "+ev.size:ev.size)),
     bar,
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},th("Etiqueta","tag"),th("Mov.","n",1),th("Despesa","out",1),
         th("Ingrés","in",1),th("Net","net",1),th("Inici","from"),th("Final","to"),
         th("Dies","dies",1),th("€/dia","dia",1),th("On se n'ha anat","on"),
         el("th",{}),el("th",{}))),
-      el("tbody",{},vis.length ? vis.map(({t,e,top,cost,dies})=>
+      el("tbody",{},vis.length ? vis.map(({t,e,p,top,cost,dies})=>
         el("tr",{},
           el("td",{},celaNom(t,(v,desfes)=>reanomenaTag(t,v,desfes))),
-          el("td",{class:"r num mut"},NF0.format(e.n)),
-          el("td",{class:"r num neg"},eur(e.out)),
-          el("td",{class:"r num "+(e.in?"pos":"mut")},e.in?eur(e.in):"—"),
-          el("td",{class:"r num "+sgn(e.in-e.out)},eur(e.in-e.out)),
+          el("td",{class:"r num mut"},NF0.format(p.n)),
+          el("td",{class:"r num neg"},eur(p.out)),
+          el("td",{class:"r num "+(p.in?"pos":"mut")},p.in?eur(p.in):"—"),
+          el("td",{class:"r num "+sgn(p.in-p.out)},eur(p.in-p.out)),
           el("td",{},celaDataEv(t,e,"from")),
           el("td",{},celaDataEv(t,e,"to")),
           dies>0 ? el("td",{class:"r num"},NF0.format(dies))
@@ -1858,7 +1866,8 @@ function renderEsdeveniments(){
             (i?" · ":"")+c+" "+eur0(v)).join("")||"—"),
           el("td",{class:"r"},el("button",{class:"btn ghost",onclick:()=>{
             S.mov={...S.mov,tags:[t],cats:[],q:"",account:"",kind:"",limit:300};
-            S.period={preset:"all",from:"",to:""};
+            S.period=f.any ? {preset:"custom",from:f.any+"-01-01",to:f.any+"-12-31"}
+                           : {preset:"all",from:"",to:""};
             S.tab="moviments"; render();
           }},"Veure")),
           el("td",{class:"r"},el("button",{class:"btn ghost",
@@ -1869,10 +1878,10 @@ function renderEsdeveniments(){
             "Cap esdeveniment amb aquests filtres."))),
       vis.length>1 ? el("tfoot",{},el("tr",{class:"tot"},
         el("td",{},"Total"),
-        el("td",{class:"r num"},NF0.format(suma(x=>x.e.n))),
-        el("td",{class:"r num neg"},eur(suma(x=>x.e.out))),
-        el("td",{class:"r num pos"},eur(suma(x=>x.e.in))),
-        el("td",{class:"r num "+sgn(-suma(x=>x.cost))},eur(-suma(x=>x.cost))),
+        el("td",{class:"r num"},NF0.format(tot(x=>x.p.n))),
+        el("td",{class:"r num neg"},eur(tot(x=>x.p.out))),
+        el("td",{class:"r num pos"},eur(tot(x=>x.p.in))),
+        el("td",{class:"r num "+sgn(tot(x=>x.p.in-x.p.out))},eur(tot(x=>x.p.in-x.p.out))),
         el("td",{}),el("td",{}),
         el("td",{class:"r num"},dT?NF0.format(dT):""),
         el("td",{class:"r num "+(cT>0?"neg":"pos"),
@@ -1890,6 +1899,9 @@ function renderEsdeveniments(){
       "a l'automàtica. «€/dia» és el Net repartit entre els dies, el primer i l'últim "+
       "inclosos. Les dates només serveixen per a aquest càlcul: un vol pagat mesos abans "+
       "continua sumant a l'esdeveniment."),
+    f.any ? el("p",{class:"note"},"Amb l'any "+f.any+" triat, Mov., Despesa, Ingrés, Net i "+
+      "«On se n'ha anat» són només dels moviments d'aquell any; Dies i €/dia continuen "+
+      "sent de l'esdeveniment sencer.") : null,
   );
 }
 function renderCategories(root){
