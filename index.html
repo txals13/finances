@@ -474,6 +474,7 @@ function normalise(o){
   if(!o.profilesSeeded){ o.importProfiles.push(...SABADELL); o.profilesSeeded=true; }
   o.assets ??= []; o.snapshots ??= []; o.contributions ??= []; o.portfolioTotals ??= [];
   o.events ??= {};                  // etiqueta -> {from,to}: les dates escrites a mà
+  o.compte ??= {}; o.compte.fixes ??= 0;   // despeses fixes de principi de mes
   for(const a of o.assets){ a.include ??= true; a.contributed ??= 0; }
   o.fire = Object.assign({},FIRE_DEF,o.fire||{});
   for(const m of o.movements){
@@ -2879,12 +2880,24 @@ function nominaPendent(){
   }
   return {tot:det.reduce((a,x)=>a+x.import,0),det};
 }
-function panellCompte(){
+/** El que quedarà al compte després de la propera nòmina, la propera VISA i les
+    despeses fixes que et passen els primers dies del mes, just després de la VISA:
+    lloguer, assegurances, quotes. Les fixes les escrius tu, en un sol import.
+    D'aquí surten el panell i el «CC previst» de Real, que arrenca d'aquest número. */
+/** «de set 26», però «d'oct 26»: abr, ago i oct fan apòstrof. */
+const deMes=k=>{ const m=mLabel(k); return (/^[aeiou]/i.test(m)?"d'":"de ")+m; };
+function quedaraAlCompte(){
   const cc=currentBalance();
   if(cc==null) return null;
+  const nom=nominaPendent(), visa=properaVisa(), fixes=+S.data.compte.fixes||0;
+  return {cc,nom,visa,fixes,despres:cc+nom.tot-visa.import-fixes};
+}
+function panellCompte(){
+  const q=quedaraAlCompte();
+  if(!q) return null;
+  const {cc,nom,visa,fixes,despres}=q;
   const obj=llindar(/compte/i,3000), minDca=llindar(/dca/i,2500);
-  const nom=nominaPendent(), visa=properaVisa();
-  const despres=cc+nom.tot-visa.import, sobra=despres-obj;
+  const sobra=despres-obj;
   const dca=actiuDCA(), valDca=dca?assetValue(dca):null;
   const dataDca=dca?S.data.snapshots.filter(x=>x.assetId===dca.id).map(x=>x.date).sort().at(-1):null;
   const faltaDca=valDca!=null?Math.max(0,minDca-valDca):0;
@@ -2895,7 +2908,7 @@ function panellCompte(){
       det?el("div",{class:"mut",style:"font-size:12px"},det):null),
     el("td",{class:"r num "+(cls||""),style:"vertical-align:top"},val));
   let consell;
-  if(sobra<=0) consell="Després de cobrar i pagar la VISA el compte quedarà "+eur(-sobra)+
+  if(sobra<=0) consell="Després de cobrar i pagar la VISA i les fixes el compte quedarà "+eur(-sobra)+
     " per sota de l'objectiu. Aquest cicle no hi ha res per moure.";
   else if(valDca==null) consell="Et sobraran "+eur(sobra)+".";
   else if(faltaDca>0){
@@ -2913,9 +2926,18 @@ function panellCompte(){
       nom.det.length ? nom.det.map(x=>fila("+ Nòmina de "+mLabel(x.mes),eur(x.import),
           x.data?"prevista el "+dCa(x.data):"prevista","pos"))
         : fila("+ Nòmina",eur(0),"no n'hi ha cap de pendent","mut"),
-      fila("− VISA del cicle de "+mLabel(visa.cicle),"−"+eur(visa.import),
+      fila("− VISA del cicle "+deMes(visa.cicle),"−"+eur(visa.import),
         "l'"+dCa(visa.data)+(visa.tancat?" · cicle tancat":" · portes "+eur(visa.gastat)+
           ", dia "+visa.dia+" de "+visa.total+", al ritme d'ara"),"neg"),
+      fila("− Despeses fixes de principi de mes",
+        ocult ? el("span",{class:"num"},"−"+eur(fixes))
+              : el("input",{type:"number",step:"10",min:"0",value:fixes||"",placeholder:"0",
+                  style:"text-align:right;width:110px",
+                  title:"L'import de tot el que et passen els primers dies del mes",
+                  onchange:e=>{ S.data.compte.fixes=Math.max(0,+e.target.value||0);
+                    markDirty(); render(); }}),
+        "les dels primers dies "+deMes(visa.data.slice(0,7))+", just després de la VISA",
+        "neg"),
       el("tr",{class:"tot"},el("td",{},"Quedarà al compte"),el("td",{class:"r num"},eur(despres))),
       fila("Objectiu",eur(obj),"el matalàs del compte corrent, a FIRE","mut"),
       el("tr",{class:"tot"},el("td",{},sobra>=0?"Per moure":"Per sota de l'objectiu"),
@@ -3036,7 +3058,7 @@ function renderReal(root){
   if(currentBalance()!=null){
     // Sobre tots els mesos i no nomes els filtrats: si el filtre comenca al
     // novembre, el compte del novembre ha de portar el setembre i l'octubre a sobre.
-    let cc=currentBalance()+nominaPendent().tot-properaVisa().import;
+    let cc=quedaraAlCompte().despres;
     for(const r of totes){
       if(r.month<m0) continue;
       if(r.month===m0) cc-=Math.max(0,(r.fInvest||0)-(r.invest||0));
@@ -3091,7 +3113,9 @@ function renderReal(root){
         "Els ingressos previstos surten en gris del calendari de nòmines; si hi escrius una "+
         "xifra, mana la teva. «CC previst» és el compte a final de mes si segueixes el pla: "+
         "arrenca del panell de dalt i cada mes hi suma el seu «Queda previst». Si creix per "+
-        "sobre de l'objectiu, el pla hi deixa diners que podries passar al DCA."),
+        "sobre de l'objectiu, el pla hi deixa diners que podries passar al DCA. Com el panell, "+
+        "ja té descomptades les despeses fixes de principi del mes següent; la «Desp. "+
+        "prevista» de cada mes les ha de portar a dins, com qualsevol altra despesa."),
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},["Mes","Ingressos","Compte","Targeta","Despeses","Inversió",
           "Estalvi","% estalvi","Sobrant","Ingr. previstos","Desp. prevista","Inv. prevista",
