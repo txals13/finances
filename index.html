@@ -254,6 +254,7 @@ const S = {
   cartera:{ evol:"class" },
   rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
   desp:   { mode:"cat", cat:null, tag:null, total:false, sumar:false },  // evolucio de la despesa
+  ev:     { sort:"out", dir:-1 },  // ordre de la taula d'esdeveniments
   imp: null,           // estat de l'assistent d'importació
 };
 const TODAY = new Date().toISOString().slice(0,10);
@@ -1700,20 +1701,39 @@ function renderEsdeveniments(){
         "Hi poses el nom de l'esdeveniment —Colombia, Boda Yago-Patri— i aquí en "+
         "surt el cost sencer. La categoria no es toca: un sopar del viatge segueix "+
         "sent RESTAURANT i compta a l'anàlisi de categories com sempre.")));
-  const files=[...ev].sort((a,b)=>b[1].out-a[1].out);
+  const files=[...ev].map(([t,e])=>{
+    const top=[...e.cats].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    // Dies comptats sencers, el primer i l'últim inclosos: de l'1 al 10 són 10.
+    // El cost és el net: el que t'han tornat (Bizums del grup) no és teu.
+    const d=datesEv(t,e), cost=e.out-e.in;
+    const dies=Math.round((Date.parse(d.to)-Date.parse(d.from))/86400000)+1;
+    return {t,e,top,d,cost,dies,v:{tag:t,n:e.n,out:e.out,in:e.in,net:e.in-e.out,
+      from:d.from,to:d.to,dies:dies>0?dies:null,dia:dies>0?cost/dies:null,
+      on:top.length?top[0][0]:null}};
+  });
+  const o=S.ev;
+  files.sort((a,b)=>{
+    const x=a.v[o.sort], y=b.v[o.sort];
+    // Els que no en tenen (dates girades, cap despesa) van al final en tots dos sentits.
+    if(x==null||y==null) return x==null&&y==null ? a.t.localeCompare(b.t,"ca") : x==null?1:-1;
+    const r=typeof x==="string" ? x.localeCompare(y,"ca",{numeric:true}) : x-y;
+    return r*o.dir || a.t.localeCompare(b.t,"ca");
+  });
+  // Els noms, de la A a la Z; els imports i les dates, del més gran o recent.
+  const th=(lbl,key,r)=>el("th",{class:r?"r":"",style:"cursor:pointer",
+    title:"Ordenar per "+lbl.toLowerCase(),
+    onclick:()=>{ if(o.sort===key) o.dir*=-1;
+      else { o.sort=key; o.dir=key==="tag"||key==="on"?1:-1; } render(); }},
+    lbl+(o.sort===key?(o.dir<0?" ↓":" ↑"):""));
   return el("div",{class:"card"},
     el("h2",{},"Esdeveniments · "+files.length),
     el("div",{class:"tw"},el("table",{},
-      el("thead",{},el("tr",{},["Etiqueta","Mov.","Despesa","Ingrés","Net","Inici","Final",
-        "Dies","€/dia","On se n'ha anat","",""]
-        .map((h,i)=>el("th",{class:(i&&i<5)||i===7||i===8?"r":""},h)))),
-      el("tbody",{},files.map(([t,e])=>{
-        const top=[...e.cats].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,3);
-        // Dies comptats sencers, el primer i l'últim inclosos: de l'1 al 10 són 10.
-        // El cost és el net: el que t'han tornat (Bizums del grup) no és teu.
-        const d=datesEv(t,e), cost=e.out-e.in;
-        const dies=Math.round((Date.parse(d.to)-Date.parse(d.from))/86400000)+1;
-        return el("tr",{},
+      el("thead",{},el("tr",{},th("Etiqueta","tag"),th("Mov.","n",1),th("Despesa","out",1),
+        th("Ingrés","in",1),th("Net","net",1),th("Inici","from"),th("Final","to"),
+        th("Dies","dies",1),th("€/dia","dia",1),th("On se n'ha anat","on"),
+        el("th",{}),el("th",{}))),
+      el("tbody",{},files.map(({t,e,top,cost,dies})=>
+        el("tr",{},
           el("td",{},el("b",{},t)),
           el("td",{class:"r num mut"},NF0.format(e.n)),
           el("td",{class:"r num neg"},eur(e.out)),
@@ -1734,8 +1754,7 @@ function renderEsdeveniments(){
           el("td",{class:"r"},el("button",{class:"btn ghost",
             title:"Treure aquesta etiqueta de tots els seus moviments",
             onclick:()=>esborraTag(t,e.n)},"✕")),
-        );
-      })),
+        ))),
     )),
     el("p",{class:"note"},"Els traspassos no s'hi compten, igual que a la resta de "+
       "totals. «On se n'ha anat» són les tres categories on més has gastat de "+
