@@ -254,7 +254,9 @@ const S = {
   cartera:{ evol:"class" },
   rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
   desp:   { mode:"cat", cat:null, tag:null, total:false, sumar:false },  // evolucio de la despesa
-  ev:     { sort:"out", dir:-1 },  // ordre de la taula d'esdeveniments
+  // Ordre i filtres de les taules d'esdeveniments i de categories.
+  ev:     { sort:"out", dir:-1, q:"", any:"", dates:"", cats:[], catOpen:false, catQ:"" },
+  tcat:   { sort:"sum", dir:1, q:"", any:"", kind:"", sign:"" },   // la que més gasta, dalt
   imp: null,           // estat de l'assistent d'importació
 };
 const TODAY = new Date().toISOString().slice(0,10);
@@ -1271,8 +1273,8 @@ let foraCat=null;   // l'escoltador que tanca el panell, per no acumular-ne
 /** Filtre de selecció múltiple. El mateix panell serveix per a categories i per
     a etiquetes: amb prop de cinquanta valors, un select múltiple és inservible i
     calen cerca, comptadors i «Totes/Cap». */
-function filtreMulti({valors,compta,claus,text,refresca,ancora}){
-  const f=S.mov, tria=f[claus.sel];
+function filtreMulti({valors,compta,claus,text,refresca,ancora,estat=S.mov}){
+  const f=estat, tria=f[claus.sel];
   const n=tria.length;
   const boto=el("button",{class:"btn"+(n?" primary":""),"data-catfiltre":"1",
     onclick:e=>{ e.stopPropagation(); f[claus.open]=!f[claus.open]; refresca(); }},
@@ -1283,7 +1285,8 @@ function filtreMulti({valors,compta,claus,text,refresca,ancora}){
   const llista=valors.filter(c=>!q||c.toLowerCase().includes(q));
   const marca=(c,on)=>{
     f[claus.sel] = on ? [...tria,c] : tria.filter(x=>x!==c);
-    f.limit=300; refresca();
+    if("limit" in f) f.limit=300;
+    refresca();
   };
   /* El panell penja del botó. El de categories és el primer de la barra i cap
      bé; el d'etiquetes va a mitja barra i, amb 290 px, al mòbil se sortia per la
@@ -1322,7 +1325,7 @@ function filtreMulti({valors,compta,claus,text,refresca,ancora}){
   foraCat=e=>{
     if(e.target.closest && e.target.closest("[data-catfiltre]")) return;   // a dins: res
     document.removeEventListener("click",foraCat); foraCat=null;
-    if(S.mov[claus.open]){ S.mov[claus.open]=false; refresca(); }
+    if(f[claus.open]){ f[claus.open]=false; refresca(); }
   };
   setTimeout(()=>{ if(foraCat) document.addEventListener("click",foraCat); },0);
   return el("span",{style:"position:relative;display:inline-flex"},boto,panell);
@@ -1648,6 +1651,86 @@ function categoriesBuides(){
   const use=new Set(S.data.movements.map(m=>m.category));
   return S.data.categories.map(c=>c.id).filter(id=>!use.has(id)).sort();
 }
+/** Capçalera que ordena la taula: un clic tria la columna i un altre gira el
+    sentit. Els noms comencen de la A a la Z; la resta, pel més gran o recent. */
+function thOrdre(o,lbl,key,{r=false,text=false}={}){
+  return el("th",{class:r?"r":"",style:"cursor:pointer",title:"Ordenar per "+lbl.toLowerCase(),
+    onclick:()=>{ if(o.sort===key) o.dir*=-1; else { o.sort=key; o.dir=text?1:-1; } render(); }},
+    lbl+(o.sort===key?(o.dir<0?" ↓":" ↑"):""));
+}
+/** Ordena files {nom, v:{columna:valor}}. Les que no tenen valor van al final
+    en tots dos sentits, i els empats es desfan pel nom. */
+function ordenaFiles(files,o){
+  const nom=(a,b)=>a.nom.localeCompare(b.nom,"ca",{numeric:true});
+  return files.sort((a,b)=>{
+    const x=a.v[o.sort], y=b.v[o.sort];
+    if(x==null||y==null) return x==null&&y==null ? nom(a,b) : x==null?1:-1;
+    const r=typeof x==="string" ? x.localeCompare(y,"ca",{numeric:true}) : x-y;
+    return r*o.dir || nom(a,b);
+  });
+}
+/** La taula es refà sencera a cada tecla: cal tornar el cursor al cercador. */
+function tornaCursor(id){
+  const i=document.getElementById(id);
+  if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); }
+}
+/** El nom de la fila, editable allà mateix: sembla text fins que hi passes per
+    sobre. Enter el desa i Esc el deixa com era. */
+function celaNom(valor,on,fix){
+  // L'amplada surt del nom: amb el 100% de la cel·la, al mòbil la taula
+  // l'estrenyia fins a tallar-lo a «2025 ME».
+  return el("input",{type:"text",value:valor,readonly:!!fix,
+    style:"font-weight:600;min-width:"+(Math.max(6,valor.length)*1.15+1).toFixed(1)+"ch",
+    title:fix||"Clica per canviar el nom: es canvia a tots els seus moviments",
+    onkeydown:e=>{ if(e.key==="Enter") e.target.blur();
+      if(e.key==="Escape"){ e.target.value=valor; e.target.blur(); } },
+    onchange:e=>on(e.target.value.trim(),()=>{ e.target.value=valor; })});
+}
+const nMovs=n=>NF0.format(n)+(n===1?" moviment":" moviments");
+/** Categories que l'app busca pel nom: la inversió i la VISA a Real, la nòmina a
+    la previsió. Amb un altre nom, aquells càlculs deixarien de trobar-les. */
+const CAT_FIXES=new Set(["INVERSIO","VISA","NOMINA"]);
+/** Canvia el nom d'una etiqueta a tots els moviments que la porten. Si el nou ja
+    és d'una altra etiqueta (sense mirar majúscules, com tagCanonica), les dues
+    queden en una. Les dates viatgen amb l'etiqueta. */
+function reanomenaTag(t,nou,desfes){
+  if(!nou||nou===t) return desfes();
+  const ja=totesTags().find(x=>x!==t&&x.toLowerCase()===nou.toLowerCase());
+  const dest=ja||nou, ev=S.data.events;
+  const n=S.data.movements.filter(m=>(m.tags||[]).includes(t)).length;
+  if(!confirm(ja
+      ? "«"+ja+"» ja existeix. Tots els moviments de «"+t+"» ("+NF0.format(n)+") hi "+
+        "passaran i quedaran en una sola etiqueta."+
+        (ev[t]&&ev[ja]?" Es queden les dates de «"+ja+"».":"")
+      : "Canviar «"+t+"» per «"+nou+"» a "+nMovs(n)+"?")) return desfes();
+  for(const m of S.data.movements)
+    if((m.tags||[]).includes(t)) m.tags=[...new Set(m.tags.map(x=>x===t?dest:x))];
+  if(ev[t]){ if(!ev[dest]) ev[dest]=ev[t]; delete ev[t]; }
+  const canvia=l=>Array.isArray(l)?[...new Set(l.map(x=>x===t?dest:x))]:l;
+  S.mov.tags=canvia(S.mov.tags); S.desp.tag=canvia(S.desp.tag);
+  markDirty(); render(); flash("«"+t+"» → «"+dest+"»");
+}
+/** El mateix per a una categoria: moviments, regles i catàleg. Si el nou nom ja
+    existeix és una fusió, i es queda el tractament de la que ja hi era. */
+function reanomenaCat(c,nou,desfes){
+  nou=nou.toUpperCase();
+  if(!nou||nou===c) return desfes();
+  const n=S.data.movements.filter(m=>m.category===c).length;
+  const cataleg=S.data.categories.some(x=>x.id===nou);
+  const ja=cataleg||S.data.movements.some(m=>m.category===nou);
+  if(!confirm(ja
+      ? "«"+nou+"» ja existeix. Tots els moviments de «"+c+"» ("+NF0.format(n)+") hi "+
+        "passaran i «"+c+"» desapareixerà. Es queda el tractament de «"+nou+"»."
+      : "Canviar «"+c+"» per «"+nou+"» a "+nMovs(n)+" i a les regles que hi apuntin?"))
+    return desfes();
+  for(const m of S.data.movements) if(m.category===c) m.category=nou;
+  for(const r of S.data.rules) if(r.category===c) r.category=nou;
+  if(cataleg) S.data.categories=S.data.categories.filter(x=>x.id!==c);
+  else { const cc=S.data.categories.find(x=>x.id===c); if(cc) cc.id=nou; }
+  const canvia=l=>Array.isArray(l)?[...new Set(l.map(x=>x===c?nou:x))]:l;
+  S.mov.cats=canvia(S.mov.cats); S.desp.cat=canvia(S.desp.cat); S.ev.cats=canvia(S.ev.cats);
+  markDirty(); render(); flash("«"+c+"» → «"+nou+"»");
+}
 /** Les dates d'un esdeveniment: les que hi has escrit, i si no, les del primer i
     l'últim moviment. Poques vegades coincideixen —el vol es paga mesos abans,
     l'últim Bizum arriba dies després—, i per això es poden canviar a mà. Només
@@ -1701,40 +1784,67 @@ function renderEsdeveniments(){
         "Hi poses el nom de l'esdeveniment —Colombia, Boda Yago-Patri— i aquí en "+
         "surt el cost sencer. La categoria no es toca: un sopar del viatge segueix "+
         "sent RESTAURANT i compta a l'anàlisi de categories com sempre.")));
+  const f=S.ev, EV=S.data.events;
   const files=[...ev].map(([t,e])=>{
     const top=[...e.cats].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,3);
     // Dies comptats sencers, el primer i l'últim inclosos: de l'1 al 10 són 10.
     // El cost és el net: el que t'han tornat (Bizums del grup) no és teu.
     const d=datesEv(t,e), cost=e.out-e.in;
     const dies=Math.round((Date.parse(d.to)-Date.parse(d.from))/86400000)+1;
-    return {t,e,top,d,cost,dies,v:{tag:t,n:e.n,out:e.out,in:e.in,net:e.in-e.out,
+    return {t,e,top,d,cost,dies,nom:t,v:{tag:t,n:e.n,out:e.out,in:e.in,net:e.in-e.out,
       from:d.from,to:d.to,dies:dies>0?dies:null,dia:dies>0?cost/dies:null,
       on:top.length?top[0][0]:null}};
   });
-  const o=S.ev;
-  files.sort((a,b)=>{
-    const x=a.v[o.sort], y=b.v[o.sort];
-    // Els que no en tenen (dates girades, cap despesa) van al final en tots dos sentits.
-    if(x==null||y==null) return x==null&&y==null ? a.t.localeCompare(b.t,"ca") : x==null?1:-1;
-    const r=typeof x==="string" ? x.localeCompare(y,"ca",{numeric:true}) : x-y;
-    return r*o.dir || a.t.localeCompare(b.t,"ca");
+  // Un esdeveniment és de tots els anys que toca entre Inici i Final: un viatge
+  // de cap d'any surt als dos. Amb les dates girades, només el de l'Inici.
+  const anysDe=x=>{ const a=+x.d.from.slice(0,4), b=+(x.dies>0?x.d.to:x.d.from).slice(0,4);
+    return Array.from({length:b-a+1},(_,i)=>String(a+i)); };
+  const anys=[...new Set(files.flatMap(anysDe))].sort().reverse();
+  const catsEv=new Map();       // quants esdeveniments han gastat en cada categoria
+  for(const x of files) for(const [c,v] of x.e.cats) if(v>0) catsEv.set(c,(catsEv.get(c)||0)+1);
+  const q=f.q.trim().toLowerCase();
+  const vis=files.filter(x=>{
+    if(q && !x.t.toLowerCase().includes(q)) return false;
+    if(f.any && !anysDe(x).includes(f.any)) return false;
+    const o=EV[x.t]||{};
+    if(f.dates==="completes" && !(o.from&&o.to)) return false;
+    if(f.dates==="falten" && o.from&&o.to) return false;
+    if(f.cats.length && !f.cats.some(c=>(x.e.cats.get(c)||0)>0)) return false;
+    return true;
   });
-  // Els noms, de la A a la Z; els imports i les dates, del més gran o recent.
-  const th=(lbl,key,r)=>el("th",{class:r?"r":"",style:"cursor:pointer",
-    title:"Ordenar per "+lbl.toLowerCase(),
-    onclick:()=>{ if(o.sort===key) o.dir*=-1;
-      else { o.sort=key; o.dir=key==="tag"||key==="on"?1:-1; } render(); }},
-    lbl+(o.sort===key?(o.dir<0?" ↓":" ↑"):""));
+  // Dates girades o cap despesa: sense Dies, €/dia ni On, i per tant al final.
+  ordenaFiles(vis,f);
+  const actiu=!!(q||f.any||f.dates||f.cats.length);
+  const bar=el("div",{class:"bar"},
+    el("input",{type:"search",id:"evCerca",placeholder:"Cerca un esdeveniment…",value:f.q,
+      oninput:e=>{ f.q=e.target.value; render(); tornaCursor("evCerca"); }}),
+    sel(f.any,[["","Tots els anys"],...anys.map(y=>[y,y])],v=>{ f.any=v; render(); }),
+    sel(f.dates,[["","Totes les dates"],["completes","Amb Inici i Final escrits"],
+      ["falten","Hi falta alguna data"]],v=>{ f.dates=v; render(); }),
+    filtreMulti({valors:[...catsEv.keys()].sort(),compta:catsEv,refresca:render,estat:f,
+      claus:{sel:"cats",open:"catOpen",q:"catQ"},
+      text:{cap:"Totes les categories",molts:"categories",
+        cerca:"Cerca una categoria…",buit:"Cap esdeveniment ha gastat en aquesta."}}),
+    actiu?el("button",{class:"btn ghost",onclick:()=>{
+      Object.assign(f,{q:"",any:"",dates:"",cats:[],catOpen:false,catQ:""}); render(); }},
+      "Netejar"):null);
+  // El total de €/dia és el net de tots junts entre tots els seus dies: el preu
+  // mitjà d'un dia d'aquests esdeveniments, no la mitjana dels preus.
+  const suma=k=>vis.reduce((a,x)=>a+k(x),0);
+  const ambDies=vis.filter(x=>x.dies>0);
+  const dT=ambDies.reduce((a,x)=>a+x.dies,0), cT=ambDies.reduce((a,x)=>a+x.cost,0);
+  const th=(lbl,key,r)=>thOrdre(f,lbl,key,{r,text:key==="tag"||key==="on"});
   return el("div",{class:"card"},
-    el("h2",{},"Esdeveniments · "+files.length),
+    el("h2",{},"Esdeveniments · "+(actiu?vis.length+" de "+files.length:files.length)),
+    bar,
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},th("Etiqueta","tag"),th("Mov.","n",1),th("Despesa","out",1),
         th("Ingrés","in",1),th("Net","net",1),th("Inici","from"),th("Final","to"),
         th("Dies","dies",1),th("€/dia","dia",1),th("On se n'ha anat","on"),
         el("th",{}),el("th",{}))),
-      el("tbody",{},files.map(({t,e,top,cost,dies})=>
+      el("tbody",{},vis.length ? vis.map(({t,e,top,cost,dies})=>
         el("tr",{},
-          el("td",{},el("b",{},t)),
+          el("td",{},celaNom(t,(v,desfes)=>reanomenaTag(t,v,desfes))),
           el("td",{class:"r num mut"},NF0.format(e.n)),
           el("td",{class:"r num neg"},eur(e.out)),
           el("td",{class:"r num "+(e.in?"pos":"mut")},e.in?eur(e.in):"—"),
@@ -1754,9 +1864,25 @@ function renderEsdeveniments(){
           el("td",{class:"r"},el("button",{class:"btn ghost",
             title:"Treure aquesta etiqueta de tots els seus moviments",
             onclick:()=>esborraTag(t,e.n)},"✕")),
-        ))),
+        ))
+        : el("tr",{},el("td",{colspan:12,class:"mut",style:"text-align:center;padding:18px"},
+            "Cap esdeveniment amb aquests filtres."))),
+      vis.length>1 ? el("tfoot",{},el("tr",{class:"tot"},
+        el("td",{},"Total"),
+        el("td",{class:"r num"},NF0.format(suma(x=>x.e.n))),
+        el("td",{class:"r num neg"},eur(suma(x=>x.e.out))),
+        el("td",{class:"r num pos"},eur(suma(x=>x.e.in))),
+        el("td",{class:"r num "+sgn(-suma(x=>x.cost))},eur(-suma(x=>x.cost))),
+        el("td",{}),el("td",{}),
+        el("td",{class:"r num"},dT?NF0.format(dT):""),
+        el("td",{class:"r num "+(cT>0?"neg":"pos"),
+          title:"El net d'aquests esdeveniments repartit entre tots els seus dies"},
+          dT?eur(cT/dT):""),
+        el("td",{}),el("td",{}),el("td",{}))) : null,
     )),
-    el("p",{class:"note"},"Els traspassos no s'hi compten, igual que a la resta de "+
+    el("p",{class:"note"},"Clica el nom d'una etiqueta per canviar-lo: es canvia a tots "+
+      "els seus moviments, i si n'hi poses un que ja existeix, les dues queden en una. "+
+      "Els traspassos no s'hi compten, igual que a la resta de "+
       "totals. «On se n'ha anat» són les tres categories on més has gastat de "+
       "l'esdeveniment: la despesa segueix comptant a la seva categoria de sempre."),
     el("p",{class:"note"},"Inici i Final surten en gris amb les dates del primer i "+
@@ -1767,16 +1893,28 @@ function renderEsdeveniments(){
   );
 }
 function renderCategories(root){
-  const T=transferCats();
-  const use=new Map();
+  const T=transferCats(), f=S.tcat;
+  // Amb un any triat, Moviments, Net i Últim ús són només d'aquell any.
+  const use=new Map(), anys=new Set(), totes=new Set();
   for(const m of S.data.movements){
+    anys.add(m.date.slice(0,4)); totes.add(m.category);
+    if(f.any && m.date.slice(0,4)!==f.any) continue;
     let e=use.get(m.category); if(!e) use.set(m.category,e={n:0,sum:0,last:""});
     e.n++; if(!m.planned) e.sum+=m.amount; if(m.date>e.last) e.last=m.date;
   }
-  const cats=[...use.entries()].sort((a,b)=>a[1].sum-b[1].sum);
+  const q=f.q.trim().toLowerCase();
+  const cats=ordenaFiles([...use.entries()]
+    .filter(([c,e])=>(!q||c.toLowerCase().includes(q)) &&
+      (!f.kind||(f.kind==="transfer")===T.has(c)) &&
+      (!f.sign||(f.sign==="neg"?e.sum<0:e.sum>0)))
+    .map(([c,e])=>({c,e,nom:c,v:{cat:c,n:e.n,sum:e.sum,last:e.last||null,
+       kind:T.has(c)?"Traspàs":"Despesa / ingrés"}})),f).map(x=>[x.c,x.e]);
+  const actiu=!!(q||f.any||f.kind||f.sign);
 
   const rows=cats.map(([c,e])=>el("tr",{},
-    el("td",{},c),
+    el("td",{},celaNom(c,(v,desfes)=>reanomenaCat(c,v,desfes),
+      CAT_FIXES.has(c)?"L'app fa servir aquest nom per calcular Real i la previsió: "+
+        "no es pot canviar":null)),
     el("td",{class:"r num"},NF0.format(e.n)),
     el("td",{class:"r num "+sgn(e.sum)},eur(e.sum)),
     el("td",{class:"r num mut"},dCa(e.last)),
@@ -1784,21 +1922,49 @@ function renderCategories(root){
       [["expense","Despesa / ingrés"],["transfer","Traspàs (exclòs dels totals)"]]
         .map(([v,l])=>el("option",{value:v,selected:(v==="transfer")===T.has(c)},l)))),
     el("td",{class:"r"},
-      el("button",{class:"btn ghost",onclick:()=>renameCat(c)},"Reanomenar"),
-      el("button",{class:"btn ghost",onclick:()=>mergeCat(c,cats.map(x=>x[0]))},"Fusionar"),
+      el("button",{class:"btn ghost",disabled:CAT_FIXES.has(c),
+        title:CAT_FIXES.has(c)?"L'app fa servir aquest nom: no es pot fusionar":null,
+        onclick:()=>mergeCat(c,[...totes])},"Fusionar"),
       el("button",{class:"btn ghost",title:"Posar el nom com a etiqueta als seus moviments",
         onclick:()=>etiquetaCat(c,e.n)},"→ Etiqueta")),
   ));
+  const sumN=cats.reduce((a,[,e])=>a+e.n,0), sumNet=cats.reduce((a,[,e])=>a+e.sum,0);
 
   posa(root,
     sospitoses(),
     renderEsdeveniments(),
     el("div",{class:"card"},
-      el("h2",{},"Categories · "+cats.length),
+      el("h2",{},"Categories · "+(actiu?cats.length+" de "+totes.size:cats.length)),
+      el("div",{class:"bar"},
+        el("input",{type:"search",id:"catTaulaCerca",placeholder:"Cerca una categoria…",
+          value:f.q,oninput:e=>{ f.q=e.target.value; render(); tornaCursor("catTaulaCerca"); }}),
+        sel(f.any,[["","Tots els anys"],...[...anys].sort().reverse().map(y=>[y,y])],
+          v=>{ f.any=v; render(); }),
+        sel(f.kind,[["","Tots els tractaments"],["expense","Despesa / ingrés"],
+          ["transfer","Traspàs"]],v=>{ f.kind=v; render(); }),
+        sel(f.sign,[["","Net positiu i negatiu"],["neg","Net negatiu: on gastes"],
+          ["pos","Net positiu: d'on entra"]],v=>{ f.sign=v; render(); }),
+        actiu?el("button",{class:"btn ghost",onclick:()=>{
+          Object.assign(f,{q:"",any:"",kind:"",sign:""}); render(); }},"Netejar"):null),
       el("div",{class:"tw"},el("table",{},
-        el("thead",{},el("tr",{},["Categoria","Moviments","Net","Últim ús","Tractament",""]
-          .map((h,i)=>el("th",{class:i?"r":""},h)))),
-        el("tbody",{},rows))),
+        el("thead",{},el("tr",{},
+          thOrdre(f,"Categoria","cat",{text:true}),
+          thOrdre(f,"Moviments","n",{r:true}),
+          thOrdre(f,"Net","sum",{r:true}),
+          thOrdre(f,"Últim ús","last",{r:true}),
+          thOrdre(f,"Tractament","kind",{r:true,text:true}),
+          el("th",{}))),
+        el("tbody",{},rows.length?rows:el("tr",{},el("td",{colspan:6,class:"mut",
+          style:"text-align:center;padding:18px"},"Cap categoria amb aquests filtres."))),
+        rows.length>1 ? el("tfoot",{},el("tr",{class:"tot"},
+          el("td",{},"Total"),
+          el("td",{class:"r num"},NF0.format(sumN)),
+          el("td",{class:"r num "+sgn(sumNet)},eur(sumNet)),
+          el("td",{}),el("td",{}),el("td",{}))) : null)),
+      el("p",{class:"note"},"Clica el nom d'una categoria per canviar-lo: es canvia als "+
+        "seus moviments i a les regles, i si n'hi poses un que ja existeix, s'hi fusiona. "+
+        "INVERSIO, VISA i NOMINA no es poden canviar, perquè l'app les busca pel nom. "+
+        "Amb un any triat, Moviments, Net i Últim ús són només d'aquell any."),
       // Les que no fa servir ningú no surten a la taula de dalt —es fa dels
       // moviments— però sí als desplegables, i s'hi acumulen.
       (()=>{
@@ -1942,25 +2108,6 @@ function suggestRules(){
     ["Afegir les triades","btn primary",()=>{
       for(const [key,cat] of picked) S.data.rules.push({match:key,category:cat,field:"concept"});
       markDirty(); closeDialog(); render(); flash((added+picked.size)+" regles en total");
-    }],
-  ]);
-}
-function renameCat(c){
-  const inp=el("input",{type:"text",value:c,style:"width:100%"});
-  const n=S.data.movements.filter(m=>m.category===c).length;
-  dialog("Reanomenar categoria",el("div",{},
-    el("p",{class:"note",style:"margin:0 0 12px"},
-      "Es canviarà a "+n+" moviment"+(n===1?"":"s")+" i a les regles que hi apuntin."),
-    el("div",{class:"map"},lbl("Nou nom",inp)),
-  ),[
-    ["Cancel·lar","btn",closeDialog],
-    ["Reanomenar","btn primary",()=>{
-      const nou=inp.value.trim().toUpperCase();
-      if(!nou||nou===c) return closeDialog();
-      for(const m of S.data.movements) if(m.category===c) m.category=nou;
-      const cc=S.data.categories.find(x=>x.id===c); if(cc) cc.id=nou;
-      for(const r of S.data.rules) if(r.category===c) r.category=nou;
-      markDirty(); closeDialog(); render(); flash(c+" → "+nou);
     }],
   ]);
 }
