@@ -475,6 +475,7 @@ function normalise(o){
   o.assets ??= []; o.snapshots ??= []; o.contributions ??= []; o.portfolioTotals ??= [];
   o.events ??= {};                  // etiqueta -> {from,to}: les dates escrites a mà
   o.compte ??= {}; o.compte.fixes ??= 0;   // despeses fixes de principi de mes
+  o.compte.dia ??= null;                    // i el dia que te les acaben de passar
   for(const a of o.assets){ a.include ??= true; a.contributed ??= 0; }
   o.fire = Object.assign({},FIRE_DEF,o.fire||{});
   for(const m of o.movements){
@@ -2889,13 +2890,32 @@ const deMes=k=>{ const m=mLabel(k); return (/^[aeiou]/i.test(m)?"d'":"de ")+m; }
 function quedaraAlCompte(){
   const cc=currentBalance();
   if(cc==null) return null;
-  const nom=nominaPendent(), visa=properaVisa(), fixes=+S.data.compte.fixes||0;
-  return {cc,nom,visa,fixes,despres:cc+nom.tot-visa.import-fixes};
+  const nom=nominaPendent(), visa=properaVisa(), fx=fixesPendents(visa);
+  return {cc,nom,visa,fx,despres:cc+nom.tot-visa.import-fx.tot};
+}
+/** El dia del saldo: el de l'últim moviment amb saldo. «Ara al compte» és el
+    saldo d'aquell dia, no el d'avui si encara no has importat l'extracte. */
+function dataSaldo(){
+  const d=balancesPerDia(S.data.movements);
+  return d.size ? [...d.keys()].sort().at(-1) : null;
+}
+/** Les fixes que el saldo encara no porta. Sempre les del mes de la propera VISA,
+    que venen just després. I, si saps el dia, també les d'aquest mes quan el
+    saldo és d'abans d'aquell dia: del dia 1 al dia que te les passen, la VISA
+    del mes ja és pagada però les fixes encara no, i sense el dia no es pot saber. */
+function fixesPendents(visa){
+  const C=S.data.compte, imp=+C.fixes||0, dia=+C.dia||null;
+  if(!imp) return {imp,dia,tot:0,det:[]};
+  const mV=visa.data.slice(0,7), quan=k=>dia?k+"-"+String(dia).padStart(2,"0"):null;
+  const det=[], ant=addMonths(mV,-1), saldo=dataSaldo();
+  if(dia && saldo && quan(ant)>saldo) det.push({mes:ant,data:quan(ant),ara:true});
+  det.push({mes:mV,data:quan(mV)});
+  return {imp,dia,tot:imp*det.length,det};
 }
 function panellCompte(){
   const q=quedaraAlCompte();
   if(!q) return null;
-  const {cc,nom,visa,fixes,despres}=q;
+  const {cc,nom,visa,fx,despres}=q;
   const obj=llindar(/compte/i,3000), minDca=llindar(/dca/i,2500);
   const sobra=despres-obj;
   const dca=actiuDCA(), valDca=dca?assetValue(dca):null;
@@ -2929,14 +2949,25 @@ function panellCompte(){
       fila("− VISA del cicle "+deMes(visa.cicle),"−"+eur(visa.import),
         "l'"+dCa(visa.data)+(visa.tancat?" · cicle tancat":" · portes "+eur(visa.gastat)+
           ", dia "+visa.dia+" de "+visa.total+", al ritme d'ara"),"neg"),
+      fx.det.filter(x=>x.ara).map(x=>fila("− Despeses fixes "+deMes(x.mes),"−"+eur(fx.imp),
+        "te les passen el "+dCa(x.data)+" i el saldo, del "+dCa(dataSaldo())+
+          ", encara no les porta","neg")),
       fila("− Despeses fixes de principi de mes",
-        ocult ? el("span",{class:"num"},"−"+eur(fixes))
-              : el("input",{type:"number",step:"10",min:"0",value:fixes||"",placeholder:"0",
+        ocult ? el("span",{class:"num"},"−"+eur(fx.imp))
+              : el("input",{type:"number",step:"10",min:"0",value:fx.imp||"",placeholder:"0",
                   style:"text-align:right;width:110px",
                   title:"L'import de tot el que et passen els primers dies del mes",
                   onchange:e=>{ S.data.compte.fixes=Math.max(0,+e.target.value||0);
                     markDirty(); render(); }}),
-        "les dels primers dies "+deMes(visa.data.slice(0,7))+", just després de la VISA",
+        el("span",{},"les "+deMes(visa.data.slice(0,7))+", just després de la VISA · "+
+            "te les acaben de passar el dia ",
+          ocult ? (fx.dia||"—")
+                : el("input",{type:"number",min:"1",max:"31",step:"1",value:fx.dia||"",
+                    placeholder:"—",style:"width:56px;text-align:right;font-size:12px",
+                    title:"L'últim dia del mes que et passa alguna despesa fixa",
+                    onchange:e=>{ const v=Math.round(+e.target.value);
+                      S.data.compte.dia=v>=1&&v<=31?v:null; markDirty(); render(); }}),
+          fx.dia?null:el("div",{},"Amb el dia, el panell sap si les d'aquest mes ja t'han passat.")),
         "neg"),
       el("tr",{class:"tot"},el("td",{},"Quedarà al compte"),el("td",{class:"r num"},eur(despres))),
       fila("Objectiu",eur(obj),"el matalàs del compte corrent, a FIRE","mut"),
