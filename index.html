@@ -255,7 +255,8 @@ const S = {
   rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
   desp:   { mode:"cat", cat:null, tag:null, total:false, sumar:false },  // evolucio de la despesa
   // Ordre i filtres de les taules d'esdeveniments i de categories.
-  ev:     { sort:"out", dir:-1, q:"", any:"", dates:"", cats:[], catOpen:false, catQ:"" },
+  ev:     { sort:"out", dir:-1, q:"", any:"", dates:"", cats:[], catOpen:false, catQ:"",
+            tags:[], tagOpen:false, tagQ:"" },
   tcat:   { sort:"sum", dir:1, q:"", any:"", kind:"", sign:"" },   // la que més gasta, dalt
   imp: null,           // estat de l'assistent d'importació
 };
@@ -1279,7 +1280,10 @@ function filtreMulti({valors,compta,claus,text,refresca,ancora,estat=S.mov}){
   const f=estat, tria=f[claus.sel];
   const n=tria.length;
   const boto=el("button",{class:"btn"+(n?" primary":""),"data-catfiltre":"1",
-    onclick:e=>{ e.stopPropagation(); f[claus.open]=!f[claus.open]; refresca(); }},
+    onclick:e=>{ e.stopPropagation();
+      const obre=!f[claus.open];
+      for(const k in f) if(/Open$/.test(k)) f[k]=false;   // només un panell obert
+      f[claus.open]=obre; refresca(); }},
     n===0?text.cap:n===1?tria[0]:n+" "+text.molts);
   if(!f[claus.open]) return boto;
 
@@ -1306,7 +1310,7 @@ function filtreMulti({valors,compta,claus,text,refresca,ancora,estat=S.mov}){
         if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } }}),
     el("div",{class:"bar",style:"margin:0 0 8px;gap:6px"},
       el("button",{class:"btn ghost",onclick:()=>{ f[claus.sel]=llista.slice(); refresca(); }},
-        "Totes"+(q?" les trobades":"")),
+        (text.totes||"Totes")+(q?(text.trobades||" les trobades"):"")),
       el("button",{class:"btn ghost",onclick:()=>{ f[claus.sel]=[]; refresca(); }},"Cap"),
       el("span",{style:"flex:1"}),
       el("button",{class:"btn ghost",onclick:()=>{ f[claus.open]=false; refresca(); }},"Tancar")),
@@ -1642,7 +1646,8 @@ function esborraTag(t,n){
   let k=0;
   for(const m of S.data.movements)
     if((m.tags||[]).includes(t)){ m.tags=m.tags.filter(x=>x!==t); k++; }
-  S.mov.tags=S.mov.tags.filter(x=>x!==t);      // que el filtre no quedi en un buit
+  S.mov.tags=S.mov.tags.filter(x=>x!==t);      // que els filtres no quedin en un buit
+  S.ev.tags=S.ev.tags.filter(x=>x!==t);
   delete S.data.events[t];
   markDirty(); render();
   flash("«"+t+"» treta de "+k+(k===1?" moviment":" moviments"));
@@ -1709,7 +1714,7 @@ function reanomenaTag(t,nou,desfes){
     if((m.tags||[]).includes(t)) m.tags=[...new Set(m.tags.map(x=>x===t?dest:x))];
   if(ev[t]){ if(!ev[dest]) ev[dest]=ev[t]; delete ev[t]; }
   const canvia=l=>Array.isArray(l)?[...new Set(l.map(x=>x===t?dest:x))]:l;
-  S.mov.tags=canvia(S.mov.tags); S.desp.tag=canvia(S.desp.tag);
+  S.mov.tags=canvia(S.mov.tags); S.ev.tags=canvia(S.ev.tags); S.desp.tag=canvia(S.desp.tag);
   markDirty(); render(); flash("«"+t+"» → «"+dest+"»");
 }
 /** El mateix per a una categoria: moviments, regles i catàleg. Si el nou nom ja
@@ -1818,15 +1823,22 @@ function renderEsdeveniments(){
     const o=EV[x.t]||{};
     if(f.dates==="completes" && !(o.from&&o.to)) return false;
     if(f.dates==="falten" && o.from&&o.to) return false;
+    if(f.tags.length && !f.tags.includes(x.t)) return false;
     if(f.cats.length && !f.cats.some(c=>(x.p.cats.get(c)||0)>0)) return false;
     return true;
   });
   // Dates girades o cap despesa: sense Dies, €/dia ni On, i per tant al final.
   ordenaFiles(vis,f);
-  const actiu=!!(q||f.any||f.dates||f.cats.length);
+  const actiu=!!(q||f.any||f.dates||f.cats.length||f.tags.length);
   const bar=el("div",{class:"bar"},
     el("input",{type:"search",id:"evCerca",placeholder:"Cerca un esdeveniment…",value:f.q,
       oninput:e=>{ f.q=e.target.value; render(); tornaCursor("evCerca"); }}),
+    filtreMulti({valors:files.map(x=>x.t).sort((a,b)=>a.localeCompare(b,"ca",{numeric:true})),
+      compta:new Map(files.map(x=>[x.t,x.p.n])),refresca:render,estat:f,
+      claus:{sel:"tags",open:"tagOpen",q:"tagQ"},
+      text:{cap:"Tots els esdeveniments",molts:"esdeveniments",totes:"Tots",
+        trobades:" els trobats",cerca:"Cerca un esdeveniment…",
+        buit:"Cap esdeveniment amb aquest text."}}),
     sel(f.any,[["","Tots els anys"],...[...anys].sort().reverse().map(y=>[y,y])],
       v=>{ f.any=v; render(); }),
     sel(f.dates,[["","Totes les dates"],["completes","Amb Inici i Final escrits"],
@@ -1836,7 +1848,8 @@ function renderEsdeveniments(){
       text:{cap:"Totes les categories",molts:"categories",
         cerca:"Cerca una categoria…",buit:"Cap esdeveniment ha gastat en aquesta."}}),
     actiu?el("button",{class:"btn ghost",onclick:()=>{
-      Object.assign(f,{q:"",any:"",dates:"",cats:[],catOpen:false,catQ:""}); render(); }},
+      Object.assign(f,{q:"",any:"",dates:"",cats:[],catOpen:false,catQ:"",
+        tags:[],tagOpen:false,tagQ:""}); render(); }},
       "Netejar"):null);
   // El total de €/dia és el net de tots junts entre tots els seus dies: el preu
   // mitjà d'un dia d'aquests esdeveniments, no la mitjana dels preus.
