@@ -257,7 +257,8 @@ const S = {
   // Ordre i filtres de les taules d'esdeveniments i de categories.
   ev:     { sort:"out", dir:-1, q:"", any:"", dates:"", cats:[], catOpen:false, catQ:"",
             tags:[], tagOpen:false, tagQ:"" },
-  tcat:   { sort:"sum", dir:1, q:"", any:"", kind:"", sign:"" },   // la que més gasta, dalt
+  tcat:   { sort:"sum", dir:1, q:"", any:"", kind:"", sign:"",     // la que més gasta, dalt
+            cats:[], catOpen:false, catQ:"" },
   imp: null,           // estat de l'assistent d'importació
 };
 const TODAY = new Date().toISOString().slice(0,10);
@@ -1219,8 +1220,11 @@ function renderMoviments(root){
   const set=(k,v)=>{ S.mov[k]=v; if(k!=="limit") S.mov.limit=300; render(); };
 
   const bar=el("div",{class:"bar"},
-    el("input",{type:"search",placeholder:"Cerca concepte, categoria, població…",value:f.q,
-      oninput:e=>{f.q=e.target.value;f.limit=300;renderInto();}}),
+    // La taula es refà a cada tecla i el camp és un altre: sense això, el cursor
+    // es perdia i calia tornar a clicar dins per escriure la lletra següent.
+    el("input",{type:"search",id:"movCerca",placeholder:"Cerca concepte, categoria, població…",
+      value:f.q,oninput:e=>{ const pos=e.target.selectionStart;
+        f.q=e.target.value; f.limit=300; renderInto(); tornaCursor("movCerca",pos); }}),
     periodBar(),
     sel(f.account,[["","Tots els comptes"],...S.data.accounts.map(a=>[a.id,a.name])],v=>set("account",v)),
     filtreCategories(cats,renderInto),
@@ -1282,7 +1286,10 @@ function filtreMulti({valors,compta,claus,text,refresca,ancora,estat=S.mov}){
   const boto=el("button",{class:"btn"+(n?" primary":""),"data-catfiltre":"1",
     onclick:e=>{ e.stopPropagation();
       const obre=!f[claus.open];
-      for(const k in f) if(/Open$/.test(k)) f[k]=false;   // només un panell obert
+      // Només un panell obert a tota l'app: el clic de fora només en tanca un,
+      // i amb dos oberts l'altre es quedava penjat.
+      for(const st of [S.mov,S.ev,S.tcat])
+        for(const k in st) if(/Open$/.test(k)) st[k]=false;
       f[claus.open]=obre; refresca(); }},
     n===0?text.cap:n===1?tria[0]:n+" "+text.molts);
   if(!f[claus.open]) return boto;
@@ -1305,9 +1312,9 @@ function filtreMulti({valors,compta,claus,text,refresca,ancora,estat=S.mov}){
     el("input",{type:"search",id:"catCerca",placeholder:text.cerca,value:f[claus.q],
       style:"width:100%;background:var(--bg);border:1px solid var(--line);"+
         "border-radius:8px;padding:6px 9px;margin-bottom:8px",
-      oninput:e=>{ f[claus.q]=e.target.value; refresca();
-        const i=$("#catCerca");      // el panell es refà: cal tornar-hi el cursor
-        if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } }}),
+      oninput:e=>{ const pos=e.target.selectionStart;
+        f[claus.q]=e.target.value; refresca();
+        tornaCursor("catCerca",pos); }}),      // el panell es refà: cal tornar-hi el cursor
     el("div",{class:"bar",style:"margin:0 0 8px;gap:6px"},
       el("button",{class:"btn ghost",onclick:()=>{ f[claus.sel]=llista.slice(); refresca(); }},
         (text.totes||"Totes")+(q?(text.trobades||" les trobades"):"")),
@@ -1677,9 +1684,12 @@ function ordenaFiles(files,o){
   });
 }
 /** La taula es refà sencera a cada tecla: cal tornar el cursor al cercador. */
-function tornaCursor(id){
+function tornaCursor(id,pos){
   const i=document.getElementById(id);
-  if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); }
+  if(!i) return;
+  i.focus();
+  const p=pos==null?i.value.length:pos;
+  i.setSelectionRange(p,p);
 }
 /** El nom de la fila, editable allà mateix: sembla text fins que hi passes per
     sobre. Enter el desa i Esc el deixa com era. */
@@ -1736,6 +1746,7 @@ function reanomenaCat(c,nou,desfes){
   else { const cc=S.data.categories.find(x=>x.id===c); if(cc) cc.id=nou; }
   const canvia=l=>Array.isArray(l)?[...new Set(l.map(x=>x===c?nou:x))]:l;
   S.mov.cats=canvia(S.mov.cats); S.desp.cat=canvia(S.desp.cat); S.ev.cats=canvia(S.ev.cats);
+  S.tcat.cats=canvia(S.tcat.cats);
   markDirty(); render(); flash("«"+c+"» → «"+nou+"»");
 }
 /** Les dates d'un esdeveniment: les que hi has escrit, i si no, les del primer i
@@ -1832,7 +1843,8 @@ function renderEsdeveniments(){
   const actiu=!!(q||f.any||f.dates||f.cats.length||f.tags.length);
   const bar=el("div",{class:"bar"},
     el("input",{type:"search",id:"evCerca",placeholder:"Cerca un esdeveniment…",value:f.q,
-      oninput:e=>{ f.q=e.target.value; render(); tornaCursor("evCerca"); }}),
+      oninput:e=>{ const pos=e.target.selectionStart;
+        f.q=e.target.value; render(); tornaCursor("evCerca",pos); }}),
     filtreMulti({valors:files.map(x=>x.t).sort((a,b)=>a.localeCompare(b,"ca",{numeric:true})),
       compta:new Map(files.map(x=>[x.t,x.p.n])),refresca:render,estat:f,
       claus:{sel:"tags",open:"tagOpen",q:"tagQ"},
@@ -1932,11 +1944,12 @@ function renderCategories(root){
   const q=f.q.trim().toLowerCase();
   const cats=ordenaFiles([...use.entries()]
     .filter(([c,e])=>(!q||c.toLowerCase().includes(q)) &&
+      (!f.cats.length||f.cats.includes(c)) &&
       (!f.kind||(f.kind==="transfer")===T.has(c)) &&
       (!f.sign||(f.sign==="neg"?e.sum<0:e.sum>0)))
     .map(([c,e])=>({c,e,nom:c,v:{cat:c,n:e.n,sum:e.sum,last:e.last||null,
        kind:T.has(c)?"Traspàs":"Despesa / ingrés"}})),f).map(x=>[x.c,x.e]);
-  const actiu=!!(q||f.any||f.kind||f.sign);
+  const actiu=!!(q||f.any||f.kind||f.sign||f.cats.length);
 
   const rows=cats.map(([c,e])=>el("tr",{},
     el("td",{},celaNom(c,(v,desfes)=>reanomenaCat(c,v,desfes),
@@ -1964,7 +1977,13 @@ function renderCategories(root){
       el("h2",{},"Categories · "+(actiu?cats.length+" de "+totes.size:cats.length)),
       el("div",{class:"bar"},
         el("input",{type:"search",id:"catTaulaCerca",placeholder:"Cerca una categoria…",
-          value:f.q,oninput:e=>{ f.q=e.target.value; render(); tornaCursor("catTaulaCerca"); }}),
+          value:f.q,oninput:e=>{ const pos=e.target.selectionStart;
+            f.q=e.target.value; render(); tornaCursor("catTaulaCerca",pos); }}),
+        filtreMulti({valors:[...use.keys()].sort((a,b)=>a.localeCompare(b,"ca",{numeric:true})),
+          compta:new Map([...use].map(([c,e])=>[c,e.n])),refresca:render,estat:f,
+          claus:{sel:"cats",open:"catOpen",q:"catQ"},
+          text:{cap:"Totes les categories",molts:"categories",
+            cerca:"Cerca una categoria…",buit:"Cap categoria amb aquest text."}}),
         sel(f.any,[["","Tots els anys"],...[...anys].sort().reverse().map(y=>[y,y])],
           v=>{ f.any=v; render(); }),
         sel(f.kind,[["","Tots els tractaments"],["expense","Despesa / ingrés"],
@@ -1972,7 +1991,8 @@ function renderCategories(root){
         sel(f.sign,[["","Net positiu i negatiu"],["neg","Net negatiu: on gastes"],
           ["pos","Net positiu: d'on entra"]],v=>{ f.sign=v; render(); }),
         actiu?el("button",{class:"btn ghost",onclick:()=>{
-          Object.assign(f,{q:"",any:"",kind:"",sign:""}); render(); }},"Netejar"):null),
+          Object.assign(f,{q:"",any:"",kind:"",sign:"",cats:[],catOpen:false,catQ:""});
+          render(); }},"Netejar"):null),
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},
           thOrdre(f,"Categoria","cat",{text:true}),
@@ -1991,7 +2011,8 @@ function renderCategories(root){
       el("p",{class:"note"},"Clica el nom d'una categoria per canviar-lo: es canvia als "+
         "seus moviments i a les regles, i si n'hi poses un que ja existeix, s'hi fusiona. "+
         "INVERSIO, VISA i NOMINA no es poden canviar, perquè l'app les busca pel nom. "+
-        "Amb un any triat, Moviments, Net i Últim ús són només d'aquell any."),
+        "Amb un any triat, Moviments, Net i Últim ús són només d'aquell any, i si en tries "+
+        "unes quantes al filtre, la fila de Total te les suma."),
       // Les que no fa servir ningú no surten a la taula de dalt —es fa dels
       // moviments— però sí als desplegables, i s'hi acumulen.
       (()=>{
@@ -2180,6 +2201,8 @@ function mergeCat(c,all){
       for(const m of S.data.movements) if(m.category===c) m.category=target;
       for(const r of S.data.rules) if(r.category===c) r.category=target;
       S.data.categories=S.data.categories.filter(x=>x.id!==c);
+      const puja=l=>[...new Set(l.map(x=>x===c?target:x))];
+      S.mov.cats=puja(S.mov.cats); S.tcat.cats=puja(S.tcat.cats);
       markDirty(); closeDialog(); render();
       flash(n+(n===1?" moviment mogut a ":" moviments moguts a ")+target);
     }],
