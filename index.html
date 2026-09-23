@@ -247,7 +247,7 @@ const S = {
   tab: "resum",
   mov: { q:"", account:"", cats:[], catOpen:false, catQ:"", kind:"",
          tags:[], tagOpen:false, tagQ:"",
-         sort:"date", dir:-1, limit:300 },
+         sort:"date", dir:-1, limit:300, prov:10, provOrd:"import" },
   period: { preset:"all", from:"", to:"" },
   real:   { card:"visa" },
   origen: null,          // d'on s'han carregat les dades
@@ -1217,14 +1217,15 @@ function renderMoviments(root){
   const tra=real.filter(m=>m.kind==="transfer").reduce((a,m)=>a+Math.abs(m.amount),0);
   const sum=inc-exp;
 
-  const set=(k,v)=>{ S.mov[k]=v; if(k!=="limit") S.mov.limit=300; render(); };
+  const set=(k,v)=>{ S.mov[k]=v; if(k!=="limit"){ S.mov.limit=300; S.mov.prov=10; } render(); };
 
   const bar=el("div",{class:"bar"},
     // La taula es refà a cada tecla i el camp és un altre: sense això, el cursor
     // es perdia i calia tornar a clicar dins per escriure la lletra següent.
     el("input",{type:"search",id:"movCerca",placeholder:"Cerca concepte, categoria, població…",
       value:f.q,oninput:e=>{ const pos=e.target.selectionStart;
-        f.q=e.target.value; f.limit=300; renderInto(); tornaCursor("movCerca",pos); }}),
+        f.q=e.target.value; f.limit=300; f.prov=10; renderInto();
+        tornaCursor("movCerca",pos); }}),
     periodBar(),
     sel(f.account,[["","Tots els comptes"],...S.data.accounts.map(a=>[a.id,a.name])],v=>set("account",v)),
     filtreCategories(cats,renderInto),
@@ -1259,6 +1260,7 @@ function renderMoviments(root){
       kpi("Net",eur(sum),"ingressos − pagaments",sgn(sum)),
       kpi("Traspassos",eur(tra),"targeta i inversió, fora dels totals","invc"),
     ),
+    resumProveidors(all),
     el("div",{class:"card"},bar,el("div",{class:"tw"},tbl),
       all.length>show.length
         ? el("div",{style:"padding:12px;text-align:center"},
@@ -1268,6 +1270,87 @@ function renderMoviments(root){
       all.length?null:el("div",{class:"empty"},"Cap moviment amb aquests filtres.")),
   );
   function renderInto(){ renderMoviments(root); }
+}
+/** Qui s'emporta els diners, dels moviments que deixa el filtre. Agrupa per
+    concepte —el nom que posa el banc— i no per categoria: així es veu que el
+    gruix del SUPER és el LIDL, o quant t'hi va un proveïdor concret. Només
+    despeses reals: els traspassos i els previstos en queden fora, com a la
+    resta de totals. */
+function resumProveidors(movs){
+  const T=transferCats(), g=new Map();
+  let lo=null, hi=null, total=0;
+  for(const m of movs){
+    if(m.planned || m.amount>=0 || T.has(m.category)) continue;
+    const nom=(m.concept||"—").trim().replace(/\s+/g," ");
+    const k=nom.toUpperCase();
+    let e=g.get(k);
+    if(!e) g.set(k,e={nom,n:0,sum:0,last:"",cats:new Map()});
+    e.n++; e.sum+=-m.amount; total+=-m.amount;
+    if(m.date>e.last){ e.last=m.date; e.nom=nom; }   // l'última manera d'escriure-ho
+    e.cats.set(m.category,(e.cats.get(m.category)||0)+(-m.amount));
+    if(!lo||m.date<lo) lo=m.date;
+    if(!hi||m.date>hi) hi=m.date;
+  }
+  if(!g.size) return null;
+  const f=S.mov;
+  // Els dies són els que cobreixen aquests moviments, no els del període: amb
+  // un filtre que només deixa tres compres, la mitjana ha de ser d'aquells dies.
+  const dies=Math.max(1,Math.round((Date.parse(hi)-Date.parse(lo))/86400000)+1);
+  const mes=total/dies*365.25/12, dia=total/dies;
+  const files=[...g.values()].sort((a,b)=>
+    f.provOrd==="mov" ? b.n-a.n || b.sum-a.sum : b.sum-a.sum || b.n-a.n);
+  const veure=files.slice(0,f.prov);
+  const resten=files.length-veure.length;
+  const catTop=e=>[...e.cats].sort((a,b)=>b[1]-a[1])[0][0];
+  return el("div",{class:"card"},
+    el("h2",{},"On van les despeses · "+NF0.format(files.length)+
+      (files.length===1?" proveïdor":" proveïdors")),
+    el("p",{class:"note",style:"margin-bottom:12px"},
+      "Dels moviments que deixa el filtre, agrupats pel concepte del banc. Els "+
+      "traspassos i els previstos no hi compten. La mitjana es reparteix sobre els "+
+      "dies que van del primer a l'últim moviment: del "+dCa(lo)+" al "+dCa(hi)+
+      ", "+NF0.format(dies)+(dies===1?" dia.":" dies.")),
+    el("div",{class:"grid kpis",style:"margin-bottom:12px"},
+      kpi("Despesa",eur(total),NF0.format(movs.filter(m=>!m.planned&&m.amount<0&&
+        !T.has(m.category)).length)+" moviments","neg"),
+      kpi("Al mes",eur(mes),"de mitjana","neg"),
+      kpi("Al dia",eur(dia),"de mitjana","neg"),
+      kpi("Per moviment",eur(total/[...g.values()].reduce((a,e)=>a+e.n,0)),
+        "el tiquet mitjà","neg"),
+    ),
+    el("div",{class:"bar"},
+      sel(f.provOrd,[["import","Els que més diners s'emporten"],
+        ["mov","Els que més vegades hi surten"]],v=>{ f.provOrd=v; f.prov=10; render(); })),
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},["Proveïdor","Categoria","Mov.","Total","% del total",
+        "Al mes","Últim"].map((h,i)=>el("th",{class:i>1?"r":""},h)))),
+      el("tbody",{},veure.map(e=>el("tr",{},
+        el("td",{class:"wrap"},e.nom),
+        el("td",{class:"mut"},catTop(e)),
+        el("td",{class:"r num mut"},NF0.format(e.n)),
+        el("td",{class:"r num neg"},eur(e.sum)),
+        el("td",{class:"r num mut"},pct(e.sum/total)),
+        el("td",{class:"r num mut"},eur(e.sum/dies*365.25/12)),
+        el("td",{class:"r num mut"},dCa(e.last)),
+      ))),
+      el("tfoot",{},el("tr",{class:"tot"},
+        el("td",{},veure.length===files.length?"Total":"Total dels "+veure.length),
+        el("td",{}),
+        el("td",{class:"r num"},NF0.format(veure.reduce((a,e)=>a+e.n,0))),
+        el("td",{class:"r num neg"},eur(veure.reduce((a,e)=>a+e.sum,0))),
+        el("td",{class:"r num mut"},pct(veure.reduce((a,e)=>a+e.sum,0)/total)),
+        el("td",{class:"r num mut"},eur(veure.reduce((a,e)=>a+e.sum,0)/dies*365.25/12)),
+        el("td",{}))),
+    )),
+    resten>0 ? el("div",{style:"padding:10px 0 0;text-align:center"},
+      el("button",{class:"btn",style:"margin-right:8px",
+        onclick:()=>{ f.prov+=10; render(); }},
+        "Mostrar-ne 10 més ("+NF0.format(resten)+" restants)"),
+      el("button",{class:"btn ghost",onclick:()=>{ f.prov=files.length; render(); }},
+        "Tots")) : (f.prov>10 ? el("div",{style:"padding:10px 0 0;text-align:center"},
+      el("button",{class:"btn ghost",onclick:()=>{ f.prov=10; render(); }},
+        "Veure'n només 10")) : null),
+  );
 }
 /** Subtítol de KPI: quant és això al mes, dins del període triat. */
 function mAvg(v){
