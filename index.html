@@ -1293,6 +1293,16 @@ function resumProveidors(movs){
   }
   if(!g.size) return null;
   const f=S.mov;
+  /* El % es mira sobre tota la despesa del període, no sobre la d'aquests
+     moviments: amb un filtre posat, el que vols saber és quina part de tot el
+     que gastes se'n va aquí, com a Categories i Esdeveniments. */
+  const [pa,pb]=periodRange();
+  let despPer=0;
+  for(const m of S.data.movements){
+    if(m.planned || m.amount>=0 || T.has(m.category)) continue;
+    if(m.date<pa || m.date>pb) continue;
+    despPer+=-m.amount;
+  }
   // Els dies són els que cobreixen aquests moviments, no els del període: amb
   // un filtre que només deixa tres compres, la mitjana ha de ser d'aquells dies.
   const dies=Math.max(1,Math.round((Date.parse(hi)-Date.parse(lo))/86400000)+1);
@@ -1309,10 +1319,13 @@ function resumProveidors(movs){
       "Dels moviments que deixa el filtre, agrupats pel concepte del banc. Els "+
       "traspassos i els previstos no hi compten. La mitjana es reparteix sobre els "+
       "dies que van del primer a l'últim moviment: del "+dCa(lo)+" al "+dCa(hi)+
-      ", "+NF0.format(dies)+(dies===1?" dia.":" dies.")),
+      ", "+NF0.format(dies)+(dies===1?" dia.":" dies.")+
+      " El «% despesa» és sobre tota la despesa del període ("+eur(despPer)+"), "+
+      "no només sobre la d'aquests moviments."),
     el("div",{class:"grid kpis",style:"margin-bottom:12px"},
       kpi("Despesa",eur(total),NF0.format(movs.filter(m=>!m.planned&&m.amount<0&&
-        !T.has(m.category)).length)+" moviments","neg"),
+        !T.has(m.category)).length)+" moviments"+
+        (despPer&&total<despPer-0.005?" · "+pct(total/despPer)+" del període":""),"neg"),
       kpi("Al mes",eur(mes),"de mitjana","neg"),
       kpi("Al dia",eur(dia),"de mitjana","neg"),
       kpi("Per moviment",eur(total/[...g.values()].reduce((a,e)=>a+e.n,0)),
@@ -1322,14 +1335,14 @@ function resumProveidors(movs){
       sel(f.provOrd,[["import","Els que més diners s'emporten"],
         ["mov","Els que més vegades hi surten"]],v=>{ f.provOrd=v; f.prov=10; render(); })),
     el("div",{class:"tw"},el("table",{},
-      el("thead",{},el("tr",{},["Proveïdor","Categoria","Mov.","Total","% del total",
+      el("thead",{},el("tr",{},["Proveïdor","Categoria","Mov.","Total","% despesa",
         "Al mes","Últim"].map((h,i)=>el("th",{class:i>1?"r":""},h)))),
       el("tbody",{},veure.map(e=>el("tr",{},
         el("td",{class:"wrap"},e.nom),
         el("td",{class:"mut"},catTop(e)),
         el("td",{class:"r num mut"},NF0.format(e.n)),
         el("td",{class:"r num neg"},eur(e.sum)),
-        el("td",{class:"r num mut"},pct(e.sum/total)),
+        el("td",{class:"r num mut"},despPer?pct(e.sum/despPer):"—"),
         el("td",{class:"r num mut"},eur(e.sum/dies*365.25/12)),
         el("td",{class:"r num mut"},dCa(e.last)),
       ))),
@@ -1338,7 +1351,8 @@ function resumProveidors(movs){
         el("td",{}),
         el("td",{class:"r num"},NF0.format(veure.reduce((a,e)=>a+e.n,0))),
         el("td",{class:"r num neg"},eur(veure.reduce((a,e)=>a+e.sum,0))),
-        el("td",{class:"r num mut"},pct(veure.reduce((a,e)=>a+e.sum,0)/total)),
+        el("td",{class:"r num mut"},despPer
+          ?pct(veure.reduce((a,e)=>a+e.sum,0)/despPer):"—"),
         el("td",{class:"r num mut"},eur(veure.reduce((a,e)=>a+e.sum,0)/dies*365.25/12)),
         el("td",{}))),
     )),
@@ -2079,7 +2093,6 @@ function renderCategories(root){
 
   posa(root,
     sospitoses(),
-    renderEsdeveniments(),
     el("div",{class:"card"},
       el("h2",{},"Categories · "+(actiu?cats.length+" de "+totes.size:cats.length)),
       el("div",{class:"bar"},
@@ -2153,6 +2166,7 @@ function renderCategories(root){
             }},"Esborrar-les totes")));
       })(),
     ),
+    renderEsdeveniments(),
     el("div",{class:"card"},
       el("h2",{},"Regles d'autocategorització"),
       el("p",{class:"note",style:"margin:0 0 12px"},
