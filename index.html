@@ -1748,6 +1748,19 @@ function categoriesBuides(){
   const use=new Set(S.data.movements.map(m=>m.category));
   return S.data.categories.map(c=>c.id).filter(id=>!use.has(id)).sort();
 }
+/** Tota la despesa del període, esdeveniments i categories a part: és el
+    denominador del «% despesa». Amb un any triat, la d'aquell any; si no, la de
+    tot l'històric. Traspassos fora, com a la resta de totals. */
+function despesaPeriode(any){
+  const T=transferCats();
+  let tot=0;
+  for(const m of S.data.movements){
+    if(m.planned || m.amount>=0 || T.has(m.category)) continue;
+    if(any && m.date.slice(0,4)!==any) continue;
+    tot+=-m.amount;
+  }
+  return tot;
+}
 /** Capçalera que ordena la taula: un clic tria la columna i un altre gira el
     sentit. Els noms comencen de la A a la Z; la resta, pel més gran o recent. */
 function thOrdre(o,lbl,key,{r=false,text=false}={}){
@@ -1894,7 +1907,7 @@ function renderEsdeveniments(){
         "Hi poses el nom de l'esdeveniment —Colombia, Boda Yago-Patri— i aquí en "+
         "surt el cost sencer. La categoria no es toca: un sopar del viatge segueix "+
         "sent RESTAURANT i compta a l'anàlisi de categories com sempre.")));
-  const EV=S.data.events;
+  const EV=S.data.events, despTot=despesaPeriode(f.any);
   // Sense moviments aquell any, l'esdeveniment no hi surt.
   const files=[...ev].filter(([,e])=>!f.any||e.any).map(([t,e])=>{
     const p=f.any?e.any:e;       // el que es veu: tot, o només l'any triat
@@ -1907,7 +1920,7 @@ function renderEsdeveniments(){
     const dies=Math.round((Date.parse(d.to)-Date.parse(d.from))/86400000)+1;
     return {t,e,p,top,d,cost,dies,nom:t,v:{tag:t,n:p.n,out:p.out,in:p.in,net:p.in-p.out,
       from:d.from,to:d.to,dies:dies>0?dies:null,dia:dies>0?cost/dies:null,
-      on:top.length?top[0][0]:null}};
+      pct:despTot?p.out/despTot:null,on:top.length?top[0][0]:null}};
   });
   const catsEv=new Map();       // quants esdeveniments han gastat en cada categoria
   for(const x of files) for(const [c,v] of x.p.cats) if(v>0) catsEv.set(c,(catsEv.get(c)||0)+1);
@@ -1957,14 +1970,15 @@ function renderEsdeveniments(){
     bar,
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},th("Etiqueta","tag"),th("Mov.","n",1),th("Despesa","out",1),
-        th("Ingrés","in",1),th("Net","net",1),th("Inici","from"),th("Final","to"),
-        th("Dies","dies",1),th("€/dia","dia",1),th("On se n'ha anat","on"),
+        th("% despesa","pct",1),th("Ingrés","in",1),th("Net","net",1),th("Inici","from"),
+        th("Final","to"),th("Dies","dies",1),th("€/dia","dia",1),th("On se n'ha anat","on"),
         el("th",{}),el("th",{}))),
       el("tbody",{},vis.length ? vis.map(({t,e,p,top,cost,dies})=>
         el("tr",{},
           el("td",{},celaNom(t,(v,desfes)=>reanomenaTag(t,v,desfes))),
           el("td",{class:"r num mut"},NF0.format(p.n)),
           el("td",{class:"r num neg"},eur(p.out)),
+          el("td",{class:"r num mut"},despTot?pct(p.out/despTot):"—"),
           el("td",{class:"r num "+(p.in?"pos":"mut")},p.in?eur(p.in):"—"),
           el("td",{class:"r num "+sgn(p.in-p.out)},eur(p.in-p.out)),
           el("td",{},celaDataEv(t,e,"from")),
@@ -1984,12 +1998,13 @@ function renderEsdeveniments(){
             title:"Treure aquesta etiqueta de tots els seus moviments",
             onclick:()=>esborraTag(t,e.n)},"✕")),
         ))
-        : el("tr",{},el("td",{colspan:12,class:"mut",style:"text-align:center;padding:18px"},
+        : el("tr",{},el("td",{colspan:13,class:"mut",style:"text-align:center;padding:18px"},
             "Cap esdeveniment amb aquests filtres."))),
       vis.length>1 ? el("tfoot",{},el("tr",{class:"tot"},
         el("td",{},"Total"),
         el("td",{class:"r num"},NF0.format(tot(x=>x.p.n))),
         el("td",{class:"r num neg"},eur(tot(x=>x.p.out))),
+        el("td",{class:"r num"},despTot?pct(tot(x=>x.p.out)/despTot):"—"),
         el("td",{class:"r num pos"},eur(tot(x=>x.p.in))),
         el("td",{class:"r num "+sgn(tot(x=>x.p.in-x.p.out))},eur(tot(x=>x.p.in-x.p.out))),
         el("td",{}),el("td",{}),
@@ -2009,6 +2024,10 @@ function renderEsdeveniments(){
       "a l'automàtica. «€/dia» és el Net repartit entre els dies, el primer i l'últim "+
       "inclosos. Les dates només serveixen per a aquest càlcul: un vol pagat mesos abans "+
       "continua sumant a l'esdeveniment."),
+    el("p",{class:"note"},"«% despesa» és el pes de cada esdeveniment sobre tota la "+
+      "despesa "+(f.any?"del "+f.any:"de l'històric")+" ("+eur(despTot)+"), no només "+
+      "sobre la dels esdeveniments: amb uns quants triats, la fila de Total diu quina "+
+      "part de tot el que has gastat se n'han endut."),
     f.any ? el("p",{class:"note"},"Amb l'any "+f.any+" triat, Mov., Despesa, Ingrés, Net i "+
       "«On se n'ha anat» són només dels moviments d'aquell any; Dies i €/dia continuen "+
       "sent de l'esdeveniment sencer.") : null,
@@ -2021,16 +2040,20 @@ function renderCategories(root){
   for(const m of S.data.movements){
     anys.add(m.date.slice(0,4)); totes.add(m.category);
     if(f.any && m.date.slice(0,4)!==f.any) continue;
-    let e=use.get(m.category); if(!e) use.set(m.category,e={n:0,sum:0,last:""});
+    let e=use.get(m.category); if(!e) use.set(m.category,e={n:0,sum:0,desp:0,last:""});
     e.n++; if(!m.planned) e.sum+=m.amount; if(m.date>e.last) e.last=m.date;
+    if(!m.planned && m.amount<0) e.desp+=-m.amount;
   }
+  const despTot=despesaPeriode(f.any);
+  // Els traspassos no compten com a despesa enlloc, i aquí tampoc: sense %.
+  const pctDe=c=>T.has(c)||!despTot ? null : (use.get(c).desp||0)/despTot;
   const q=f.q.trim().toLowerCase();
   const cats=ordenaFiles([...use.entries()]
     .filter(([c,e])=>(!q||c.toLowerCase().includes(q)) &&
       (!f.cats.length||f.cats.includes(c)) &&
       (!f.kind||(f.kind==="transfer")===T.has(c)) &&
       (!f.sign||(f.sign==="neg"?e.sum<0:e.sum>0)))
-    .map(([c,e])=>({c,e,nom:c,v:{cat:c,n:e.n,sum:e.sum,last:e.last||null,
+    .map(([c,e])=>({c,e,nom:c,v:{cat:c,n:e.n,sum:e.sum,last:e.last||null,pct:pctDe(c),
        kind:T.has(c)?"Traspàs":"Despesa / ingrés"}})),f).map(x=>[x.c,x.e]);
   const actiu=!!(q||f.any||f.kind||f.sign||f.cats.length);
 
@@ -2040,6 +2063,7 @@ function renderCategories(root){
         "no es pot canviar":null)),
     el("td",{class:"r num"},NF0.format(e.n)),
     el("td",{class:"r num "+sgn(e.sum)},eur(e.sum)),
+    el("td",{class:"r num mut"},pctDe(c)==null?"—":pct(pctDe(c))),
     el("td",{class:"r num mut"},dCa(e.last)),
     el("td",{class:"r"},el("select",{onchange:ev=>{setCatKind(c,ev.target.value);markDirty();render();}},
       [["expense","Despesa / ingrés"],["transfer","Traspàs (exclòs dels totals)"]]
@@ -2081,21 +2105,26 @@ function renderCategories(root){
           thOrdre(f,"Categoria","cat",{text:true}),
           thOrdre(f,"Moviments","n",{r:true}),
           thOrdre(f,"Net","sum",{r:true}),
+          thOrdre(f,"% despesa","pct",{r:true}),
           thOrdre(f,"Últim ús","last",{r:true}),
           thOrdre(f,"Tractament","kind",{r:true,text:true}),
           el("th",{}))),
-        el("tbody",{},rows.length?rows:el("tr",{},el("td",{colspan:6,class:"mut",
+        el("tbody",{},rows.length?rows:el("tr",{},el("td",{colspan:7,class:"mut",
           style:"text-align:center;padding:18px"},"Cap categoria amb aquests filtres."))),
         rows.length>1 ? el("tfoot",{},el("tr",{class:"tot"},
           el("td",{},"Total"),
           el("td",{class:"r num"},NF0.format(sumN)),
           el("td",{class:"r num "+sgn(sumNet)},eur(sumNet)),
+          el("td",{class:"r num"},despTot?pct(cats.reduce((a,[c,e])=>
+            a+(T.has(c)?0:e.desp),0)/despTot):"—"),
           el("td",{}),el("td",{}),el("td",{}))) : null)),
       el("p",{class:"note"},"Clica el nom d'una categoria per canviar-lo: es canvia als "+
         "seus moviments i a les regles, i si n'hi poses un que ja existeix, s'hi fusiona. "+
         "INVERSIO, VISA i NOMINA no es poden canviar, perquè l'app les busca pel nom. "+
         "Amb un any triat, Moviments, Net i Últim ús són només d'aquell any, i si en tries "+
-        "unes quantes al filtre, la fila de Total te les suma."),
+        "unes quantes al filtre, la fila de Total te les suma. «% despesa» és el pes de "+
+        "cada categoria sobre tota la despesa "+(f.any?"del "+f.any:"de l'històric")+
+        " ("+eur(despTot)+"): els traspassos no hi compten i per això no en tenen."),
       // Les que no fa servir ningú no surten a la taula de dalt —es fa dels
       // moviments— però sí als desplegables, i s'hi acumulen.
       (()=>{
