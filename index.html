@@ -1403,11 +1403,20 @@ function filtreMulti({valors,compta,claus,text,refresca,ancora,estat=S.mov}){
 
   const q=f[claus.q].trim().toLowerCase();
   const llista=valors.filter(c=>!q||c.toLowerCase().includes(q));
-  const marca=(c,on)=>{
+  /* La llista es refà sencera a cada clic i tornava a dalt de tot: amb
+     cinquanta categories, marcar-ne tres de seguides era impossible. Es desa
+     per on anava i s'hi torna just després de refer-la. */
+  const ambScroll=fn=>{
+    const dalt=document.getElementById("catLlista")?.scrollTop||0;
+    fn();
+    refresca();
+    const l=document.getElementById("catLlista");
+    if(l) l.scrollTop=dalt;
+  };
+  const marca=(c,on)=>ambScroll(()=>{
     f[claus.sel] = on ? [...tria,c] : tria.filter(x=>x!==c);
     if("limit" in f) f.limit=300;
-    refresca();
-  };
+  });
   /* El panell penja del botó. El de categories és el primer de la barra i cap
      bé; el d'etiquetes va a mitja barra i, amb 290 px, al mòbil se sortia per la
      dreta. Ancorat per la dreta s'obre cap a l'esquerra i hi cap igual. */
@@ -1423,12 +1432,14 @@ function filtreMulti({valors,compta,claus,text,refresca,ancora,estat=S.mov}){
         f[claus.q]=e.target.value; refresca();
         tornaCursor("catCerca",pos); }}),      // el panell es refà: cal tornar-hi el cursor
     el("div",{class:"bar",style:"margin:0 0 8px;gap:6px"},
-      el("button",{class:"btn ghost",onclick:()=>{ f[claus.sel]=llista.slice(); refresca(); }},
+      el("button",{class:"btn ghost",
+        onclick:()=>ambScroll(()=>{ f[claus.sel]=llista.slice(); })},
         (text.totes||"Totes")+(q?(text.trobades||" les trobades"):"")),
-      el("button",{class:"btn ghost",onclick:()=>{ f[claus.sel]=[]; refresca(); }},"Cap"),
+      el("button",{class:"btn ghost",
+        onclick:()=>ambScroll(()=>{ f[claus.sel]=[]; })},"Cap"),
       el("span",{style:"flex:1"}),
       el("button",{class:"btn ghost",onclick:()=>{ f[claus.open]=false; refresca(); }},"Tancar")),
-    el("div",{style:"max-height:270px;overflow:auto"},
+    el("div",{id:"catLlista",style:"max-height:270px;overflow:auto"},
       llista.length?llista.map(c=>{
         const on=tria.includes(c);
         return el("label",{style:"display:flex;align-items:center;gap:8px;padding:4px 2px;"+
