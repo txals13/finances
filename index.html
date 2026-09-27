@@ -4493,6 +4493,10 @@ function blocDespesa(){
     if(m.planned||m.amount>=0||T.has(m.category)||m.date<pa||m.date>pb) continue;
     const k=m.date.slice(0,7); totalMes.set(k,(totalMes.get(k)||0)+(-m.amount));
   }
+  // Tota la despesa del periode: el denominador del %, com a Categories, a
+  // Esdeveniments i a la taula de proveidors.
+  const despPer=[...totalMes.values()].reduce((a,b)=>a+b,0);
+  const quota=v=>despPer?" · "+pct(v/despPer):"";
   const ordenats=[...per].map(([k,e])=>({k,e,tot:[...e.values()].reduce((a,b)=>a+b,0)}))
     .sort((a,b)=>b.tot-a.tot);
   if(S.desp[clau]===null) S.desp[clau]=ordenats.slice(0,5).map(g=>g.k);
@@ -4500,7 +4504,8 @@ function blocDespesa(){
   const xips=el("div",{class:"bar",style:"margin:0 0 10px;gap:6px"},
     ordenats.map(g=>{
       const on=tria.includes(g.k);
-      return el("button",{class:"chip"+(on?" on":""),title:eur0(g.tot),
+      return el("button",{class:"chip"+(on?" on":""),
+        title:eur0(g.tot)+quota(g.tot)+" de la despesa del període",
         onclick:()=>{ S.desp[clau]= on?tria.filter(x=>x!==g.k):[...tria,g.k]; render(); }},g.k);
     }),
     el("span",{style:"flex:1"}),
@@ -4542,7 +4547,8 @@ function blocDespesa(){
       linesChart(llista.map(m=>mLabel(m)),series,{h:230}),
       el("div",{class:"legend"},series.map(q=>el("span",{},
         el("i",{style:"background:"+q.color}),
-        q.label+" · "+eur0(q.values.filter(v=>v!=null).reduce((a,b)=>a+b,0))))));
+        (()=>{ const t=q.values.filter(v=>v!=null).reduce((a,b)=>a+b,0);
+          return q.label+" · "+eur0(t)+quota(t); })()))));
   }
   return el("div",{class:"card"},
     el("div",{class:"bar",style:"margin:0 0 8px"},
@@ -4552,9 +4558,11 @@ function blocDespesa(){
     xips, cos,
     el("p",{class:"note"},(mode==="cat"
       ? "Despesa de cada mes, dins del període triat. Els traspassos no hi compten. "+
-        "A la llegenda, el total del període."
+        "A la llegenda, el total del període i quina part és de tota la despesa."
       : "Només hi surt el que has etiquetat. Cada línia viu entre el primer i "+
-        "l'últim mes amb despesa d'aquell esdeveniment.")+
+        "l'últim mes amb despesa d'aquell esdeveniment. A la llegenda, el total "+
+        "del període i quina part és de tota la despesa.")+
+      " El % es compta sobre tota la despesa del període ("+eur(despPer)+")."+
       (S.desp.sumar&&tri.length>1?" Amb «Sumar-les», els que triïs fan una sola "+
         "línia amb el total; a la llegenda, la suma del període.":"")+
       (S.desp.total?" «Totes les despeses» compta tot el que has gastat cada mes, "+
