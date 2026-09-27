@@ -247,7 +247,7 @@ const S = {
   tab: "resum",
   mov: { q:"", account:"", cats:[], catOpen:false, catQ:"", kind:"",
          tags:[], tagOpen:false, tagQ:"",
-         sort:"date", dir:-1, limit:300, prov:10, provOrd:"import" },
+         sort:"date", dir:-1, limit:300, prov:10, provOrd:"import", provMode:"prov" },
   period: { preset:"all", from:"", to:"" },
   real:   { card:"visa" },
   origen: null,          // d'on s'han carregat les dades
@@ -1278,16 +1278,21 @@ function renderMoviments(root){
     resta de totals. */
 function resumProveidors(movs){
   const T=transferCats(), g=new Map();
+  // Per proveïdor (el concepte del banc) o per categoria. L'altra columna és
+  // sempre la del costat: del proveïdor, en quina categoria cau; de la
+  // categoria, quin proveïdor s'hi emporta més.
+  const perCat=S.mov.provMode==="cat";
   let lo=null, hi=null, total=0;
   for(const m of movs){
     if(m.planned || m.amount>=0 || T.has(m.category)) continue;
-    const nom=(m.concept||"—").trim().replace(/\s+/g," ");
-    const k=nom.toUpperCase();
+    const prov=(m.concept||"—").trim().replace(/\s+/g," "), cat=m.category||"—";
+    const nom=perCat?cat:prov, k=nom.toUpperCase();
     let e=g.get(k);
     if(!e) g.set(k,e={nom,n:0,sum:0,last:"",cats:new Map()});
     e.n++; e.sum+=-m.amount; total+=-m.amount;
     if(m.date>e.last){ e.last=m.date; e.nom=nom; }   // l'última manera d'escriure-ho
-    e.cats.set(m.category,(e.cats.get(m.category)||0)+(-m.amount));
+    const altre=perCat?prov:cat;
+    e.cats.set(altre,(e.cats.get(altre)||0)+(-m.amount));
     if(!lo||m.date<lo) lo=m.date;
     if(!hi||m.date>hi) hi=m.date;
   }
@@ -1314,9 +1319,11 @@ function resumProveidors(movs){
   const catTop=e=>[...e.cats].sort((a,b)=>b[1]-a[1])[0][0];
   return el("div",{class:"card"},
     el("h2",{},"On van les despeses · "+NF0.format(files.length)+
-      (files.length===1?" proveïdor":" proveïdors")),
+      (perCat ? (files.length===1?" categoria":" categories")
+              : (files.length===1?" proveïdor":" proveïdors"))),
     el("p",{class:"note",style:"margin-bottom:12px"},
-      "Dels moviments que deixa el filtre, agrupats pel concepte del banc. Els "+
+      "Dels moviments que deixa el filtre, agrupats "+
+      (perCat?"per categoria":"pel concepte del banc")+". Els "+
       "traspassos i els previstos no hi compten. La mitjana es reparteix sobre els "+
       "dies que van del primer a l'últim moviment: del "+dCa(lo)+" al "+dCa(hi)+
       ", "+NF0.format(dies)+(dies===1?" dia.":" dies.")+
@@ -1332,14 +1339,17 @@ function resumProveidors(movs){
         "el tiquet mitjà","neg"),
     ),
     el("div",{class:"bar"},
+      sel(f.provMode,[["prov","Per proveïdor"],["cat","Per categoria"]],
+        v=>{ f.provMode=v; f.prov=10; render(); }),
       sel(f.provOrd,[["import","Els que més diners s'emporten"],
         ["mov","Els que més vegades hi surten"]],v=>{ f.provOrd=v; f.prov=10; render(); })),
     el("div",{class:"tw"},el("table",{},
-      el("thead",{},el("tr",{},["Proveïdor","Categoria","Mov.","Total","% despesa",
+      el("thead",{},el("tr",{},[perCat?"Categoria":"Proveïdor",
+        perCat?"Qui hi pesa més":"Categoria","Mov.","Total","% despesa",
         "Al mes","Últim"].map((h,i)=>el("th",{class:i>1?"r":""},h)))),
       el("tbody",{},veure.map(e=>el("tr",{},
         el("td",{class:"wrap"},e.nom),
-        el("td",{class:"mut"},catTop(e)),
+        el("td",{class:"mut wrap"},catTop(e)),
         el("td",{class:"r num mut"},NF0.format(e.n)),
         el("td",{class:"r num neg"},eur(e.sum)),
         el("td",{class:"r num mut"},despPer?pct(e.sum/despPer):"—"),
@@ -1361,7 +1371,7 @@ function resumProveidors(movs){
         onclick:()=>{ f.prov+=10; render(); }},
         "Mostrar-ne 10 més ("+NF0.format(resten)+" restants)"),
       el("button",{class:"btn ghost",onclick:()=>{ f.prov=files.length; render(); }},
-        "Tots")) : (f.prov>10 ? el("div",{style:"padding:10px 0 0;text-align:center"},
+        perCat?"Totes":"Tots")) : (f.prov>10 ? el("div",{style:"padding:10px 0 0;text-align:center"},
       el("button",{class:"btn ghost",onclick:()=>{ f.prov=10; render(); }},
         "Veure'n només 10")) : null),
   );
