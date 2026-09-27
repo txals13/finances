@@ -3929,6 +3929,58 @@ function portfolioSeries(){
   for(const [d,v] of sums) if(!byDate.has(d)) byDate.set(d,v);
   return [...byDate].sort((a,b)=>a[0]<b[0]?-1:1).map(([date,total])=>({date,total}));
 }
+/* ---- La cartera liquida ------------------------------------------------
+   Els diners que pots gastar dema sense vendre res ni trencar res: els actius
+   de classe Monetari. No es una llista escrita a ma —compte corrent, debit,
+   DCA, Groupama—, es la classe que els has posat tu: el dia que n'obris un de
+   nou, entra sol. La resta de la cartera pot pujar i baixar tant com vulgui;
+   aquesta corba es la que diu si tens de que viure mentrestant. */
+function actiusLiquids(){
+  return S.data.assets.filter(a=>/^monetari/i.test(a.class||""));
+}
+/** La suma dels matalassos de FIRE, que es el nivell que et vols mantenir. */
+function matalassos(){
+  return (S.data.fire.liquidity||[]).reduce((t,b)=>t+(+b.target||0),0);
+}
+function blocLiquid(){
+  const L=actiusLiquids();
+  if(!L.length) return null;
+  const [pa,pb]=periodRange();
+  // Les dates de valoracio del periode, i el valor de cada actiu en aquella
+  // data: assetValueAt arrossega l'ultim valor conegut, o sigui que un mes en
+  // que nomes vas apuntar el compte no fa caure els altres a zero.
+  const dates=[...new Set(S.data.snapshots.map(x=>x.date))].sort()
+    .filter(d=>d>=pa&&d<=pb);
+  if(dates.length<2) return el("div",{class:"card"},
+    el("h2",{},"Cartera líquida"),
+    el("div",{class:"empty"},"Calen almenys dues valoracions dins del període."));
+  const suma=d=>L.reduce((t,a)=>t+assetValueAt(a,d),0);
+  const valors=dates.map(suma);
+  const obj=matalassos();
+  const series=[{label:"Líquid",color:"var(--accent)",values:valors}];
+  if(obj>0) series.push({label:"Matalassos",color:"var(--muted)",
+    values:dates.map(()=>obj)});
+  const ara=valors.at(-1), abans=valors[0];
+  const total=S.data.assets.reduce((t,a)=>t+assetValue(a),0);
+  const araTot=L.reduce((t,a)=>t+assetValue(a),0);
+  return el("div",{class:"card"},
+    el("h2",{},"Cartera líquida"),
+    linesChart(dateLabels(dates),series,{h:210}),
+    el("div",{class:"legend"},series.map(q=>el("span",{},
+      el("i",{style:"background:"+q.color}),q.label+" · "+eur0(q.values.at(-1))))),
+    el("div",{style:"margin-top:12px"},
+      breakdown(L.map(a=>[a.name,assetValue(a)]).filter(([,v])=>v>0)
+        .sort((x,y)=>y[1]-x[1]),araTot,"var(--accent)")),
+    el("p",{class:"note"},
+      "El que pots gastar sense vendre res: els actius de classe Monetari ("+
+      L.map(a=>a.name).join(", ")+"). De "+dCa(dates[0])+" a "+dCa(dates.at(-1))+
+      ": "+eur0(abans)+" → "+eur0(ara)+" ("+(ara>=abans?"+":"")+eur0(ara-abans)+")."+
+      (obj>0 ? " Els matalassos de FIRE en demanen "+eur0(obj)+", i ara "+
+        (araTot>=obj ? "en tens "+eur0(araTot-obj)+" de marge."
+                     : "te'n falten "+eur0(obj-araTot)+".") : "")+
+      (total ? " És el "+pct(araTot/total)+" de tota la cartera." : "")),
+  );
+}
 /** Barres horitzontals: per a 6-13 categories es llegeix molt millor que un formatget. */
 function breakdown(rows,total,color){
   if(!rows.length) return el("div",{class:"empty"},"Sense dades.");
@@ -3998,6 +4050,7 @@ function renderCartera(root){
           " ("+(p1.total>=p0.total?"+":"")+eur0(p1.total-p0.total)+", "+
           pct((p1.total-p0.total)/(p0.total||1))+")."):null);
     })(),
+    blocLiquid(),
     renderEvolucio(),
     el("div",{class:"grid",style:"grid-template-columns:repeat(auto-fit,minmax(320px,1fr))"},
       card("Per classe d'actiu",breakdown(group("class"),value,"var(--inv)")),
