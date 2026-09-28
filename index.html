@@ -477,6 +477,8 @@ function normalise(o){
   o.assets ??= []; o.snapshots ??= []; o.contributions ??= []; o.portfolioTotals ??= [];
   o.events ??= {};                  // etiqueta -> {from,to}: les dates escrites a mà
   o.compte ??= {}; o.compte.fixes ??= 0;   // despeses fixes de principi de mes
+  o.provAlias ??= {};               // concepte del banc -> nom del proveïdor agrupat
+  o.provIgnora ??= [];              // suggeriments de fusió que has dit que no
   o.compte.dia ??= null;                    // i el dia que te les acaben de passar
   for(const a of o.assets){ a.include ??= true; a.contributed ??= 0; }
   o.fire = Object.assign({},FIRE_DEF,o.fire||{});
@@ -1271,6 +1273,176 @@ function renderMoviments(root){
   );
   function renderInto(){ renderMoviments(root); }
 }
+/* ---- Proveïdors que són el mateix escrit de maneres diferents -----------
+   El banc escriu «GAS OILS ROVIRA SL», «GAS-OILS ROVIRA, SL» i «GAS OILS
+   ROVIRA SABADELL -SABADELL» per la mateixa benzinera, i a la taula surten com
+   a tres. Fusionar-los aquí NO toca cap moviment: és una llista de noms
+   —provAlias— que diu sota quin nom es compten a aquesta taula. El concepte
+   original segueix intacte a Moviments, als informes i al CSV. */
+/* Caps de família que no diuen res de qui cobra: tots els BIZUM comencen igual
+   i no per això són el mateix. Sense això, un «BIZUM» pelat era prefix de tots
+   els altres i se'ls emportava en un sol grup. */
+const PROV_GENERIC=/^(BIZUM|TRANSF|TRANSFERENCIA|TRASPAS|REBUT|RECIBO|COMISSIO|COMISION|PAYPAL|TARGETA|EFECTIU|DISPOSICIO|PAGAMENT|PAGO|COMPRA)\b/;
+function provNorm(t){
+  var x=(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase()
+    .replace(/^WWW\./,"")
+    .replace(/^[A-Z0-9]{2,8}\s*\*\s*/,"");  // GOOGLE*, PAYPAL*, KLARNA*
+  // El « -SABADELL» que el banc enganxa al final sobra, excepte quan el que
+  // queda al davant no diu res de qui cobra: a «BIZUM-Dolorosa» el nom és
+  // justament el que hi ha darrere del guionet, i treure'l feia que tots els
+  // bizums fossin el mateix proveïdor.
+  var curt=x.replace(/\s*-\s*[A-Z ]+$/,"").trim();
+  if(curt.length>=6 && !PROV_GENERIC.test(curt)) x=curt;
+  return x.replace(/[^A-Z0-9 ]+/g," ")
+    .replace(/\b(SL|SLU|SA|SAU|SCP|CB|SCCL)\b/g," ")
+    .replace(/\b\d{2,}\b/g," ")
+    .replace(/\s+/g," ").trim();
+}
+function provSim(a,b){ return provSimN(provNorm(a),provNorm(b)); }
+function provSimN(x,y){
+  if(x.length<4||y.length<4) return 0;
+  if(x===y) return 1;
+  const [curt,llarg]=x.length<=y.length?[x,y]:[y,x];
+  // Un nom que és el començament de l'altre sol ser el mateix lloc amb una cua
+  // (la població, la botiga, «CLAUDE SUB»), però no si el tros comú és un cap
+  // de família o una engruna.
+  if(llarg.startsWith(curt) && !PROV_GENERIC.test(curt) && curt.length>=6 &&
+     curt.length/llarg.length>=0.35) return 0.95;
+  // Dice sobre bigrames: barata, estable i prou fina per a noms curts.
+  const bi=t=>{const l=[];for(let i=0;i<t.length-1;i++)l.push(t.slice(i,i+2));return l;};
+  const A=bi(x), B=bi(y), m=new Map();
+  for(const g of A) m.set(g,(m.get(g)||0)+1);
+  let c=0; for(const g of B){ const v=m.get(g)||0; if(v>0){ c++; m.set(g,v-1); } }
+  return 2*c/(A.length+B.length);
+}
+/** L'import que un proveïdor cobra una vegada i una altra, si n'hi ha cap. */
+function provQuota(e){
+  let imp=null,n=0;
+  for(const [v,k] of e.imports) if(k>n){ n=k; imp=v; }
+  return n>=3 ? imp : null;
+}
+/** Grups de files que probablement són el mateix proveïdor. Dues raons, i cada
+    suggeriment diu la seva: el nom s'assembla, o cobren la mateixa quota
+    recurrent i el nom s'assembla una mica. Els que has dit que no, fora. */
+let provCache={firma:null,val:[]};
+function provSuggeriments(files){
+  // La taula es refà a cada tecla del cercador, i comparar cinc-cents noms
+  // amb tots els altres són dos-cents mil parells: un segle llarg a cada
+  // lletra. Dues coses ho arreglen: només es comparen els que comparteixen
+  // alguna cosa, i el resultat es guarda mentre no canviï res.
+  const firma=files.length+"·"+Math.round(files.reduce((t,f)=>t+f.e.sum,0))+"·"+
+    Object.keys(S.data.provAlias).length+"·"+(S.data.provIgnora||[]).length;
+  if(provCache.firma===firma) return provCache.val;
+  const fora=new Set(S.data.provIgnora||[]);
+  const N=files.map(f=>provNorm(f.nom)), Q=files.map(f=>provQuota(f.e));
+  const cub=new Map(), posa=(k,i)=>{ let l=cub.get(k); if(!l) cub.set(k,l=[]); l.push(i); };
+  files.forEach((f,i)=>{
+    const n=N[i]; if(n.length<4) return;
+    posa("p:"+n.slice(0,4),i);                      // mateix començament
+    for(const t of n.split(" ")) if(t.length>=4) posa("t:"+t,i);   // paraula llarga
+    if(Q[i]!=null) posa("q:"+Q[i],i);               // mateixa quota recurrent
+  });
+  const pare=new Array(files.length).fill(0).map((_,i)=>i);
+  const arrel=i=>{ while(pare[i]!==i) i=pare[i]=pare[pare[i]]; return i; };
+  const motiu=new Map(), vist=new Set();
+  for(const l of cub.values()){
+    if(l.length<2||l.length>80) continue;     // un cub gegant no distingeix res
+    for(let a=0;a<l.length;a++) for(let b=a+1;b<l.length;b++){
+      const i=l[a],j=l[b], k=i<j?i*100000+j:j*100000+i;
+      if(vist.has(k)) continue; vist.add(k);
+      const r=provSimN(N[i],N[j]);
+      let per=null;
+      if(r>=0.87) per="el nom";
+      else if(Q[i]!=null&&Q[i]===Q[j]&&r>=0.45) per="cobren "+eur(Q[i])+" un cop i un altre";
+      if(!per) continue;
+      const x=arrel(i),y=arrel(j);
+      if(x!==y) pare[y]=x;
+      motiu.set(arrel(i),per);
+    }
+  }
+  const g=new Map();
+  files.forEach((f,i)=>{ const r=arrel(i); if(!g.has(r)) g.set(r,[]); g.get(r).push(f); });
+  const val=[...g].filter(([,l])=>l.length>1)
+    .map(([r,l])=>({membres:l.sort((x,y)=>y.e.sum-x.e.sum),
+      sum:l.reduce((t,f)=>t+f.e.sum,0), n:l.reduce((t,f)=>t+f.e.n,0),
+      per:motiu.get(r)||"el nom",
+      firma:l.map(f=>f.clau).sort().join("|")}))
+    .filter(x=>!fora.has(x.firma))
+    .sort((a,b)=>b.sum-a.sum);
+  provCache={firma,val};
+  return val;
+}
+/** Fusiona: totes aquestes claus passen a comptar-se sota un sol nom. */
+function fusionaProv(claus,nom){
+  const A=S.data.provAlias;
+  for(const k of claus){
+    // Si alguna ja era un grup, se n'emporta tots els membres.
+    for(const x in A) if(A[x]===A[k]||x===k) A[x]=nom;
+    A[k]=nom;
+  }
+  markDirty(); render();
+}
+function separaProv(claus){
+  for(const k of claus) delete S.data.provAlias[k];
+  markDirty(); render();
+}
+/** Fusionar una fila amb una altra, o desfer-ho. Només toca provAlias. */
+function dialogFusioProv(clau,e,files){
+  const altres=files.filter(x=>x.clau!==clau);
+  let dest=altres[0]||null;
+  const nomIn=el("input",{type:"text",value:e.nom,style:"width:100%"});
+  const tria=altres.length?sel("0",altres.map((x,i)=>
+      [String(i),x.nom+" · "+NF0.format(x.e.n)+" mov · "+eur0(x.e.sum)]),
+    v=>{ dest=altres[+v]; nomIn.value=dest.e.sum>=e.sum?dest.nom:e.nom; }):null;
+  const cos=el("div",{},
+    el("p",{class:"note",style:"margin:0 0 12px"},
+      "Fusionar-los no toca cap moviment: el concepte del banc segueix igual a "+
+      "Moviments, als informes i al CSV. Només diu sota quin nom es compten en "+
+      "aquesta taula."),
+    e.claus.size>1 ? el("p",{style:"font-size:13px"},
+      el("b",{},"«"+e.nom+"» ara agrupa: "),[...e.noms].join(" · ")) : null,
+    altres.length ? el("div",{class:"map"},
+      lbl("Fusionar-lo amb",tria),
+      lbl("Nom del grup",nomIn)) : el("p",{},"No hi ha cap altre proveïdor amb què fusionar-lo."),
+  );
+  dialog("Fusionar proveïdors",cos,[
+    ["Cancel·lar","btn",closeDialog],
+    ...(e.claus.size>1?[["Desfer la fusió","btn",()=>{ separaProv([...e.claus]); closeDialog(); }]]:[]),
+    ...(altres.length?[["Fusionar","btn primary",()=>{
+      const nom=nomIn.value.trim()||e.nom;
+      fusionaProv([...e.claus,...dest.e.claus],nom); closeDialog();
+    }]]:[]),
+  ]);
+}
+/** Els suggeriments, un per un, amb el perquè i els seus membres. */
+function dialogSuggeriments(sugg){
+  let llista=sugg.slice();
+  const cos=el("div",{});
+  const pinta=()=>{
+    posa(cos, llista.length?null:el("div",{class:"empty"},
+      "Cap suggeriment: tot el que s'assembla ja està fusionat o descartat."),
+      ...llista.map(x=>el("div",{style:"border:1px solid var(--line);border-radius:"+
+          "var(--radius);padding:10px;margin-bottom:8px"},
+        el("div",{style:"display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"},
+          el("b",{},x.membres[0].nom),
+          el("span",{class:"num mut"},NF0.format(x.n)+" mov · "+eur0(x.sum))),
+        el("div",{class:"mut",style:"font-size:12px;margin:4px 0"},
+          "S'assemblen per "+x.per+"."),
+        el("div",{style:"font-size:13px;margin-bottom:8px"},
+          x.membres.map(m=>el("div",{},"· "+m.nom,
+            el("span",{class:"mut num"}," — "+NF0.format(m.e.n)+" mov · "+eur0(m.e.sum))))),
+        el("button",{class:"btn primary",style:"margin-right:6px",onclick:()=>{
+          fusionaProv(x.membres.flatMap(m=>[...m.e.claus]),x.membres[0].nom);
+          llista=llista.filter(y=>y!==x); pinta();
+        }},"Fusiona'ls com a «"+x.membres[0].nom+"»"),
+        el("button",{class:"btn ghost",onclick:()=>{
+          S.data.provIgnora.push(x.firma); markDirty();
+          llista=llista.filter(y=>y!==x); pinta(); render();
+        }},"No, són diferents"))));
+  };
+  pinta();
+  dialog("Proveïdors que semblen el mateix",cos,[["Tancar","btn",closeDialog]]);
+}
 /** Qui s'emporta els diners, dels moviments que deixa el filtre. Agrupa per
     concepte —el nom que posa el banc— i no per categoria: així es veu que el
     gruix del SUPER és el LIDL, o quant t'hi va un proveïdor concret. Només
@@ -1286,11 +1458,17 @@ function resumProveidors(movs){
   for(const m of movs){
     if(m.planned || m.amount>=0 || T.has(m.category)) continue;
     const prov=(m.concept||"—").trim().replace(/\s+/g," "), cat=m.category||"—";
-    const nom=perCat?cat:prov, k=nom.toUpperCase();
+    const brut=perCat?cat:prov, bk=brut.toUpperCase();
+    // L'àlies mana: el concepte original no es toca enlloc més.
+    const alias=perCat?null:S.data.provAlias[bk];
+    const nom=alias||brut, k=(alias||bk).toUpperCase();
     let e=g.get(k);
-    if(!e) g.set(k,e={nom,n:0,sum:0,last:"",cats:new Map()});
+    if(!e) g.set(k,e={nom,n:0,sum:0,last:"",cats:new Map(),claus:new Set(),
+      noms:new Set(),imports:new Map(),alias:!!alias});
+    e.claus.add(bk); e.noms.add(brut);
+    e.imports.set(Math.round(-m.amount*100)/100,(e.imports.get(Math.round(-m.amount*100)/100)||0)+1);
     e.n++; e.sum+=-m.amount; total+=-m.amount;
-    if(m.date>e.last){ e.last=m.date; e.nom=nom; }   // l'última manera d'escriure-ho
+    if(m.date>e.last){ e.last=m.date; if(!alias) e.nom=brut; }   // l'última manera d'escriure-ho
     const altre=perCat?prov:cat;
     e.cats.set(altre,(e.cats.get(altre)||0)+(-m.amount));
     if(!lo||m.date<lo) lo=m.date;
@@ -1312,8 +1490,9 @@ function resumProveidors(movs){
   // un filtre que només deixa tres compres, la mitjana ha de ser d'aquells dies.
   const dies=Math.max(1,Math.round((Date.parse(hi)-Date.parse(lo))/86400000)+1);
   const mes=total/dies*365.25/12, dia=total/dies;
-  const files=[...g.values()].sort((a,b)=>
-    f.provOrd==="mov" ? b.n-a.n || b.sum-a.sum : b.sum-a.sum || b.n-a.n);
+  const files=[...g].map(([clau,e])=>({clau,e,nom:e.nom})).sort((a,b)=>
+    f.provOrd==="mov" ? b.e.n-a.e.n || b.e.sum-a.e.sum : b.e.sum-a.e.sum || b.e.n-a.e.n);
+  const sugg=perCat?[]:provSuggeriments(files);
   const veure=files.slice(0,f.prov);
   const resten=files.length-veure.length;
   const catTop=e=>[...e.cats].sort((a,b)=>b[1]-a[1])[0][0];
@@ -1342,29 +1521,38 @@ function resumProveidors(movs){
       sel(f.provMode,[["prov","Per proveïdor"],["cat","Per categoria"]],
         v=>{ f.provMode=v; f.prov=10; render(); }),
       sel(f.provOrd,[["import","Els que més diners s'emporten"],
-        ["mov","Els que més vegades hi surten"]],v=>{ f.provOrd=v; f.prov=10; render(); })),
+        ["mov","Els que més vegades hi surten"]],v=>{ f.provOrd=v; f.prov=10; render(); }),
+      sugg.length?el("button",{class:"btn",
+        title:"Noms diferents que semblen el mateix proveïdor",
+        onclick:()=>dialogSuggeriments(sugg)},
+        "✨ "+sugg.length+(sugg.length===1?" fusió possible":" fusions possibles")):null),
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},[perCat?"Categoria":"Proveïdor",
         perCat?"Qui hi pesa més":"Categoria","Mov.","Total","% despesa",
-        "Al mes","Últim"].map((h,i)=>el("th",{class:i>1?"r":""},h)))),
-      el("tbody",{},veure.map(e=>el("tr",{},
-        el("td",{class:"wrap"},e.nom),
+        "Al mes","Últim",""].map((h,i)=>el("th",{class:i>1?"r":""},h)))),
+      el("tbody",{},veure.map(({clau,e})=>el("tr",{},
+        el("td",{class:"wrap"},e.nom,
+          e.claus.size>1?el("div",{class:"mut",style:"font-size:11px",
+            title:[...e.noms].join(" · ")},e.claus.size+" noms"):null),
         el("td",{class:"mut wrap"},catTop(e)),
         el("td",{class:"r num mut"},NF0.format(e.n)),
         el("td",{class:"r num neg"},eur(e.sum)),
         el("td",{class:"r num mut"},despPer?pct(e.sum/despPer):"—"),
         el("td",{class:"r num mut"},eur(e.sum/dies*365.25/12)),
         el("td",{class:"r num mut"},dCa(e.last)),
+        el("td",{class:"r"},perCat?null:el("button",{class:"btn ghost",
+          title:"Fusionar amb un altre proveïdor, o desfer la fusió",
+          onclick:()=>dialogFusioProv(clau,e,files)},"⋯")),
       ))),
       el("tfoot",{},el("tr",{class:"tot"},
         el("td",{},veure.length===files.length?"Total":"Total dels "+veure.length),
         el("td",{}),
-        el("td",{class:"r num"},NF0.format(veure.reduce((a,e)=>a+e.n,0))),
-        el("td",{class:"r num neg"},eur(veure.reduce((a,e)=>a+e.sum,0))),
+        el("td",{class:"r num"},NF0.format(veure.reduce((a,x)=>a+x.e.n,0))),
+        el("td",{class:"r num neg"},eur(veure.reduce((a,x)=>a+x.e.sum,0))),
         el("td",{class:"r num mut"},despPer
-          ?pct(veure.reduce((a,e)=>a+e.sum,0)/despPer):"—"),
-        el("td",{class:"r num mut"},eur(veure.reduce((a,e)=>a+e.sum,0)/dies*365.25/12)),
-        el("td",{}))),
+          ?pct(veure.reduce((a,x)=>a+x.e.sum,0)/despPer):"—"),
+        el("td",{class:"r num mut"},eur(veure.reduce((a,x)=>a+x.e.sum,0)/dies*365.25/12)),
+        el("td",{}),el("td",{}))),
     )),
     resten>0 ? el("div",{style:"padding:10px 0 0;text-align:center"},
       el("button",{class:"btn",style:"margin-right:8px",
