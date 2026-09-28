@@ -477,6 +477,7 @@ function normalise(o){
   o.assets ??= []; o.snapshots ??= []; o.contributions ??= []; o.portfolioTotals ??= [];
   o.events ??= {};                  // etiqueta -> {from,to}: les dates escrites a mà
   o.compte ??= {}; o.compte.fixes ??= 0;   // despeses fixes de principi de mes
+  o.conjunts ??= [];                // grups de categories desats: {id,nom,cats}
   o.provAlias ??= {};               // concepte del banc -> nom del proveïdor agrupat
   o.provIgnora ??= [];              // suggeriments de fusió que has dit que no
   o.compte.dia ??= null;                    // i el dia que te les acaben de passar
@@ -1375,6 +1376,105 @@ function provSuggeriments(files){
   provCache={firma,val};
   return val;
 }
+/* ---- Conjunts de categories --------------------------------------------
+   «Despeses mínimes operatives», «Viatges», «Lleure»: grups de categories que
+   es piquen i prou. No són una capa nova de filtres: un conjunt escriu el
+   filtre de categories que ja hi ha, i des d'allà tot el que en depèn —la
+   taula, els totals, la llista de moviments— hi va sol. Per això es poden
+   combinar amb el període, amb la cerca i amb la resta. */
+function conjuntActiu(){
+  const c=S.mov.cats;
+  if(!c.length) return null;
+  return (S.data.conjunts||[]).find(x=>x.cats.length===c.length &&
+    x.cats.every(k=>c.includes(k))) || null;
+}
+function aplicaConjunt(x){
+  const ara=conjuntActiu();
+  S.mov={...S.mov,cats:(ara&&ara.id===x.id)?[]:x.cats.slice(),limit:300,prov:10};
+  render();
+}
+/** L'editor: el nom i quines categories hi van. S'hi arriba del ✎ del conjunt
+    i del botó de desar la selecció d'ara. */
+function dialogConjunt(x,catsInicials){
+  const totes=totesCats();
+  const gastat=new Map();
+  const T=transferCats();
+  for(const m of S.data.movements)
+    if(!m.planned&&m.amount<0&&!T.has(m.category))
+      gastat.set(m.category,(gastat.get(m.category)||0)-m.amount);
+  const tria=new Set(x?x.cats:(catsInicials||[]));
+  const nom=el("input",{type:"text",value:x?x.nom:"",placeholder:"Despeses mínimes operatives",
+    style:"width:100%"});
+  const llista=el("div",{style:"max-height:46vh;overflow:auto;margin-top:6px"});
+  const cerca=el("input",{type:"search",id:"conjCerca",placeholder:"Cerca una categoria…",
+    style:"width:100%;background:var(--bg);border:1px solid var(--line);"+
+      "border-radius:8px;padding:6px 9px"});
+  const compte=el("div",{class:"mut",style:"font-size:12px;margin-top:8px"});
+  const pinta=()=>{
+    const q=cerca.value.trim().toLowerCase();
+    const l=totes.filter(c=>!q||c.toLowerCase().includes(q))
+      .sort((a,b)=>(gastat.get(b)||0)-(gastat.get(a)||0));
+    posa(llista,...l.map(c=>el("label",{style:"display:flex;align-items:center;gap:8px;"+
+        "padding:4px 2px;cursor:pointer;font-size:13px"},
+      el("input",{type:"checkbox",checked:tria.has(c),
+        onchange:e=>{ e.target.checked?tria.add(c):tria.delete(c); compta(); }}),
+      el("span",{style:"flex:1"},c),
+      el("span",{class:"mut num",style:"font-size:11px"},eur0(gastat.get(c)||0)))));
+    compta();
+  };
+  const compta=()=>{
+    const suma=[...tria].reduce((t,c)=>t+(gastat.get(c)||0),0);
+    compte.textContent=tria.size+(tria.size===1?" categoria triada · ":" categories triades · ")+
+      eur(suma)+" a tot l'històric";
+  };
+  cerca.addEventListener("input",()=>{ const p=cerca.selectionStart; pinta();
+    tornaCursor("conjCerca",p); });
+  pinta();
+  dialog(x?"Editar el conjunt":"Nou conjunt de categories",
+    el("div",{},
+      el("p",{class:"note",style:"margin:0 0 10px"},
+        "Un conjunt és una drecera al filtre de categories: el piques i tot el que "+
+        "mires —els totals, la taula i la llista de moviments— es queda amb aquestes. "+
+        "Els pots canviar sempre que vulguis, i afegir-ne de noves."),
+      el("div",{class:"map"},lbl("Nom",nom)),
+      cerca, llista, compte),
+    [
+      ["Cancel·lar","btn",closeDialog],
+      ...(x?[["Esborrar","btn",()=>{
+        if(!confirm("Esborrar el conjunt «"+x.nom+"»? Les categories no es toquen.")) return;
+        S.data.conjunts=S.data.conjunts.filter(y=>y.id!==x.id);
+        if(conjuntActiu()===null&&S.mov.cats.length) S.mov.cats=[];
+        markDirty(); closeDialog(); render();
+      }]]:[]),
+      ["Desar","btn primary",()=>{
+        const n=nom.value.trim();
+        if(!n||!tria.size){ alert("Posa-hi un nom i tria almenys una categoria."); return; }
+        if(x){ x.nom=n; x.cats=[...tria]; }
+        else S.data.conjunts.push({id:uid(),nom:n,cats:[...tria]});
+        markDirty(); closeDialog();
+        S.mov={...S.mov,cats:[...tria],limit:300,prov:10};
+        render();
+      }],
+    ]);
+}
+/** Les pastilles dels conjunts, dins de la targeta de despeses. */
+function xipsConjunts(){
+  const actiu=conjuntActiu(), l=S.data.conjunts||[];
+  const sel=S.mov.cats;
+  return el("div",{class:"bar",style:"margin:0 0 10px;gap:6px"},
+    l.map(x=>el("button",{class:"chip"+(actiu&&actiu.id===x.id?" on":""),
+      title:x.cats.join(" · "),onclick:()=>aplicaConjunt(x)},
+      x.nom,el("span",{class:"mut",style:"font-size:11px"}," "+x.cats.length))),
+    actiu?el("button",{class:"btn ghost",title:"Canviar el nom o les categories",
+      onclick:()=>dialogConjunt(actiu)},"✎ Editar"):null,
+    (!actiu&&sel.length)?el("button",{class:"btn ghost",
+      title:"Desar les "+sel.length+" categories del filtre com a conjunt",
+      onclick:()=>dialogConjunt(null,sel)},"＋ Desar aquestes "+sel.length):null,
+    (!actiu&&!sel.length)?el("button",{class:"btn ghost",
+      onclick:()=>dialogConjunt(null,[])},"＋ Nou conjunt"):null,
+    actiu?el("span",{class:"mut",style:"font-size:12px"},
+      "Mires «"+actiu.nom+"». Torna a picar-lo per veure-ho tot."):null);
+}
 /** Fusiona: totes aquestes claus passen a comptar-se sota un sol nom. */
 function fusionaProv(claus,nom){
   const A=S.data.provAlias;
@@ -1520,6 +1620,7 @@ function resumProveidors(movs){
       kpi("Per moviment",eur(total/[...g.values()].reduce((a,e)=>a+e.n,0)),
         "el tiquet mitjà","neg"),
     ),
+    xipsConjunts(),
     el("div",{class:"bar"},
       sel(f.provMode,[["prov","Per proveïdor"],["cat","Per categoria"]],
         v=>{ f.provMode=v; f.prov=10; render(); }),
