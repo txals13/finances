@@ -1224,10 +1224,13 @@ function renderMoviments(root){
   const bar=el("div",{class:"bar"},
     // La taula es refà a cada tecla i el camp és un altre: sense això, el cursor
     // es perdia i calia tornar a clicar dins per escriure la lletra següent.
+    // Escrivint de pressa no cal refer la taula a cada lletra: es deixa passar
+    // un moment i es fa un cop. El camp ja ensenya el que escrius mentrestant.
     el("input",{type:"search",id:"movCerca",placeholder:"Cerca concepte, categoria, població…",
       value:f.q,oninput:e=>{ const pos=e.target.selectionStart;
-        f.q=e.target.value; f.limit=300; f.prov=10; renderInto();
-        tornaCursor("movCerca",pos); }}),
+        f.q=e.target.value; f.limit=300; f.prov=10;
+        clearTimeout(cercaEspera);
+        cercaEspera=setTimeout(()=>{ renderInto(); tornaCursor("movCerca",pos); },170); }}),
     periodBar(),
     sel(f.account,[["","Tots els comptes"],...S.data.accounts.map(a=>[a.id,a.name])],v=>set("account",v)),
     filtreCategories(cats,renderInto),
@@ -1569,6 +1572,7 @@ function mAvg(v){
   const s=periodSpan();
   return s ? eur(v/s.days*365.25/12)+" al mes" : "del filtre actual";
 }
+let cercaEspera=null;   // el refresc pendent del cercador de Moviments
 let foraCat=null;   // l'escoltador que tanca el panell, per no acumular-ne
 /** Filtre de categories amb selecció múltiple. Amb prop de cinquanta,
     una llista de xips no s'hi val: cal cercador i comptadors. */
@@ -1707,10 +1711,19 @@ function sel(value,opts,on){
 /** Un sol <datalist> per llista, penjat del body i refrescat cada cop. Es pot
     compartir entre tots els camps que en facin servir la mateixa llista, que
     si no, una taula de 300 files en faria 300. */
+const dlFet=new Map();
 function datalist(id,valors){
   let d=document.getElementById(id);
-  if(!d){ d=el("datalist",{id}); document.body.append(d); }
-  d.replaceChildren(...valors.map(v=>el("option",{value:v})));
+  if(!d){ d=el("datalist",{id}); document.body.append(d); dlFet.delete(id); }
+  /* Refer-lo és car de debò: amb tres-centes files hi ha sis-cents camps que hi
+     apunten i el navegador revalida cada un a cada replaceChildren. Sis-centes
+     vegades per tecla al cercador eren 3,2 s dels 3,6 que hi anaven. La llista
+     és la mateixa a totes les files, o sigui que només es refà quan canvia. */
+  const firma=valors.join("\u0001");
+  if(dlFet.get(id)!==firma){
+    dlFet.set(id,firma);
+    d.replaceChildren(...valors.map(v=>el("option",{value:v})));
+  }
   return id;
 }
 /** Camp de text amb el desplegable dels valors que ja fas servir. Pots triar-ne
