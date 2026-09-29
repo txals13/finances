@@ -2373,18 +2373,27 @@ function celaDataEv(t,e,camp){
 function renderEsdeveniments(){
   const T=transferCats(), f=S.ev;
   const ev=new Map(), anys=new Set();
+  /* Els conjunts picats manen aquí igual que a la targeta de despeses: un
+     moviment només hi compta si és d'algun dels conjunts, i amb la part que li
+     toqui. Amb un conjunt de categories, cada esdeveniment surt amb només la
+     despesa d'aquelles categories —«què em van costar els viatges en
+     allotjament»—; amb un d'etiquetes, surten només aquells esdeveniments. */
+  const gr=conjuntsActius();
+  const dins=m=>!gr.length||gr.some(x=>dinsConjunt(x,m));
   const buit=()=>({n:0,out:0,in:0,cats:new Map()});
   const suma=(e,m)=>{
+    const w=gr.length?pesActiu(m):1;
     e.n++;
     if(T.has(m.category)) return;
-    if(m.amount<0) e.out+=-m.amount; else e.in+=m.amount;
-    e.cats.set(m.category,(e.cats.get(m.category)||0)+(m.amount<0?-m.amount:0));
+    if(m.amount<0) e.out+=-m.amount*w; else e.in+=m.amount*w;
+    e.cats.set(m.category,(e.cats.get(m.category)||0)+(m.amount<0?-m.amount*w:0));
   };
   /* L'any es mira a cada moviment, com a Categories: triar 2025 vol dir els
      moviments del 2025. Abans es mirava Inici–Final, i com que sense dates
      escrites el Final és l'últim moviment, un Bizum de gener feia sortir el
      viatge a l'any següent amb tot el seu import. */
   for(const m of S.data.movements){
+    if(!dins(m)) continue;
     for(const t of m.tags||[]){
       let e=ev.get(t);
       if(!e) ev.set(t,e={...buit(),d1:"",d2:"",any:null});
@@ -2464,6 +2473,7 @@ function renderEsdeveniments(){
   const th=(lbl,key,r)=>thOrdre(f,lbl,key,{r,text:key==="tag"||key==="on"});
   return el("div",{class:"card"},
     el("h2",{},"Esdeveniments · "+(actiu?vis.length+" de "+ev.size:ev.size)),
+    xipsConjunts(),
     bar,
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},th("Etiqueta","tag"),th("Mov.","n",1),th("Despesa","out",1),
@@ -2521,6 +2531,12 @@ function renderEsdeveniments(){
       "a l'automàtica. «€/dia» és el Net repartit entre els dies, el primer i l'últim "+
       "inclosos. Les dates només serveixen per a aquest càlcul: un vol pagat mesos abans "+
       "continua sumant a l'esdeveniment."),
+    gr.length?el("p",{class:"note"},
+      (gr.length===1?"Mires «"+gr[0].nom+"»":"Sumes "+gr.length+" conjunts")+
+      ", o sigui que d'aquests esdeveniments només hi compta el que hi entra "+
+      [gr.some(x=>conjCats(x).length)?"per categoria":null,
+       gr.some(x=>conjTags(x).length)?"per etiqueta":null].filter(Boolean).join(" o ")+
+      ". Despica'ls a dalt per veure'ls sencers."):null,
     el("p",{class:"note"},"«% despesa» és el pes de cada esdeveniment sobre tota la "+
       "despesa "+(f.any?"del "+f.any:"de l'històric")+" ("+eur(despTot)+"), no només "+
       "sobre la dels esdeveniments: amb uns quants triats, la fila de Total diu quina "+
