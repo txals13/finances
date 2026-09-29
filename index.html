@@ -246,7 +246,7 @@ const S = {
   dirty: false,
   tab: "resum",
   mov: { q:"", account:"", cats:[], catOpen:false, catQ:"", kind:"",
-         tags:[], tagOpen:false, tagQ:"", grups:[],
+         tags:[], tagOpen:false, tagQ:"", grups:[], grupsTags:[],
          sort:"date", dir:-1, limit:300, prov:10, provOrd:"import", provMode:"prov" },
   period: { preset:"all", from:"", to:"" },
   real:   { card:"visa" },
@@ -477,7 +477,16 @@ function normalise(o){
   o.assets ??= []; o.snapshots ??= []; o.contributions ??= []; o.portfolioTotals ??= [];
   o.events ??= {};                  // etiqueta -> {from,to}: les dates escrites a mà
   o.compte ??= {}; o.compte.fixes ??= 0;   // despeses fixes de principi de mes
-  o.conjunts ??= [];                // grups de categories desats: {id,nom,cats}
+  o.conjunts ??= [];                // grups de categories: {id,nom,cats,pesos}
+  o.conjuntsTags ??= [];            // grups d'etiquetes: {id,nom,tags,pesos}
+  // Els conjunts van arribar a barrejar categories i etiquetes en un de sol.
+  // Ara són dues famílies, i el que estigués barrejat es parteix en dos amb el
+  // mateix nom en comptes de perdre'n la meitat.
+  for(const c of o.conjunts) if(c.tags&&c.tags.length){
+    o.conjuntsTags.push({id:uid(),nom:c.nom,tags:c.tags.slice(),
+      pesos:Object.assign({},c.pesosTags||{})});
+    delete c.tags; delete c.pesosTags;
+  }
   o.provAlias ??= {};               // concepte del banc -> nom del proveïdor agrupat
   o.provIgnora ??= [];              // suggeriments de fusió que has dit que no
   o.compte.dia ??= null;                    // i el dia que te les acaben de passar
@@ -1196,12 +1205,6 @@ function filtered(){
     if(f.cats.length && !f.cats.includes(m.category)) return false;
     if(f.tags.length && !(m.tags||[]).some(t=>f.tags.includes(t))) return false;
     if(f.kind==="planned"?!m.planned:f.kind&&m.kind!==f.kind) return false;
-    // Els conjunts picats són un filtre propi: categories O etiquetes, que és
-    // com es pensen («lleure» són els restaurants I els viatges, no la creuada).
-    if((f.grups||[]).length){
-      const l=conjuntsActius();
-      if(l.length && !l.some(x=>dinsConjunt(x,m))) return false;
-    }
     if(q && !((m.concept||"")+" "+m.category+" "+(m.city||"")+" "+(m.note||"")+
       " "+(m.tags||[]).join(" ")).toLowerCase().includes(q)) return false;
     return true;
@@ -1382,236 +1385,198 @@ function provSuggeriments(files){
   provCache={firma,val};
   return val;
 }
-/* ---- Conjunts de categories --------------------------------------------
-   «Despeses mínimes operatives», «Viatges», «Lleure»: grups de categories que
-   es piquen i prou. No són una capa nova de filtres: un conjunt escriu el
-   filtre de categories que ja hi ha, i des d'allà tot el que en depèn —la
-   taula, els totals, la llista de moviments— hi va sol. Per això es poden
-   combinar amb el període, amb la cerca i amb la resta. */
-/* Quina part d'una categoria compta en aquest conjunt. La benzina és la meitat
-   d'anar a la feina i la meitat d'anar a passejar: el 50 % a cada conjunt, i
-   els números de cadascun surten com toca sense haver de partir els moviments
-   ni inventar-se una categoria «BENZINA LLEURE». Sense pes escrit, tot. */
-function pesConjunt(x,cat){
-  const p=x&&x.pesos&&x.pesos[cat];
+/* ---- Grups de categories i grups d'etiquetes ----------------------------
+   «Despeses mínimes», «Viatges», «Lleure» d'una banda; «Colombia», «Caps de
+   setmana» de l'altra. Dues famílies separades: un grup de categories escriu
+   el filtre de categories i un d'etiquetes el d'etiquetes, que és el que ja hi
+   havia. Picats tots dos, es creuen —«les mínimes DINS del viatge»—, que és
+   com funciona el filtre de Moviments de tota la vida.
+
+   Cada línia d'un grup porta el seu %: la benzina pot ser 60 % de la feina i
+   40 % de lleure, i cada grup en compta la seva part sense partir cap moviment
+   ni duplicar categories. */
+function pesLinia(x,k){
+  const p=x&&x.pesos&&x.pesos[k];
   return p==null ? 1 : Math.max(0,Math.min(100,+p||0))/100;
 }
-function pesTagConjunt(x,tag){
-  const p=x&&x.pesosTags&&x.pesosTags[tag];
-  return p==null ? 1 : Math.max(0,Math.min(100,+p||0))/100;
-}
-/* Es poden picar uns quants conjunts alhora i el que mires és la suma. Quins
-   estan picats es guarda a part, i no es dedueix del filtre: amb un conjunt
-   dins d'un altre —«Feina» és dins de «Despeses mínimes»— deduir-ho feia que
-   despicar-ne un no fes res, perquè les seves categories hi seguien sent. El
-   filtre sempre és la unió dels picats; si no hi encaixa, és que l'has tocat a
-   mà i llavors manen les categories, no les pastilles. */
-function conjuntsActius(){
+const grupCats=x=>x.cats||[], grupTags=x=>x.tags||[];
+function grupsCatActius(){
   if(!(S.mov.grups||[]).length) return [];
   return (S.data.conjunts||[]).filter(x=>S.mov.grups.includes(x.id));
 }
-const conjCats=x=>x.cats||[], conjTags=x=>x.tags||[];
-/** Un moviment és d'un conjunt si hi és per categoria o per etiqueta. */
-function dinsConjunt(x,m){
-  return conjCats(x).includes(m.category) ||
-    (m.tags||[]).some(t=>conjTags(x).includes(t));
+function grupsTagActius(){
+  if(!(S.mov.grupsTags||[]).length) return [];
+  return (S.data.conjuntsTags||[]).filter(x=>S.mov.grupsTags.includes(x.id));
 }
-function conjuntActiu(){
-  const l=conjuntsActius();
-  return l.length===1?l[0]:null;
-}
-/* El pes d'un moviment quan hi ha conjunts picats. Dins d'un conjunt mana la
-   part més gran de les que li toquin —un sopar de Colòmbia que hi és per
-   RESTAURANT i per l'etiqueta COLOMBIA compta un cop, no dos—; entre conjunts
-   se sumen sense passar del 100 %, o sigui que la benzina al 60 % a Feina i al
-   40 % a Lleure, tots dos picats, compta sencera. El que no és de cap conjunt
-   picat compta sencer. */
-function pesConjuntMov(x,m){
-  let p=null;
-  if(conjCats(x).includes(m.category)) p=pesConjunt(x,m.category);
-  for(const t of m.tags||[]) if(conjTags(x).includes(t)){
-    const q=pesTagConjunt(x,t); if(p==null||q>p) p=q;
-  }
-  return p;
-}
-function pesActiu(m){
-  const l=conjuntsActius();
+function capGrupActiu(){ return !grupsCatActius().length && !grupsTagActius().length; }
+/* El pes d'un moviment. Dins d'una família se sumen els grups picats, sense
+   passar del 100 %: la benzina al 60 % a Feina i al 40 % a Lleure, tots dos
+   picats, compta sencera. Entre famílies mana la part més petita: si mires les
+   mínimes al 60 % dins d'un viatge comptat al 50 %, el que se'n pot dir amb
+   honestedat és la meitat, no un terç. El que no és de cap grup picat compta
+   sencer. */
+function pesFamilia(l,claus,k){
   if(!l.length) return 1;
   let hi=false,t=0;
-  for(const x of l){ const p=pesConjuntMov(x,m); if(p!=null){ hi=true; t+=p*100; } }
+  for(const x of l) for(const v of claus) if(k(x).includes(v)){ hi=true; t+=pesLinia(x,v)*100; break; }
   return hi?Math.min(100,t)/100:1;
 }
-function aplicaConjunt(x){
-  const actius=conjuntsActius(), on=actius.some(y=>y.id===x.id);
-  // En picar el primer conjunt, el filtre de categories i etiquetes que hi
-  // hagués a mà se'n va: si no, el conjunt quedaria creuat amb ell i el que
-  // veuries no seria el que has picat.
-  const net=(!actius.length&&!on) ? {cats:[],tags:[]} : {};
-  S.mov={...S.mov,...net,limit:300,prov:10,
-    grups:on ? actius.filter(y=>y.id!==x.id).map(y=>y.id)
-             : [...actius.map(y=>y.id),x.id]};
+function pesActiu(m){
+  const wc=pesFamilia(grupsCatActius(),[m.category],grupCats);
+  const wt=pesFamilia(grupsTagActius(),m.tags||[],grupTags);
+  return Math.min(wc,wt);
+}
+/** Piques o despiques un grup; el filtre que li toca passa a ser la unió dels
+    seus germans picats. L'altra família no es toca: per això es creuen. */
+function aplicaGrup(x,tipus){
+  const tag=tipus==="tag";
+  const actius=tag?grupsTagActius():grupsCatActius();
+  const on=actius.some(y=>y.id===x.id);
+  const ids=on ? actius.filter(y=>y.id!==x.id).map(y=>y.id)
+               : [...actius.map(y=>y.id),x.id];
+  const l=(tag?S.data.conjuntsTags:S.data.conjunts).filter(y=>ids.includes(y.id));
+  const valors=[...new Set(l.flatMap(y=>tag?grupTags(y):grupCats(y)))];
+  S.mov=tag ? {...S.mov,grupsTags:ids,tags:valors,limit:300,prov:10}
+            : {...S.mov,grups:ids,cats:valors,limit:300,prov:10};
   render();
 }
-/** L'editor: el nom, quines categories hi van i quines etiquetes. Les dues
-    llistes funcionen igual i es barregen: un conjunt pot ser «RESTAURANT i
-    ACTIVITATS, més tot el que vagi etiquetat COLOMBIA», i cada línia porta el
-    seu %. S'hi arriba del ✎ del conjunt i del botó de desar la selecció d'ara. */
-function dialogConjunt(x,catsInicials){
-  const T=transferCats();
-  const gastat=new Map(), gastatTag=new Map();
+/** L'editor, el mateix per a les dues famílies: el nom i què hi va, amb el % de
+    cada línia. S'hi arriba del ✎ del grup i del botó de desar el filtre d'ara. */
+function dialogGrup(x,tipus,inicials){
+  const tag=tipus==="tag", T=transferCats();
+  const gastat=new Map();
   for(const m of S.data.movements){
     if(m.planned||m.amount>=0||T.has(m.category)) continue;
-    gastat.set(m.category,(gastat.get(m.category)||0)-m.amount);
-    for(const t of m.tags||[]) gastatTag.set(t,(gastatTag.get(t)||0)-m.amount);
+    if(tag) for(const t of m.tags||[]) gastat.set(t,(gastat.get(t)||0)-m.amount);
+    else gastat.set(m.category,(gastat.get(m.category)||0)-m.amount);
   }
-  const tria=new Set(x?conjCats(x):(catsInicials||[]));
-  const triaT=new Set(x?conjTags(x):[]);
+  const tria=new Set(x?(tag?grupTags(x):grupCats(x)):(inicials||[]));
   const pes=new Map(Object.entries((x&&x.pesos)||{}).map(([k,v])=>[k,+v]));
-  const pesT=new Map(Object.entries((x&&x.pesosTags)||{}).map(([k,v])=>[k,+v]));
-  const nom=el("input",{type:"text",value:x?x.nom:"",placeholder:"Despeses mínimes operatives",
-    style:"width:100%"});
-  const llista=el("div",{style:"max-height:30vh;overflow:auto;margin-top:4px"});
-  const llistaT=el("div",{style:"max-height:24vh;overflow:auto;margin-top:4px"});
-  const cerca=el("input",{type:"search",id:"conjCerca",placeholder:"Cerca…",
+  const nom=el("input",{type:"text",value:x?x.nom:"",
+    placeholder:tag?"Viatges de 2026":"Despeses mínimes operatives",style:"width:100%"});
+  const llista=el("div",{style:"max-height:44vh;overflow:auto;margin-top:6px"});
+  const cerca=el("input",{type:"search",id:"conjCerca",
+    placeholder:tag?"Cerca un esdeveniment…":"Cerca una categoria…",
     style:"width:100%;background:var(--bg);border:1px solid var(--line);"+
       "border-radius:8px;padding:6px 9px"});
   const compte=el("div",{class:"mut",style:"font-size:12px;margin-top:8px"});
-  const titol=t=>el("div",{style:"font-size:12px;font-weight:700;letter-spacing:.4px;"+
-    "margin-top:10px"},t);
-  // Una línia és igual tant si és una categoria com una etiqueta.
-  const fila=(k,conj,pesos,quant)=>{
-    const pc=el("input",{type:"number",min:"1",max:"100",step:"5",
-      value:pesos.has(k)?pesos.get(k):100,
-      title:"Quina part d'això compta en aquest conjunt",
-      style:"width:64px;text-align:right;font-size:12px",
-      onclick:e=>e.stopPropagation(),
-      onchange:e=>{ const v=Math.max(1,Math.min(100,Math.round(+e.target.value||100)));
-        e.target.value=v; pesos.set(k,v); conj.add(k);
-        const cb=e.target.closest("label").querySelector("input[type=checkbox]");
-        if(cb) cb.checked=true;
-        compta(); }});
-    return el("label",{style:"display:flex;align-items:center;gap:8px;"+
-      "padding:4px 2px;cursor:pointer;font-size:13px"},
-      el("input",{type:"checkbox",checked:conj.has(k),
-        onchange:e=>{ e.target.checked?conj.add(k):conj.delete(k); compta(); }}),
-      el("span",{style:"flex:1"},k),
-      pc, el("span",{class:"mut",style:"font-size:11px"},"%"),
-      el("span",{class:"mut num",style:"font-size:11px;min-width:64px;text-align:right"},
-        eur0(quant||0)));
+  const compta=()=>{
+    const suma=[...tria].reduce((t,k)=>t+(gastat.get(k)||0)*((pes.get(k)??100)/100),0);
+    const parcials=[...tria].filter(k=>(pes.get(k)??100)!==100).length;
+    const q=tag ? tria.size+(tria.size===1?" esdeveniment triat":" esdeveniments triats")
+                : tria.size+(tria.size===1?" categoria triada":" categories triades");
+    compte.textContent=q+" · "+eur(suma)+" a tot l'històric"+
+      (parcials?" · "+parcials+(parcials===1?" a mitges":" repartides"):"");
   };
   const pinta=()=>{
     const q=cerca.value.trim().toLowerCase();
-    const cats=totesCats().filter(c=>!q||c.toLowerCase().includes(q))
+    const l=(tag?totesTags():totesCats()).filter(k=>!q||k.toLowerCase().includes(q))
       .sort((a,b)=>(gastat.get(b)||0)-(gastat.get(a)||0));
-    const tags=totesTags().filter(t=>!q||t.toLowerCase().includes(q))
-      .sort((a,b)=>(gastatTag.get(b)||0)-(gastatTag.get(a)||0));
-    posa(llista,...cats.map(c=>fila(c,tria,pes,gastat.get(c))),
-      cats.length?null:el("div",{class:"mut",style:"padding:6px"},"Cap categoria amb aquest text."));
-    posa(llistaT,...tags.map(t=>fila(t,triaT,pesT,gastatTag.get(t))),
-      tags.length?null:el("div",{class:"mut",style:"padding:6px"},"Cap etiqueta amb aquest text."));
+    posa(llista,...l.map(k=>{
+      const pc=el("input",{type:"number",min:"1",max:"100",step:"5",
+        value:pes.has(k)?pes.get(k):100,
+        title:"Quina part d'això compta en aquest grup",
+        style:"width:64px;text-align:right;font-size:12px",
+        onclick:e=>e.stopPropagation(),
+        onchange:e=>{ const v=Math.max(1,Math.min(100,Math.round(+e.target.value||100)));
+          e.target.value=v; pes.set(k,v); tria.add(k);
+          const cb=e.target.closest("label").querySelector("input[type=checkbox]");
+          if(cb) cb.checked=true;
+          compta(); }});
+      return el("label",{style:"display:flex;align-items:center;gap:8px;"+
+        "padding:4px 2px;cursor:pointer;font-size:13px"},
+        el("input",{type:"checkbox",checked:tria.has(k),
+          onchange:e=>{ e.target.checked?tria.add(k):tria.delete(k); compta(); }}),
+        el("span",{style:"flex:1"},k),
+        pc, el("span",{class:"mut",style:"font-size:11px"},"%"),
+        el("span",{class:"mut num",style:"font-size:11px;min-width:64px;text-align:right"},
+          eur0(gastat.get(k)||0)));
+    }), l.length?null:el("div",{class:"mut",style:"padding:6px"},"Res amb aquest text."));
     compta();
-  };
-  /* El total no és la suma de les dues llistes: un sopar de Colòmbia que hi és
-     per RESTAURANT i per l'etiqueta compta un sol cop, i amb la part més gran
-     de les dues. Es calcula amb la mateixa regla que farà servir la targeta. */
-  const compta=()=>{
-    const prov={cats:[...tria],tags:[...triaT],
-      pesos:Object.fromEntries(pes), pesosTags:Object.fromEntries(pesT)};
-    let suma=0;
-    for(const m of S.data.movements){
-      if(m.planned||m.amount>=0||T.has(m.category)) continue;
-      const w=pesConjuntMov(prov,m);
-      if(w!=null) suma+=-m.amount*w;
-    }
-    const parcials=[...tria].filter(c=>(pes.get(c)??100)!==100).length+
-      [...triaT].filter(t=>(pesT.get(t)??100)!==100).length;
-    const q=[];
-    if(tria.size) q.push(tria.size+(tria.size===1?" categoria":" categories"));
-    if(triaT.size) q.push(triaT.size+(triaT.size===1?" etiqueta":" etiquetes"));
-    compte.textContent=(q.join(" i ")||"res triat")+" · "+eur(suma)+" a tot l'històric"+
-      (parcials?" · "+parcials+(parcials===1?" a mitges":" repartides"):"");
   };
   cerca.addEventListener("input",()=>{ const p=cerca.selectionStart; pinta();
     tornaCursor("conjCerca",p); });
   pinta();
-  dialog(x?"Editar el conjunt":"Nou conjunt",
+  dialog((x?"Editar el grup ":"Nou grup ")+(tag?"d'esdeveniments":"de categories"),
     el("div",{},
       el("p",{class:"note",style:"margin:0 0 10px"},
-        "Un conjunt és una drecera: el piques i tot el que mires —els totals, la "+
-        "taula i la llista de moviments— es queda amb el que hi hagis posat. Hi van "+
-        "categories, etiquetes o totes dues coses, i un moviment hi entra si compleix "+
-        "qualsevol de les dues. El % diu quina part compta aquí: la benzina pot ser "+
-        "60 % de la feina i 40 % de lleure, i cada conjunt en comptarà la seva part "+
-        "sense partir cap moviment. La llista de moviments, això sí, els ensenya sencers."),
+        "Un grup és una drecera al filtre "+(tag?"d'etiquetes":"de categories")+": el "+
+        "piques i tot el que mires —els totals, la taula i la llista de moviments— es "+
+        "queda amb això. Els grups de categories i els d'esdeveniments es creuen: "+
+        "picant-ne un de cada, veus el que compleix les dues coses. El % diu quina part "+
+        "compta aquí, sense partir cap moviment; la llista de moviments, això sí, els "+
+        "ensenya sencers."),
       el("div",{class:"map"},lbl("Nom",nom)),
-      cerca,
-      titol("CATEGORIES"), llista,
-      titol("ETIQUETES"), llistaT,
-      compte),
+      cerca, llista, compte),
     [
       ["Cancel·lar","btn",closeDialog],
       ...(x?[["Esborrar","btn",()=>{
-        if(!confirm("Esborrar el conjunt «"+x.nom+"»? Les categories i les etiquetes "+
-          "no es toquen.")) return;
-        S.data.conjunts=S.data.conjunts.filter(y=>y.id!==x.id);
-        S.mov.grups=(S.mov.grups||[]).filter(id=>id!==x.id);
+        if(!confirm("Esborrar el grup «"+x.nom+"»? "+
+          (tag?"Les etiquetes":"Les categories")+" no es toquen.")) return;
+        if(tag){ S.data.conjuntsTags=S.data.conjuntsTags.filter(y=>y.id!==x.id);
+          S.mov.grupsTags=(S.mov.grupsTags||[]).filter(id=>id!==x.id);
+          S.mov.tags=[...new Set(grupsTagActius().flatMap(grupTags))]; }
+        else { S.data.conjunts=S.data.conjunts.filter(y=>y.id!==x.id);
+          S.mov.grups=(S.mov.grups||[]).filter(id=>id!==x.id);
+          S.mov.cats=[...new Set(grupsCatActius().flatMap(grupCats))]; }
         markDirty(); closeDialog(); render();
       }]]:[]),
       ["Desar","btn primary",()=>{
         const n=nom.value.trim();
-        if(!n||!(tria.size||triaT.size)){
-          alert("Posa-hi un nom i tria almenys una categoria o una etiqueta."); return; }
-        // Només es desa el que no és el 100 %: un conjunt sense repartiments es
+        if(!n||!tria.size){ alert("Posa-hi un nom i tria almenys una cosa."); return; }
+        // Només es desa el que no és el 100 %: un grup sense repartiments es
         // queda tan senzill com era.
-        const ps={},pt={};
-        for(const c of tria){ const v=pes.get(c); if(v!=null&&v!==100) ps[c]=v; }
-        for(const t of triaT){ const v=pesT.get(t); if(v!=null&&v!==100) pt[t]=v; }
+        const ps={};
+        for(const k of tria){ const v=pes.get(k); if(v!=null&&v!==100) ps[k]=v; }
         const y=x||{id:uid()};
-        y.nom=n; y.cats=[...tria];
-        if(triaT.size) y.tags=[...triaT]; else delete y.tags;
+        y.nom=n;
+        if(tag) y.tags=[...tria]; else y.cats=[...tria];
         if(Object.keys(ps).length) y.pesos=ps; else delete y.pesos;
-        if(Object.keys(pt).length) y.pesosTags=pt; else delete y.pesosTags;
-        if(!x) S.data.conjunts.push(y);
+        if(!x){ if(tag) S.data.conjuntsTags.push(y); else S.data.conjunts.push(y); }
         markDirty(); closeDialog();
-        S.mov={...S.mov,grups:[y.id],cats:[],tags:[],limit:300,prov:10};
+        S.mov=tag ? {...S.mov,grupsTags:[y.id],tags:[...tria],limit:300,prov:10}
+                  : {...S.mov,grups:[y.id],cats:[...tria],limit:300,prov:10};
         render();
       }],
     ]);
 }
-/** Les pastilles dels conjunts, dins de la targeta de despeses. */
+/** Les pastilles: una fila per família. */
 function xipsConjunts(){
-  const actius=conjuntsActius(), l=S.data.conjunts||[];
-  const sel=S.mov.cats, ids=new Set(actius.map(x=>x.id));
-  return el("div",{class:"bar",style:"margin:0 0 10px;gap:6px"},
-    l.map(x=>el("button",{class:"chip"+(ids.has(x.id)?" on":""),
-      title:[...conjCats(x).map(c=>c+(x.pesos&&x.pesos[c]!=null?" ("+x.pesos[c]+" %)":"")),
-        ...conjTags(x).map(t=>"🏷 "+t+(x.pesosTags&&x.pesosTags[t]!=null
-          ?" ("+x.pesosTags[t]+" %)":""))].join(" · "),
-      onclick:()=>aplicaConjunt(x)},
-      x.nom,el("span",{class:"mut",style:"font-size:11px"},
-        " "+(conjCats(x).length+conjTags(x).length)+
-        (conjTags(x).length?" 🏷":"")+
-        ((x.pesos&&Object.keys(x.pesos).length)||(x.pesosTags&&Object.keys(x.pesosTags).length)
-          ?" ·%":"")))),
-    actius.length===1?el("button",{class:"btn ghost",
-      title:"Canviar el nom, les categories o les etiquetes",
-      onclick:()=>dialogConjunt(actius[0])},"✎ Editar"):null,
-    (!actius.length&&sel.length)?el("button",{class:"btn ghost",
-      title:"Desar les "+sel.length+" categories del filtre com a conjunt",
-      onclick:()=>dialogConjunt(null,sel)},"＋ Desar aquestes "+sel.length):null,
-    (!actius.length&&!sel.length)?el("button",{class:"btn ghost",
-      onclick:()=>dialogConjunt(null,[])},"＋ Nou conjunt"):null,
-    (actius.length||sel.length||S.mov.tags.length)?el("button",{class:"btn ghost",
-      title:"Treure els conjunts picats i el filtre de categories i etiquetes",
-      onclick:()=>{ S.mov={...S.mov,cats:[],tags:[],grups:[],limit:300,prov:10}; render(); }},
-      "✕ Tot"):null,
-    actius.length?el("span",{class:"mut",style:"font-size:12px"},
-      (()=>{ const c=new Set(actius.flatMap(conjCats)), t=new Set(actius.flatMap(conjTags));
-        const que=[c.size?c.size+(c.size===1?" categoria":" categories"):null,
-          t.size?t.size+(t.size===1?" etiqueta":" etiquetes"):null].filter(Boolean).join(" i ");
-        return actius.length===1
-          ? "Mires «"+actius[0].nom+"» ("+que+"). Torna a picar-lo per veure-ho tot."
-          : "Sumes "+actius.length+" conjunts · "+que+"."; })()):null);
+  const fila=(tipus)=>{
+    const tag=tipus==="tag";
+    const l=(tag?S.data.conjuntsTags:S.data.conjunts)||[];
+    const actius=tag?grupsTagActius():grupsCatActius();
+    const ids=new Set(actius.map(x=>x.id));
+    const sel=tag?S.mov.tags:S.mov.cats;
+    if(tag&&!l.length&&!sel.length&&!totesTags().length) return null;  // sense etiquetes enlloc, ni fila
+    return el("div",{class:"bar",style:"margin:0 0 6px;gap:6px"},
+      el("span",{class:"mut",style:"font-size:12px;min-width:74px"},
+        tag?"Esdeveniments":"Categories"),
+      l.map(x=>el("button",{class:"chip"+(ids.has(x.id)?" on":""),
+        title:(tag?grupTags(x):grupCats(x))
+          .map(k=>k+(x.pesos&&x.pesos[k]!=null?" ("+x.pesos[k]+" %)":"")).join(" · "),
+        onclick:()=>aplicaGrup(x,tipus)},
+        x.nom,el("span",{class:"mut",style:"font-size:11px"},
+          " "+(tag?grupTags(x):grupCats(x)).length+
+          (x.pesos&&Object.keys(x.pesos).length?" ·%":"")))),
+      actius.length===1?el("button",{class:"btn ghost",title:"Canviar el nom o el contingut",
+        onclick:()=>dialogGrup(actius[0],tipus)},"✎"):null,
+      (!actius.length&&sel.length)?el("button",{class:"btn ghost",
+        title:"Desar el filtre d'ara com a grup",
+        onclick:()=>dialogGrup(null,tipus,sel)},"＋ Desar aquestes "+sel.length):null,
+      (!actius.length&&!sel.length)?el("button",{class:"btn ghost",
+        onclick:()=>dialogGrup(null,tipus,[])},"＋ Nou grup"):null,
+      sel.length?el("button",{class:"btn ghost",title:"Treure aquest filtre",
+        onclick:()=>{ S.mov=tag?{...S.mov,tags:[],grupsTags:[],limit:300,prov:10}
+                               :{...S.mov,cats:[],grups:[],limit:300,prov:10};
+          render(); }},"✕"):null);
+  };
+  const c=fila("cat"), t=fila("tag");
+  const gc=grupsCatActius(), gt=grupsTagActius();
+  return el("div",{style:"margin:0 0 10px"},c,t,
+    (gc.length&&gt.length)?el("div",{class:"mut",style:"font-size:12px"},
+      "Creuat: només el que és de "+(gc.length===1?"«"+gc[0].nom+"»":gc.length+" grups")+
+      " i alhora de "+(gt.length===1?"«"+gt[0].nom+"»":gt.length+" grups")+"."):null);
 }
 /** Fusiona: totes aquestes claus passen a comptar-se sota un sol nom. */
 function fusionaProv(claus,nom){
@@ -1755,18 +1720,17 @@ function resumProveidors(movs){
       ", "+NF0.format(dies)+(dies===1?" dia.":" dies.")+
       " El «% despesa» és sobre tota la despesa del període ("+eur(despPer)+"), "+
       "no només sobre la d'aquests moviments."+
-      (()=>{ const l=conjuntsActius(); if(!l.length) return "";
+      (()=>{ const l=[...grupsCatActius(),...grupsTagActius()]; if(!l.length) return "";
         const parts=[];
-        for(const x of l){
-          for(const c of conjCats(x)) if(pesConjunt(x,c)!==1)
-            parts.push([c,Math.round(pesConjunt(x,c)*100)]);
-          for(const t of conjTags(x)) if(pesTagConjunt(x,t)!==1)
-            parts.push([t,Math.round(pesTagConjunt(x,t)*100)]);
-        }
+        for(const x of l) for(const k of [...grupCats(x),...grupTags(x)])
+          if(pesLinia(x,k)!==1) parts.push([k,Math.round(pesLinia(x,k)*100)]);
         const qui=l.length===1 ? "«"+l[0].nom+"»"
           : l.map(x=>"«"+x.nom+"»").slice(0,-1).join(", ")+" i "+
             "«"+l.at(-1).nom+"»";
-        return " Mires "+qui+(l.length>1?", sumats":"")+
+        // Dins d'una família se sumen; entre famílies es creuen.
+        const nC=grupsCatActius().length, nT=grupsTagActius().length;
+        const com = (nC&&nT) ? ", creuats" : (l.length>1 ? ", sumats" : "");
+        return " Mires "+qui+com+
           (parts.length ? ", i d'aquí només hi compta "+
             parts.map(([c,v])=>v+" % de "+c).join(", ")+"." : ".");
       })()),
@@ -1867,7 +1831,9 @@ function filtreMulti({valors,compta,claus,text,refresca,ancora,estat=S.mov}){
   };
   const marca=(c,on)=>ambScroll(()=>{
     f[claus.sel] = on ? [...tria,c] : tria.filter(x=>x!==c);
-    if(claus.sel==="cats"&&f===S.mov) f.grups=[];   // tocat a mà: ja no són conjunts
+    // Tocat a mà: ja no és el grup, són les categories (o les etiquetes) que hi ha.
+    if(f===S.mov&&claus.sel==="cats") f.grups=[];
+    if(f===S.mov&&claus.sel==="tags") f.grupsTags=[];
     if("limit" in f) f.limit=300;
   });
   /* El panell penja del botó. El de categories és el primer de la barra i cap
@@ -2378,11 +2344,12 @@ function renderEsdeveniments(){
      toqui. Amb un conjunt de categories, cada esdeveniment surt amb només la
      despesa d'aquelles categories —«què em van costar els viatges en
      allotjament»—; amb un d'etiquetes, surten només aquells esdeveniments. */
-  const gr=conjuntsActius();
-  const dins=m=>!gr.length||gr.some(x=>dinsConjunt(x,m));
+  const gc=grupsCatActius(), gt=grupsTagActius();
+  const dins=m=>(!gc.length||gc.some(x=>grupCats(x).includes(m.category))) &&
+    (!gt.length||(m.tags||[]).some(t=>gt.some(x=>grupTags(x).includes(t))));
   const buit=()=>({n:0,out:0,in:0,cats:new Map()});
   const suma=(e,m)=>{
-    const w=gr.length?pesActiu(m):1;
+    const w=pesActiu(m);
     e.n++;
     if(T.has(m.category)) return;
     if(m.amount<0) e.out+=-m.amount*w; else e.in+=m.amount*w;
@@ -2531,12 +2498,13 @@ function renderEsdeveniments(){
       "a l'automàtica. «€/dia» és el Net repartit entre els dies, el primer i l'últim "+
       "inclosos. Les dates només serveixen per a aquest càlcul: un vol pagat mesos abans "+
       "continua sumant a l'esdeveniment."),
-    gr.length?el("p",{class:"note"},
-      (gr.length===1?"Mires «"+gr[0].nom+"»":"Sumes "+gr.length+" conjunts")+
-      ", o sigui que d'aquests esdeveniments només hi compta el que hi entra "+
-      [gr.some(x=>conjCats(x).length)?"per categoria":null,
-       gr.some(x=>conjTags(x).length)?"per etiqueta":null].filter(Boolean).join(" o ")+
-      ". Despica'ls a dalt per veure'ls sencers."):null,
+    (gc.length||gt.length)?el("p",{class:"note"},
+      "Amb "+[gc.length?(gc.length===1?"el grup «"+gc[0].nom+"»":gc.length+" grups de categories"):null,
+        gt.length?(gt.length===1?"el grup «"+gt[0].nom+"»":gt.length+" grups d'esdeveniments"):null]
+        .filter(Boolean).join(" i ")+
+      " picat"+((gc.length?1:0)+(gt.length?1:0)>1?"s":"")+
+      ", d'aquests esdeveniments només hi compta el que hi entra. Despica'ls a dalt "+
+      "per veure'ls sencers."):null,
     el("p",{class:"note"},"«% despesa» és el pes de cada esdeveniment sobre tota la "+
       "despesa "+(f.any?"del "+f.any:"de l'històric")+" ("+eur(despTot)+"), no només "+
       "sobre la dels esdeveniments: amb uns quants triats, la fila de Total diu quina "+
