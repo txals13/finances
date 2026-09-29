@@ -864,6 +864,8 @@ function derive(){
     const e=at(mo.month);
     e.fIncomeAuto=e.fIncome;
     if(mo.forecastIncome!=null) e.fIncome=Math.abs(mo.forecastIncome);
+    if(mo.forecastIncome!=null||mo.forecastExpense!=null||mo.forecastInvestment!=null)
+      e.fManual=true;                 // la previsió l'has escrita tu
   }
   const rows=[...map.values()]
     .filter(r=>r.nMov||r.income||r.expense||r.invest||r.fIncome!=null||r.fExpense!=null||r.fInvest!=null)
@@ -884,6 +886,14 @@ function derive(){
        feia sortir -900 € a cadascun, com si els haguessis perdut. */
     r.fSurplus = r.fIncome!=null
       ? r.fIncome-(r.fExpense||0)-(r.fInvest||0) : null;
+    /* Un mes tancat no té previsió que valgui, tret que l'hi hagis escrit tu.
+       El que hi surt en gris és el calendari de nòmines, i una nòmina que el
+       calendari esperava i que no va entrar per aquell import no és una
+       previsió d'aquell mes: és un cobrament pendent, i d'això ja se n'ocupa el
+       panell del compte. Comptar-la aquí feia sortir un «Queda previst» a un
+       mes acabat i embrutava les mitjanes de la previsió. */
+    r.fPassat = !r.future && r.month<TODAY.slice(0,7) && !r.fManual;
+    if(r.fPassat) r.fSurplus=null;
     if(r.lastBalance!=null) last=r.lastBalance; else r.lastBalance=null;
     r.carried = last;
   }
@@ -3628,7 +3638,9 @@ function peuReal(rows,T,m0){
   const tancats=rows.filter(r=>!r.buit && r.month<m0), n=tancats.length;
   const s=k=>tancats.reduce((a,r)=>a+(r[k]||0),0);
   const mR=k=>n?s(k)/n:null;
-  const mF=k=>{ const l=rows.filter(r=>r[k]!=null);
+  // Les mitjanes de la previsió, amb els mesos que en tenen de debò: la del
+  // calendari en un mes ja tancat no hi compta.
+  const mF=k=>{ const l=rows.filter(r=>r[k]!=null&&!r.fPassat);
     return l.length?l.reduce((a,r)=>a+r[k],0)/l.length:null; };
   const e=v=>v==null?"":eur(v);
   const fila=(cels,cls)=>el("tr",{class:"tot"},cels.map((c,i)=>
@@ -3705,8 +3717,10 @@ function renderReal(root){
     m.category==="NOMINA"&&!accrual(m).sure);
   const T=rows.reduce((a,r)=>({income:a.income+r.income,bank:a.bank+r.bank,
     card:a.card+r.card,expense:a.expense+r.expense,invest:a.invest+r.invest,
-    fIncome:a.fIncome+(r.fIncome||0),fExpense:a.fExpense+(r.fExpense||0),
-    fInvest:a.fInvest+(r.fInvest||0),fSurplus:a.fSurplus+(r.fSurplus||0)}),
+    fIncome:a.fIncome+(r.fPassat?0:r.fIncome||0),
+    fExpense:a.fExpense+(r.fPassat?0:r.fExpense||0),
+    fInvest:a.fInvest+(r.fPassat?0:r.fInvest||0),
+    fSurplus:a.fSurplus+(r.fSurplus||0)}),
     {income:0,bank:0,card:0,expense:0,invest:0,fIncome:0,fExpense:0,fInvest:0,fSurplus:0});
   T.saving=T.income-T.expense; T.surplus=T.saving-T.invest;
   /* El compte previst a final de mes. Arrenca del que hi quedara despres de la
