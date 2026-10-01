@@ -251,7 +251,7 @@ const S = {
   period: { preset:"all", from:"", to:"" },
   real:   { card:"visa" },
   origen: null,          // d'on s'han carregat les dades
-  cartera:{ evol:"class" },
+  cartera:{ evol:"class", valor:"eur" },   // la gràfica del valor total, en € o en %
   rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
   desp:   { mode:"cat", cat:null, tag:null, total:false, sumar:false },  // evolucio de la despesa
   // Ordre i filtres de les taules d'esdeveniments i de categories.
@@ -4505,14 +4505,28 @@ function renderCartera(root){
     (()=>{const [pa,pb]=periodRange();
       const f=series.filter(p=>p.date>=pa&&p.date<=pb);
       const p0=f[0],p1=f.at(-1);
+      /* En % és el camí fet des del primer punt del període, no el guany de la
+         inversió: aquí hi entren també els diners que hi has anat posant. El
+         que de debò has guanyat és a «El que hi has posat contra el que val» i
+         a Rendiment. */
+      const enPct=S.cartera.valor==="pct";
+      const base=p0?p0.total:0;
       return el("div",{class:"card"},
-        el("h2",{},"Evolució del valor total"),
+        el("div",{class:"bar",style:"margin:0 0 8px"},
+          el("h2",{style:"margin:0;flex:1;min-width:150px"},"Evolució del valor total"),
+          sel(S.cartera.valor,[["eur","En euros"],["pct","En % des del començament"]],
+            v=>{ S.cartera.valor=v; render(); })),
         (()=>{const et=dateLabels(f.map(p=>p.date));
-          return lineChart(f.map((p,i)=>({k:et[i],v:p.total})),{color:"var(--inv)"});})(),
+          return lineChart(f.map((p,i)=>({k:et[i],
+              v:enPct ? (base?(p.total/base-1)*100:0) : p.total})),
+            {color:"var(--inv)",fmt:enPct?(v=>pct(v/100)):eur0});})(),
         p0&&p1&&f.length>1?el("p",{class:"note"},
           "De "+dCa(p0.date)+" a "+dCa(p1.date)+": "+eur0(p0.total)+" → "+eur0(p1.total)+
           " ("+(p1.total>=p0.total?"+":"")+eur0(p1.total-p0.total)+", "+
-          pct((p1.total-p0.total)/(p0.total||1))+")."):null);
+          pct((p1.total-p0.total)/(p0.total||1))+")."+
+          (enPct?" La línia és el camí fet des del primer punt del període, i per tant "+
+            "hi compten també les aportacions. El guany de debò és a «El que hi has "+
+            "posat contra el que val».":"")):null);
     })(),
     blocLiquid(),
     renderEvolucio(),
