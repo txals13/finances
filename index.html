@@ -251,7 +251,7 @@ const S = {
   period: { preset:"all", from:"", to:"" },
   real:   { card:"visa" },
   origen: null,          // d'on s'han carregat les dades
-  cartera:{ evol:"class", valor:"eur" },   // la gràfica del valor total, en € o en %
+  cartera:{ evol:"class", valor:"eur", liquid:"eur" },  // gràfiques en € o en %
   rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
   desp:   { mode:"cat", cat:null, tag:null, total:false, sumar:false },  // evolucio de la despesa
   // Ordre i filtres de les taules d'esdeveniments i de categories.
@@ -4421,17 +4421,28 @@ function blocLiquid(){
   const suma=d=>L.reduce((t,a)=>t+assetValueAt(a,d),0);
   const valors=dates.map(suma);
   const obj=matalassos();
-  const series=[{label:"Líquid",color:"var(--accent)",values:valors}];
-  if(obj>0) series.push({label:"Matalassos",color:"var(--muted)",
-    values:dates.map(()=>obj)});
   const ara=valors.at(-1), abans=valors[0];
+  /* En % és el camí fet des del primer punt del període, com a la gràfica del
+     valor total: hi compten els diners que hi entren i en surten, no només com
+     es comporten. El matalàs també hi va en %, perquè es vegi on cau respecte
+     d'allà on vas començar. */
+  const enPct=S.cartera.liquid==="pct";
+  const aPct=v=>abans?(v/abans-1)*100:0;
+  const series=[{label:"Líquid",color:"var(--accent)",
+    values:enPct?valors.map(aPct):valors}];
+  if(obj>0) series.push({label:"Matalassos",color:"var(--muted)",
+    values:dates.map(()=>enPct?aPct(obj):obj)});
   const total=S.data.assets.reduce((t,a)=>t+assetValue(a),0);
   const araTot=L.reduce((t,a)=>t+assetValue(a),0);
+  const fmt=enPct?(v=>pct(v/100)):eur0;
   return el("div",{class:"card"},
-    el("h2",{},"Cartera líquida"),
-    linesChart(dateLabels(dates),series,{h:210}),
+    el("div",{class:"bar",style:"margin:0 0 8px"},
+      el("h2",{style:"margin:0;flex:1;min-width:150px"},"Cartera líquida"),
+      sel(S.cartera.liquid,[["eur","En euros"],["pct","En % des del començament"]],
+        v=>{ S.cartera.liquid=v; render(); })),
+    linesChart(dateLabels(dates),series,{h:210,fmt}),
     el("div",{class:"legend"},series.map(q=>el("span",{},
-      el("i",{style:"background:"+q.color}),q.label+" · "+eur0(q.values.at(-1))))),
+      el("i",{style:"background:"+q.color}),q.label+" · "+fmt(q.values.at(-1))))),
     el("div",{style:"margin-top:12px"},
       breakdown(L.map(a=>[a.name,assetValue(a)]).filter(([,v])=>v>0)
         .sort((x,y)=>y[1]-x[1]),araTot,"var(--accent)")),
@@ -4442,7 +4453,10 @@ function blocLiquid(){
       (obj>0 ? " Els matalassos de FIRE en demanen "+eur0(obj)+", i ara "+
         (araTot>=obj ? "en tens "+eur0(araTot-obj)+" de marge."
                      : "te'n falten "+eur0(obj-araTot)+".") : "")+
-      (total ? " És el "+pct(araTot/total)+" de tota la cartera." : "")),
+      (total ? " És el "+pct(araTot/total)+" de tota la cartera." : "")+
+      (enPct ? " La línia és el camí fet des del primer punt del període: hi compten "+
+        "els traspassos al DCA i les inversions que en surten, no només el que rendeix."
+        : "")),
   );
 }
 /** Barres horitzontals: per a 6-13 categories es llegeix molt millor que un formatget. */
