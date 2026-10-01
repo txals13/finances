@@ -4387,7 +4387,11 @@ function portfolioSeries(){
   const sums=new Map();
   for(const s of S.data.snapshots) sums.set(s.date,(sums.get(s.date)||0)+s.value);
   for(const [d,v] of sums) if(!byDate.has(d)) byDate.set(d,v);
-  return [...byDate].sort((a,b)=>a[0]<b[0]?-1:1).map(([date,total])=>({date,total}));
+  const l=[...byDate].sort((a,b)=>a[0]<b[0]?-1:1).map(([date,total])=>({date,total}));
+  // Una per mes, com la resta de gràfiques de la cartera.
+  const perMes=new Map();
+  for(const x of l) perMes.set(x.date.slice(0,7),x);
+  return [...perMes.values()];
 }
 /* ---- La cartera liquida ------------------------------------------------
    Els diners que pots gastar dema sense vendre res ni trencar res: els actius
@@ -4409,8 +4413,8 @@ function blocLiquid(){
   // Les dates de valoracio del periode, i el valor de cada actiu en aquella
   // data: assetValueAt arrossega l'ultim valor conegut, o sigui que un mes en
   // que nomes vas apuntar el compte no fa caure els altres a zero.
-  const dates=[...new Set(S.data.snapshots.map(x=>x.date))].sort()
-    .filter(d=>d>=pa&&d<=pb);
+  const dates=unaPerMes([...new Set(S.data.snapshots.map(x=>x.date))].sort()
+    .filter(d=>d>=pa&&d<=pb));
   if(dates.length<2) return el("div",{class:"card"},
     el("h2",{},"Cartera líquida"),
     el("div",{class:"empty"},"Calen almenys dues valoracions dins del període."));
@@ -4852,6 +4856,18 @@ function snapshotDates(){
   return [...new Set(S.data.snapshots.map(s=>s.date))].sort()
     .filter(d=>d>=a&&d<=b);
 }
+/* Una valoració per mes, la de més a prop del final: la de l'últim dia que en
+   tinguis d'aquell mes. Importar la cartera sovint omplia el setembre amb
+   setze punts i els altres mesos amb un, i la corba sortia esclafada contra la
+   dreta. Les taules no es toquen —la matriu de valoracions les vol totes—,
+   només les gràfiques, que és on la densitat enganya. Del mes en curs
+   s'ensenya l'última que hi ha, que és el que saps d'avui. */
+function unaPerMes(dates){
+  const m=new Map();
+  for(const d of dates) m.set(d.slice(0,7),d);   // ordenades: l'última mana
+  return [...m.values()];
+}
+function snapshotDatesMes(){ return unaPerMes(snapshotDates()); }
 /** Agrupa ignorant majúscules i etiqueta amb la grafia més repetida: al full
     hi ha "MyInvestor" i "Myinvestor", i si no, surten com dues entitats. */
 function groupAssets(A,key){
@@ -4868,7 +4884,7 @@ function groupAssets(A,key){
   return [...m].map(([k,g])=>({key:k,label:g.label,assets:g.assets}));
 }
 function renderEvolucio(){
-  const dates=snapshotDates();
+  const dates=snapshotDatesMes();
   if(dates.length<2) return el("div",{class:"card"},el("h2",{},"Evolució"),
     el("div",{class:"empty"},"Calen almenys dues valoracions dins del període."));
   const A=S.data.assets;
@@ -4928,7 +4944,7 @@ function renderValorAportat(){
         "reconstruir enrere sense inventar-se-la. A partir de la propera valoració que "+
         "desis, cada punt es guardarà amb l'aportat d'aquell moment i aquest gràfic "+
         "es començarà a omplir.")));
-  const dates=snapshotDates().filter(d=>d>=fcd && portfolioCostAt(d)!=null);
+  const dates=snapshotDatesMes().filter(d=>d>=fcd && portfolioCostAt(d)!=null);
   if(dates.length<2) return el("div",{class:"card"},
     el("h2",{},"El que hi has posat contra el que val"),
     el("div",{class:"empty"},
@@ -5124,7 +5140,7 @@ function costGrup(g,d){
   return t;
 }
 function blocEvolucio(clau,grups,nota){
-  const dates=snapshotDates();
+  const dates=snapshotDatesMes();
   const valorDe=g=>g.assets.reduce((t,a)=>t+assetValue(a),0);
   const ordenats=grups.slice().sort((a,b)=>valorDe(b)-valorDe(a));
   if(S.rend[clau]===null) S.rend[clau]=ordenats.slice(0,5).map(g=>g.key);
