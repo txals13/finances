@@ -4793,6 +4793,7 @@ function assetDialog(a){
     pista.textContent="data posada a avui";
     setTimeout(()=>{ if(pista.textContent==="data posada a avui") pista.textContent=""; },2500);
   };
+  const ambAvui=i=>{ i.addEventListener("input",avui); return i; };
   dialog("Actiu",el("div",{},
     el("div",{class:"map"},
       lbl("Nom",      f.name=el("input",{type:"text",value:a.name||""})),
@@ -4800,10 +4801,8 @@ function assetDialog(a){
       lbl("Entitat",  f.entity=el("input",{type:"text",value:a.entity||""})),
       lbl("ISIN / ticker", f.isin=el("input",{type:"text",value:a.isin||""})),
       lbl("Data d'inici", f.start=el("input",{type:"date",value:a.start||""})),
-      lbl("Aportat (€)", f.contributed=el("input",{type:"number",step:"0.01",
-        value:a.contributed??"",oninput:avui})),
-      lbl("Valor actual (€)", f.value=el("input",{type:"number",step:"0.01",
-        value:assetValue(a)||"",oninput:avui})),
+      lbl("Aportat", f.contributed=ambAvui(campImport(a.contributed??null))),
+      lbl("Valor actual", f.value=ambAvui(campImport(assetValue(a)||null))),
       lbl("…a data de", f.vdate=el("input",{type:"date",value:dVal,
         onchange:()=>{ dataTocada=true; pista.textContent=""; }})),
       lbl("Cartera",  f.wallet=sel(a.wallet||"",[["","— cap —"],...wal.map(w=>[w,w])],v=>f.wallet.value=v)),
@@ -4819,10 +4818,12 @@ function assetDialog(a){
     ["Desar","btn primary",()=>{
       a.name=f.name.value.trim(); a.class=f.class.value; a.entity=f.entity.value.trim();
       a.isin=f.isin.value.trim()||null; a.start=f.start.value||null;
-      a.contributed=f.contributed.value===""?0:+f.contributed.value;
+      const ap=f.contributed.llegir();
+      a.contributed=ap==null?0:ap;
       a.wallet=f.wallet.value||null; a.include=f.include.value==="1";
-      if(f.value.value!=="" && f.vdate.value){   // amb l'aportat ja desat
-        setAssetValue(a,f.vdate.value,+f.value.value);
+      const nou=f.value.llegir();
+      if(nou!=null && f.vdate.value){   // amb l'aportat ja desat
+        setAssetValue(a,f.vdate.value,nou);
         ensureTotal(f.vdate.value);
       }
       markDirty(); closeDialog(); render();
