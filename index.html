@@ -314,10 +314,10 @@ function llegirNum(t){
    com surt escrit. En entrar-hi se selecciona tot, i en sortir-ne es torna a
    formatar. No fa servir type=number perquè aquell camp només accepta el punt
    com a decimal i no sap ensenyar els milers. */
-function campImport(valor,{placeholder="",signe=false}={}){
+function campImport(valor,{placeholder="",signe=false,dreta=true}={}){
   const fmt=v=>v==null?"":(signe&&v>0?"+":"")+eurRaw(v);
   const inp=el("input",{type:"text",inputmode:"decimal",value:fmt(valor),
-    placeholder,style:"text-align:right",
+    placeholder,style:"text-align:"+(dreta?"right":"left"),
     onfocus:e=>e.target.select(),
     onchange:e=>{ const v=llegirNum(e.target.value); e.target.value=fmt(v); }});
   inp.llegir=()=>llegirNum(inp.value);
@@ -4801,8 +4801,10 @@ function assetDialog(a){
       lbl("Entitat",  f.entity=el("input",{type:"text",value:a.entity||""})),
       lbl("ISIN / ticker", f.isin=el("input",{type:"text",value:a.isin||""})),
       lbl("Data d'inici", f.start=el("input",{type:"date",value:a.start||""})),
-      lbl("Aportat", f.contributed=ambAvui(campImport(a.contributed??null))),
-      lbl("Valor actual", f.value=ambAvui(campImport(assetValue(a)||null))),
+      // A la fitxa els imports van a l'esquerra, com la resta de camps del
+      // formulari; a la taula de la valoració, a la dreta amb les xifres.
+      lbl("Aportat", f.contributed=ambAvui(campImport(a.contributed??null,{dreta:false}))),
+      lbl("Valor actual", f.value=ambAvui(campImport(assetValue(a)||null,{dreta:false}))),
       lbl("…a data de", f.vdate=el("input",{type:"date",value:dVal,
         onchange:()=>{ dataTocada=true; pista.textContent=""; }})),
       lbl("Cartera",  f.wallet=sel(a.wallet||"",[["","— cap —"],...wal.map(w=>[w,w])],v=>f.wallet.value=v)),
