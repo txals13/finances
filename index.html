@@ -297,6 +297,33 @@ const eur0Raw = v => (v==null||isNaN(v)) ? "—" : NF0.format(v)+" €";
 const eur  = v => ocult ? ((v==null||isNaN(v))?"—":MASCARA) : eurRaw(v);
 const eur0 = v => ocult ? ((v==null||isNaN(v))?"—":MASCARA) : eur0Raw(v);
 const pct  = v => (v==null||!isFinite(v)) ? "—" : (v*100).toFixed(1).replace(".",",")+" %";
+/* Llegeix un import escrit com sigui: «2.957,10 €», «2957,1», «2957.1». Amb
+   coma i punt, el que va més a la dreta és el decimal; només amb punts i amb
+   grups de tres, són els milers. Torna null si no hi ha res a llegir. */
+function llegirNum(t){
+  let x=String(t??"").replace(/[^\d.,\-]/g,"").trim();
+  if(!x||x==="-") return null;
+  const c=x.lastIndexOf(","), d=x.lastIndexOf(".");
+  if(c>=0&&d>=0) x = c>d ? x.replace(/\./g,"").replace(",",".") : x.replace(/,/g,"");
+  else if(c>=0) x=x.replace(/\./g,"").replace(",",".");
+  else if(d>=0 && /^-?\d{1,3}(\.\d{3})+$/.test(x)) x=x.replace(/\./g,"");
+  const v=+x;
+  return isFinite(v)?v:null;
+}
+/* Camp d'import amb la mateixa cara que les xifres de les taules: s'hi escriu
+   com surt escrit. En entrar-hi se selecciona tot, i en sortir-ne es torna a
+   formatar. No fa servir type=number perquè aquell camp només accepta el punt
+   com a decimal i no sap ensenyar els milers. */
+function campImport(valor,{placeholder="",signe=false}={}){
+  const fmt=v=>v==null?"":(signe&&v>0?"+":"")+eurRaw(v);
+  const inp=el("input",{type:"text",inputmode:"decimal",value:fmt(valor),
+    placeholder,style:"text-align:right",
+    onfocus:e=>e.target.select(),
+    onchange:e=>{ const v=llegirNum(e.target.value); e.target.value=fmt(v); }});
+  inp.llegir=()=>llegirNum(inp.value);
+  inp.posa=v=>{ inp.value=fmt(v); };
+  return inp;
+}
 const MESOS = ["gen","feb","mar","abr","mai","jun","jul","ago","set","oct","nov","des"];
 const mLabel = k => MESOS[+k.slice(5,7)-1] + " " + k.slice(2,4);
 const dCa = s => s ? s.slice(8,10)+"/"+s.slice(5,7)+"/"+s.slice(0,4) : "";
@@ -4591,15 +4618,15 @@ function valuationDialog(){
   const refresca=d=>{
     for(const a of A){
       const v=d ? assetValueAt(a,d) : assetValue(a);
-      vals.get(a.id).value=v;
+      vals.get(a.id).posa(v);
       prevCel.get(a.id).textContent=v?eur(v):"—";
     }
   };
   const fDate=el("input",{type:"date",value:dEnd,onchange:e=>refresca(e.target.value)});
   const rows=A.map(a=>{
     const prev=assetValueAt(a,dEnd);
-    const v=el("input",{type:"number",step:"0.01",value:prev,style:"text-align:right"});
-    const c=el("input",{type:"number",step:"0.01",placeholder:"± —",style:"text-align:right"});
+    const v=campImport(prev);
+    const c=campImport(null,{placeholder:"± —",signe:true});
     vals.set(a.id,v); adds.set(a.id,c);
     const cel=el("td",{class:"r num mut"},lastSnapshotDate(a)?eur(prev):"—");
     prevCel.set(a.id,cel);
@@ -4612,7 +4639,7 @@ function valuationDialog(){
       el("span",{class:"mut",style:"font-size:12px"},last?"l'última va ser el "+dCa(last):"")),
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},el("th",{},"Actiu"),el("th",{class:"r"},"Valor a la data"),
-        el("th",{},"Valor nou"),el("th",{},"Aportació del mes",
+        el("th",{class:"r"},"Valor nou"),el("th",{class:"r"},"Aportació del mes",
           el("div",{class:"mut",style:"font-weight:400;font-size:11px"},
             "negativa si en treus")))),
       el("tbody",{},rows))),
@@ -4627,13 +4654,13 @@ function valuationDialog(){
       const date=fDate.value; if(!date) return;
       let n=0,ap=0;
       for(const a of A){
-        const v=vals.get(a.id).value, c=adds.get(a.id).value;
+        const v=vals.get(a.id).llegir(), c=adds.get(a.id).llegir();
         // primer l'aportació: així el punt es desa amb l'aportat ja actualitzat
-        if(c!==""&&+c!==0){
-          S.data.contributions.push({date,assetId:a.id,amount:+c});
-          a.contributed=Math.round(((a.contributed||0)+ +c)*100)/100; ap++;
+        if(c!=null&&c!==0){
+          S.data.contributions.push({date,assetId:a.id,amount:c});
+          a.contributed=Math.round(((a.contributed||0)+c)*100)/100; ap++;
         }
-        if(v!==""){ setAssetValue(a,date,+v); n++; }   // el total, en acabar
+        if(v!=null){ setAssetValue(a,date,v); n++; }   // el total, en acabar
       }
       recomputeTotal(date);      // valoració de tota la cartera: el total és la suma
       markDirty(); closeDialog(); render();
