@@ -5261,6 +5261,78 @@ function blocEvolucio(clau,grups,nota){
         "sabem de tots els actius triats."
       : nota));
 }
+/* ---- El guany de cada any ----------------------------------------------
+   El que ha pujat el BALANÇ (valor − aportat) del principi al final de l'any.
+   Restar l'aportat a les dues bandes és el que treu els diners nous del compte:
+   posar-hi 10.000 € puja el valor 10.000 € i el balanç, gens. És la manera
+   honesta de dir «aquest any la cartera m'ha donat X» sense comptar-hi el que
+   hi he anat ficant.
+
+   Només es pot fer des que es desa l'aportat a cada valoració: abans d'això el
+   fitxer només té el valor, i de la pujada no se'n pot separar què eren diners
+   nous. Els anys que no arriben no s'inventen, es diuen. */
+function blocGuanyAny(){
+  const A=S.data.assets;
+  const rec=new Map((S.data.portfolioTotals||[]).map(t=>[t.date,t.total]));
+  const valorA=d=>rec.has(d)?rec.get(d):A.reduce((s,a)=>s+assetValueAt(a,d),0);
+  const totes=[...new Set(S.data.snapshots.map(s=>s.date))].sort();
+  const bones=totes.filter(d=>portfolioCostAt(d)!=null);
+  const titol="Guany de la cartera, any per any";
+  if(bones.length<2) return el("div",{class:"card"},
+    el("h2",{},titol),
+    el("div",{class:"empty"},
+      el("p",{},"Encara no es pot calcular."),
+      el("p",{class:"note",style:"max-width:54ch;margin:0 auto"},
+        "Cal l'aportat desat a dues valoracions com a mínim, que és el que permet "+
+        "separar el que ha rendit del que hi has anat posant.")));
+  const anys=[...new Set(bones.map(d=>d.slice(0,4)))];
+  const files=anys.map(y=>{
+    const dins=bones.filter(d=>d.slice(0,4)===y);
+    const abans=bones.filter(d=>d<y+"-01-01").at(-1);   // el tancament de l'any passat
+    const d0=abans||dins[0], d1=dins.at(-1);
+    if(!d0||!d1||d0===d1) return null;
+    const v0=valorA(d0), c0=portfolioCostAt(d0), v1=valorA(d1), c1=portfolioCostAt(d1);
+    const apo=c1-c0, guany=(v1-c1)-(v0-c0);
+    // Sobre el que hi havia treballant: el valor del principi més el que hi has
+    // anat posant. No és una TIR, però no menteix sobre quina és la base.
+    const base=v0+Math.max(0,apo);
+    return {y,d0,d1,v0,v1,apo,guany,pct:base?guany/base:null,sencer:!!abans};
+  }).filter(Boolean);
+  const falten=[...new Set(totes.filter(d=>!portfolioCostAt(d)).map(d=>d.slice(0,4)))]
+    .filter(y=>!files.some(f=>f.y===y));
+  const T=files.reduce((a,f)=>({apo:a.apo+f.apo,guany:a.guany+f.guany}),{apo:0,guany:0});
+  return el("div",{class:"card"},
+    el("h2",{},titol),
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},["Any","Del","al","Valor inicial","Aportat net","Valor final",
+        "Guany","%"].map((h,i)=>el("th",{class:i>2?"r":""},h)))),
+      el("tbody",{},files.map(f=>el("tr",{},
+        el("td",{},f.y,f.sencer?null:el("span",{class:"mut",style:"font-size:11px"}," · parcial")),
+        el("td",{class:"mut"},dCa(f.d0)),
+        el("td",{class:"mut"},dCa(f.d1)),
+        el("td",{class:"r num"},eur(f.v0)),
+        el("td",{class:"r num invc"},eur(f.apo)),
+        el("td",{class:"r num"},eur(f.v1)),
+        el("td",{class:"r num "+sgn(f.guany)},eur(f.guany)),
+        el("td",{class:"r num "+sgn(f.guany)},pct(f.pct)),
+      ))),
+      files.length>1 ? el("tfoot",{},el("tr",{class:"tot"},
+        el("td",{},"Total"),el("td",{}),el("td",{}),el("td",{}),
+        el("td",{class:"r num invc"},eur(T.apo)),el("td",{}),
+        el("td",{class:"r num "+sgn(T.guany)},eur(T.guany)),el("td",{}))) : null,
+    )),
+    el("p",{class:"note"},
+      "El guany és el que ha pujat el balanç —valor menys aportat— del primer dia a "+
+      "l'últim: les aportacions es resten a totes dues bandes i per això no hi compten. "+
+      "El % és sobre el valor inicial més el que hi has posat durant l'any, que és el "+
+      "que hi havia treballant."+
+      (falten.length ? " De "+falten.join(", ")+" no se'n pot dir res: en aquelles "+
+        "valoracions no hi ha l'aportat desat, i sense això no hi ha manera de separar "+
+        "el que va rendir del que hi vas posar." : "")+
+      (files.some(f=>!f.sencer) ? " L'any marcat com a parcial no arrenca de l'1 de "+
+        "gener, sinó del primer dia amb l'aportat desat." : "")),
+  );
+}
 function renderRendiment(root){
   const A=S.data.assets.filter(a=>a.include);
   const st=new Map(S.data.assets.map(a=>[a.id,assetStats(a)]));
@@ -5299,6 +5371,7 @@ function renderRendiment(root){
     excluded.length ? el("div",{class:"warnbox"},
       "En queden fora "+excluded.map(a=>a.entity+" "+a.name).join(", ")+
       ". Canvia-ho a Cartera → ⋯ → «Compta al rendiment».") : null,
+    blocGuanyAny(),
     el("div",{class:"card"},
       el("h2",{},"Per actiu"),
       el("div",{class:"tw"},el("table",{},
