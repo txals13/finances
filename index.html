@@ -248,7 +248,9 @@ const S = {
   mov: { q:"", account:"", cats:[], catOpen:false, catQ:"", kind:"",
          tags:[], tagOpen:false, tagQ:"", grups:[], grupsTags:[],
          sort:"date", dir:-1, limit:300, prov:10, provOrd:"import", provMode:"prov" },
-  period: { preset:"all", from:"", to:"" },
+  // En obrir, l'any en curs: és el que es mira el 90 % dels cops, i «Tot
+  // l'històric» a Moviments vol dir dibuixar-los tots des del primer dia.
+  period: { preset:"year", from:"", to:"" },
   real:   { card:"visa" },
   origen: null,          // d'on s'han carregat les dades
   cartera:{ evol:"class", valor:"eur", liquid:"eur" },  // gràfiques en € o en %
