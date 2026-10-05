@@ -510,6 +510,19 @@ function normalise(o){
   o.conjuntsTags ??= [];            // grups d'etiquetes: {id,nom,tags,pesos}
   o.aliasProd ??= {};               // nom del producte al broker -> actiu
   o.aportPend ??= [];               // linies dels extractes que esperen actiu
+  o.aportExtracte ??= [];           // el que diuen els extractes del broker
+  /* Els extractes van arribar a entrar al registre d'aportacions i a manar
+     sobre l'aportat, i no quadrava: porten les mateixes compres que ja hi
+     havia apuntades (amb la data de liquidacio, uns dies mes tard) i en canvi
+     no porten les sortides dels fons que s'han anat liquidant pel cami. El que
+     val es l'aportat escrit a ma; els extractes nomes son un registre al
+     costat, per mirar-s'hi. El que hi hagi entrat es mou aqui. */
+  if(o.contributions.some(c=>c.src)){
+    for(const c of o.contributions.filter(c=>c.src))
+      o.aportExtracte.push({data:c.date,assetId:c.assetId,imp:c.amount,
+        concepte:c.nota||"",clau:c.src});
+    o.contributions=o.contributions.filter(c=>!c.src);
+  }
   // Els conjunts van arribar a barrejar categories i etiquetes en un de sol.
   // Ara són dues famílies, i el que estigués barrejat es parteix en dos amb el
   // mateix nom en comptes de perdre'n la meitat.
@@ -4239,7 +4252,7 @@ function aportacionsDe(lots){
   const ordres=lots.filter(l=>l.tipus==="ordres")
     .flatMap(l=>l.linies.map(x=>({...x,fitxer:l.nom})));
   const carteres=lots.filter(l=>l.tipus==="cartera");
-  const fetes=new Set((S.data.contributions||[]).map(c=>c.src).filter(Boolean));
+  const fetes=new Set((S.data.aportExtracte||[]).map(c=>c.clau).filter(Boolean));
   const apresos={};                       // nom del compte -> actiu, après aquí
   const out=[], usada=new Set();
   const actiuDe=c=>{
@@ -4351,85 +4364,63 @@ function dialogAportacions(){
     el("p",{class:"note"},"L'import que val és el del compte: l'ordre en porta un "+
       "d'estimat i el fons cobra el del dia. El que no passa pel compte és un "+
       "traspàs entre fons i t'ho preguntaré. Re-importar el mateix fitxer no "+
-      "duplica res.")),
+      "duplica res. L'aportat de cada actiu no es toca: això és un registre al "+
+      "costat, per comparar-hi.")),
     [["Cancel·lar","btn",closeDialog]]);
 }
-/** La previsualització: què s'importarà, què cal que diguis tu, i sobretot
-    què es fa amb l'aportat que ja hi havia.
+/** La previsualització: què diuen els extractes, i què cal que diguis tu.
 
-    Dos règims per actiu, perquè els extractes no tots diuen el mateix:
-    · Substituir — el fitxer d'ordres del fons porta tota la seva vida, o sigui
-      que el que digui mana i l'aportat passa a ser exactament això.
-    · Sumar-hi — una cartera gestionada o un producte sense fitxer d'ordres:
-      l'extracte només cobreix un tros, així que es manté el que hi ha i només
-      s'hi afegeix el que ve després de la data que diguis. */
+    L'aportat no es toca mai. Es va provar que l'extracte el manés i no quadra:
+    porta les mateixes compres que ja tens apuntades —amb la data de liquidació,
+    uns dies més tard— i en canvi no porta les sortides dels fons que has anat
+    liquidant pel camí, que és d'on surten moltes d'aquestes compres. El que val
+    és el que escrius tu a la columna Aportat; això d'aquí és un registre al
+    costat, per veure quan va entrar cada cosa i comparar-hi. */
 function previewAportacions(ap,lots,mals){
   const A=S.data.assets;
   const opcions=[["","— ignorar —"],...A.map(a=>[a.id,a.name+" · "+a.entity])];
-  const ultima=id=>(S.data.contributions||[]).filter(c=>c.assetId===id)
-    .map(c=>c.date).sort().at(-1)||"";
-  const regim=new Map();                 // assetId -> {mode,desDe}
-  const regimDe=id=>{
-    if(!regim.has(id)){
-      const ordres=ap.some(x=>x.assetId===id&&/rdenes|ordres/i.test(x.origen||""));
-      regim.set(id,{mode:ordres?"sub":"suma",desDe:ordres?"":ultima(id)});
-    }
-    return regim.get(id);
-  };
   const viva=x=>!x.jaHi&&x.estat!=="pendent"&&x.assetId&&x.imp;
-  const compten=x=>{ if(!viva(x)) return false;
-    const r=regimDe(x.assetId);
-    return r.mode==="sub" || !r.desDe || x.data>r.desDe; };
   const cos=el("div",{}), resum=el("div",{style:"margin-bottom:10px"}), taula=el("div",{class:"tw"});
   const pinta=()=>{
     const grups=new Map();
     for(const x of ap.filter(viva)){
-      const g=grups.get(x.assetId)||{n:0,s:0,tot:0}; g.tot++;
-      if(compten(x)){ g.n++; g.s+=x.imp; }
+      const g=grups.get(x.assetId)||{n:0,s:0}; g.n++; g.s+=x.imp;
       grups.set(x.assetId,g);
     }
     posa(resum,
       grups.size?null:el("div",{class:"warnbox",style:"margin-bottom:8px"},
-        "D'aquests fitxers no en surt res de nou: o ja ho tens importat, o les línies "+
+        "D'aquests fitxers no en surt res de nou: o ja ho tens registrat, o les línies "+
         "encara no tenen actiu assignat. Mira la taula de sota: el que hi deixis sense "+
         "assignar queda guardat a Cartera, a «Aportacions dels extractes», i ho pots "+
         "classificar quan vulguis."),
       el("div",{class:"note",style:"margin-bottom:8px"},
-        "Per a cada actiu, digues si l'extracte substitueix l'aportat o si s'hi suma. "+
-        "Substituir val quan el fitxer porta tota la vida del fons; sumar-hi, quan "+
-        "l'extracte només cobreix un tros."),
+        "L'aportat que has escrit tu no es toca. Aquí al costat hi tens el que en diuen "+
+        "els extractes: si els dos números no s'assemblen, normalment és perquè "+
+        "l'extracte no porta el que ha sortit d'un fons que vas liquidar."),
       el("div",{class:"tw"},el("table",{},
-        el("thead",{},el("tr",{},["Actiu","Aportat ara","L'extracte hi posa","Què fem",
-          "Des de","Quedarà"].map((h,i)=>el("th",{class:i&&i<3?"r":""},h)))),
+        el("thead",{},el("tr",{},["Actiu","Línies noves","Sumen","El teu aportat","Diferència"]
+          .map((h,i)=>el("th",{class:i?"r":""},h)))),
         el("tbody",{},[...grups].map(([id,g])=>{
           const a=A.find(x=>x.id===id); if(!a) return null;
-          const r=regimDe(id);
-          const nou=r.mode==="sub" ? g.s : (a.contributed||0)+g.s;
+          const jaHi=(S.data.aportExtracte||[]).filter(c=>c.assetId===id)
+            .reduce((t,c)=>t+(c.imp||0),0);
+          const dif=(Math.round((jaHi+g.s-(a.contributed||0))*100)||0)/100;
           return el("tr",{},
             el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity)),
-            el("td",{class:"r num mut"},eur(a.contributed||0)),
-            el("td",{class:"r num"},eur(g.s),
-              el("div",{class:"mut",style:"font-size:11px"},g.n+" de "+g.tot+" línies")),
-            el("td",{},sel(r.mode,[["sub","Substituir"],["suma","Sumar-hi"]],
-              v=>{ r.mode=v; pinta(); })),
-            el("td",{},r.mode==="suma"
-              ? el("input",{type:"date",value:r.desDe||"",
-                  title:"Només compten les aportacions posteriors a aquesta data",
-                  onchange:e=>{ r.desDe=e.target.value; pinta(); }})
-              : el("span",{class:"mut"},"—")),
-            el("td",{class:"r num"},el("b",{},eur(nou))),
-          );
+            el("td",{class:"r num mut"},g.n),
+            el("td",{class:"r num"},eur(g.s)),
+            el("td",{class:"r num"},eur(a.contributed||0)),
+            el("td",{class:"r num "+(Math.abs(dif)<1?"mut":dif>0?"pos":"neg")},eur(dif)));
         })))),
       ap.some(x=>x.jaHi)?el("div",{class:"mut",style:"font-size:12px"},
-        ap.filter(x=>x.jaHi).length+" línies ja importades abans; no es repetiran."):null,
+        ap.filter(x=>x.jaHi).length+" línies ja registrades abans; no es repetiran."):null,
       mals&&mals.length?el("div",{class:"neg",style:"font-size:12px"},mals.join(" · ")):null);
     posa(taula,el("table",{},
       el("thead",{},el("tr",{},["Data","Actiu","Concepte","Import","Què és"]
         .map((h,i)=>el("th",{class:i===3?"r":""},h)))),
       el("tbody",{},ap.map(x=>{
         const fix=x.jaHi||x.estat==="pendent";
-        const fora=viva(x)&&!compten(x);
-        return el("tr",{style:(fix||fora)?"opacity:.5":""},
+        return el("tr",{style:fix?"opacity:.5":""},
           el("td",{class:"mut"},dCa(x.data)),
           el("td",{},fix?((A.find(a=>a.id===x.assetId)||{}).name||"—")
             :sel(x.assetId||"",opcions,v=>{
@@ -4439,7 +4430,6 @@ function previewAportacions(ap,lots,mals){
           el("td",{class:"wrap mut"},(x.concepte||"").slice(0,40)),
           el("td",{class:"r num "+(x.imp>=0?"pos":"neg")},eur(x.imp)),
           el("td",{},fix?el("span",{class:"mut"},x.jaHi?"ja hi és":"ordre "+(x.nota||"pendent"))
-            :fora?el("span",{class:"mut"},"fora del tram")
             :(x.estat==="ok"?el("span",{class:"mut"},"del compte")
               :sel(x.imp>=0?"in":"out",[["in","hi entra"],["out","en surt"]],v=>{
                 x.imp=Math.abs(x.imp)*(v==="in"?1:-1); pinta(); }))),
@@ -4450,32 +4440,15 @@ function previewAportacions(ap,lots,mals){
   posa(cos,resum,taula);
   dialog("Aportacions dels extractes",cos,[
     ["Cancel·lar","btn",closeDialog],
-    ["Importar","btn primary",()=>aplicaAportacions(ap.filter(compten),regim,ap)],
+    ["Registrar","btn primary",()=>aplicaAportacions(ap.filter(viva),ap)],
   ]);
 }
-/** Les desa: una aportació per línia, i l'aportat de cada actiu com toqui. */
-function aplicaAportacions(linies,regim,totes){
-  const perActiu=new Map();
-  for(const x of linies){
-    const l=perActiu.get(x.assetId)||[]; l.push(x); perActiu.set(x.assetId,l);
-  }
-  let n=0;
-  for(const [id,l] of perActiu){
-    const a=S.data.assets.find(y=>y.id===id); if(!a) continue;
-    const r=regim.get(id)||{mode:"suma"};
-    const suma=l.reduce((t,x)=>t+x.imp,0);
-    if(r.mode==="sub"){
-      // L'extracte mana: fora les aportacions que n'havien sortit abans, que si
-      // no es comptarien dues vegades.
-      S.data.contributions=S.data.contributions.filter(c=>c.assetId!==id||!c.src);
-      a.contributed=Math.round(suma*100)/100;
-    } else a.contributed=Math.round(((a.contributed||0)+suma)*100)/100;
-    for(const x of l){
-      S.data.contributions.push({date:x.data,assetId:id,
-        amount:Math.round(x.imp*100)/100,src:x.clau,nota:x.concepte||""});
-      n++;
-    }
-  }
+/** Les desa al registre dels extractes. L'aportat dels actius no es toca. */
+function aplicaAportacions(linies,totes){
+  const reg=(S.data.aportExtracte??=[]);
+  for(const x of linies)
+    reg.push({data:x.data,assetId:x.assetId,imp:Math.round(x.imp*100)/100,
+      concepte:x.concepte||"",origen:x.origen||"",clau:x.clau});
   // El que no ha entrat no es llença: les línies sense actiu i les ordres que
   // encara no s'han executat queden aparcades a la pestanya Cartera, amb data i
   // concepte, perquè les puguis assignar el dia que sàpigues de què són.
@@ -4486,7 +4459,7 @@ function aplicaAportacions(linies,regim,totes){
     &&(!x.assetId||x.estat==="pendent")));
   const q=(S.data.aportPend||[]).length;
   markDirty(); closeDialog(); render();
-  flash(n+(n===1?" aportació importada":" aportacions importades")+
+  flash(linies.length+(linies.length===1?" línia registrada":" línies registrades")+
     (q?" · "+q+" per classificar a Cartera":""));
 }
 /** Desa les línies que no se saben, sense repetir-ne cap. */
@@ -4502,60 +4475,58 @@ function aparcaAportacions(l){
       suggerit:x.assetId||""});
   }
 }
-/** Una línia aparcada passa a ser aportació d'un actiu, i s'aprèn el producte:
-    el pròxim extracte ja no ho tornarà a preguntar. */
+/** Una línia aparcada passa al registre d'un actiu, i s'aprèn el producte: el
+    pròxim extracte ja no ho tornarà a preguntar. */
 function assignaPend(x,id){
   const a=S.data.assets.find(y=>y.id===id); if(!a) return;
   S.data.aportPend=(S.data.aportPend||[]).filter(y=>y!==x);
-  const clau=APORT_SRC+":"+x.data+":"+id+":"+x.imp.toFixed(2);
-  if(!S.data.contributions.some(c=>c.src===clau)){
-    S.data.contributions.push({date:x.data,assetId:id,
-      amount:Math.round(x.imp*100)/100,src:clau,nota:x.concepte||""});
-    a.contributed=Math.round(((a.contributed||0)+x.imp)*100)/100;
-  }
+  const reg=(S.data.aportExtracte??=[]);
+  const clau=x.clau||APORT_SRC+":"+x.data+":"+id+":"+x.imp.toFixed(2);
+  if(!reg.some(c=>c.clau===clau))
+    reg.push({data:x.data,assetId:id,imp:Math.round(x.imp*100)/100,
+      concepte:x.concepte||"",origen:x.origen||"",clau});
   if(x.producte) S.data.aliasProd[x.producte]=id;
   markDirty(); render(); flash(a.name+": "+eur(x.imp));
 }
-/** La treu de l'actiu i la torna a «per classificar»: no es perd. */
+/** La treu del registre i la torna a «per classificar»: no es perd. */
 function desfesAport(c){
-  const a=S.data.assets.find(y=>y.id===c.assetId);
-  S.data.contributions=S.data.contributions.filter(x=>x!==c);
-  if(a) a.contributed=Math.round(((a.contributed||0)-(c.amount||0))*100)/100;
-  (S.data.aportPend??=[]).push({data:c.date,imp:c.amount,concepte:c.nota||"",
-    origen:"",estat:"sense actiu",producte:""});
+  S.data.aportExtracte=(S.data.aportExtracte||[]).filter(x=>x!==c);
+  (S.data.aportPend??=[]).push({data:c.data,imp:c.imp,concepte:c.concepte||"",
+    origen:c.origen||"",estat:"sense actiu",producte:"",suggerit:c.assetId||""});
   markDirty();
 }
-/** La mateixa aportació, un altre actiu: l'aportat dels dos es refà. */
+/** La mateixa línia, un altre actiu. */
 function mouAport(c,id){
-  const vell=S.data.assets.find(y=>y.id===c.assetId);
-  const nou=S.data.assets.find(y=>y.id===id);
-  if(!nou||id===c.assetId) return;
-  if(vell) vell.contributed=Math.round(((vell.contributed||0)-(c.amount||0))*100)/100;
-  nou.contributed=Math.round(((nou.contributed||0)+(c.amount||0))*100)/100;
+  if(!id||id===c.assetId) return;
   c.assetId=id;
-  c.src=APORT_SRC+":"+c.date+":"+id+":"+(c.amount||0).toFixed(2);
+  c.clau=APORT_SRC+":"+c.data+":"+id+":"+(c.imp||0).toFixed(2);
   markDirty();
 }
-/** Tot el que han deixat els extractes, en un lloc on hi puguis tornar: les
-    que van entrar i les que esperen que diguis de quin actiu són. */
+/** Tot el que han deixat els extractes, en un lloc on hi puguis tornar: el que
+    diuen de cada actiu, i les línies que esperen que diguis de quin actiu són.
+
+    La columna que mana segueix sent l'Aportat que escrius tu. Aquí hi ha el
+    contrast: si l'extracte suma més que el teu aportat, sol ser perquè hi ha
+    entrat diners que venien de liquidar un altre fons —l'extracte en porta
+    l'entrada però no la sortida. */
 function blocAportacions(){
-  const imp=(S.data.contributions||[]).filter(c=>c.src);
+  const reg=S.data.aportExtracte||[];
   const pend=S.data.aportPend||[];
-  if(!imp.length&&!pend.length) return null;
+  if(!reg.length&&!pend.length) return null;
   const A=S.data.assets;
   const opcions=[["","— quin actiu? —"],...A.map(a=>[a.id,a.name+" · "+a.entity])];
   const perActiu=new Map();
-  for(const c of imp){
+  for(const c of reg){
     const l=perActiu.get(c.assetId)||[]; l.push(c); perActiu.set(c.assetId,l);
   }
   return el("div",{class:"card"},
     el("div",{class:"bar",style:"margin:0 0 8px"},
       el("h2",{style:"margin:0;flex:1;min-width:180px"},"Aportacions dels extractes"),
-      el("span",{class:"mut"},imp.length+" importades"+
+      el("span",{class:"mut"},reg.length+" línies"+
         (pend.length?" · "+pend.length+" per classificar":""))),
     pend.length?el("div",{},
       el("p",{class:"note"},"Aquestes línies surten dels extractes del bròker però no "+
-        "diuen a quin actiu van. Tria'l i s'hi sumen; el nom del producte queda "+
+        "diuen a quin actiu van. Tria'l i s'hi registren; el nom del producte queda "+
         "apuntat i el pròxim extracte ja no ho preguntarà. La ✕ la descarta."),
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},["Data","Concepte","Import","Hi entra","Actiu",""]
@@ -4575,53 +4546,57 @@ function blocAportacions(){
             onclick:()=>{ S.data.aportPend=pend.filter(y=>y!==x);
               markDirty(); render(); }},"✕")),
         )))))):null,
-    imp.length?el("div",{style:"margin-top:10px"},
+    reg.length?el("div",{style:"margin-top:10px"},
       el("div",{class:"tw"},el("table",{},
-        el("thead",{},el("tr",{},["Actiu","Línies","Importat","Aportat de l'actiu"]
-          .map((h,i)=>el("th",{class:i?"r":""},h)))),
+        el("thead",{},el("tr",{},["Actiu","Línies","Sumen els extractes","El teu aportat",
+          "Diferència"].map((h,i)=>el("th",{class:i?"r":""},h)))),
         el("tbody",{},[...perActiu].map(([id,l])=>{
           const a=A.find(x=>x.id===id);
+          const s=l.reduce((t,c)=>t+(c.imp||0),0);
+          const dif=(Math.round((s-(a?a.contributed||0:0))*100)||0)/100;
           return el("tr",{},
             el("td",{},el("button",{class:"btn ghost",style:"padding:2px 6px",
               title:"Veure-les una a una",
               onclick:()=>dialogAportActiu(id)},a?a.name:"(actiu esborrat)")),
             el("td",{class:"r num mut"},l.length),
-            el("td",{class:"r num"},eur(l.reduce((t,c)=>t+(c.amount||0),0))),
-            el("td",{class:"r num"},a?eur(a.contributed||0):"—"));
+            el("td",{class:"r num"},eur(s)),
+            el("td",{class:"r num"},a?eur(a.contributed||0):"—"),
+            el("td",{class:"r num "+(Math.abs(dif)<1?"mut":dif>0?"pos":"neg")},eur(dif)));
         })))),
-      el("p",{class:"note"},"Pica el nom d'un actiu per veure les seves aportacions "+
-        "importades i rectificar-ne alguna.")):null);
+      el("p",{class:"note"},"L'aportat és el que escrius tu a la taula d'actius i no es "+
+        "toca mai des d'aquí. La diferència no vol dir que hi hagi cap error: "+
+        "l'extracte porta les entrades dels diners que venien de liquidar un altre "+
+        "fons, però no les sortides. Pica el nom d'un actiu per veure'n les línies.")):null);
 }
-/** Les aportacions importades d'un actiu, per si cal rectificar-ne alguna. */
+/** Les línies que els extractes diuen d'un actiu, per si cal rectificar-ne alguna. */
 function dialogAportActiu(id){
   const A=S.data.assets, a=A.find(x=>x.id===id);
   const opcions=A.map(x=>[x.id,x.name+" · "+x.entity]);
   const cos=el("div",{});
   const pinta=()=>{
-    const l=S.data.contributions.filter(c=>c.src&&c.assetId===id)
-      .sort((x,y)=>x.date<y.date?1:-1);
+    const l=(S.data.aportExtracte||[]).filter(c=>c.assetId===id)
+      .sort((x,y)=>x.data<y.data?1:-1);
     posa(cos,
-      el("p",{class:"note"},"Canviar d'actiu una aportació la treu d'aquí i la posa a "+
-        "l'altre, i l'aportat dels dos es refà. La ✕ la torna a «per classificar»: "+
-        "no es perd, i la pots tornar a assignar."),
+      el("p",{class:"note"},"Això és el que diu l'extracte, no el teu aportat: canviar-hi "+
+        "res no toca cap xifra de la cartera. La ✕ torna la línia a «per classificar»."),
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},["Data","Concepte","Import","Actiu",""]
           .map((h,i)=>el("th",{class:i===2?"r":""},h)))),
         el("tbody",{},l.map(c=>el("tr",{},
-          el("td",{class:"mut"},dCa(c.date)),
-          el("td",{class:"wrap mut"},(c.nota||"").slice(0,44)||"—"),
-          el("td",{class:"r num "+((c.amount||0)>=0?"pos":"neg")},eur(c.amount||0)),
+          el("td",{class:"mut"},dCa(c.data)),
+          el("td",{class:"wrap mut"},(c.concepte||"").slice(0,44)||"—"),
+          el("td",{class:"r num "+((c.imp||0)>=0?"pos":"neg")},eur(c.imp||0)),
           el("td",{},sel(c.assetId,opcions,v=>{ mouAport(c,v); pinta(); })),
           el("td",{},el("button",{class:"btn ghost",
             title:"Tornar-la a «per classificar»",
             onclick:()=>{ desfesAport(c); pinta(); }},"✕")),
         ))))),
-      el("p",{class:"note"},l.length+(l.length===1?" aportació":" aportacions")+" · "+
-        eur(l.reduce((t,c)=>t+(c.amount||0),0))+" importats · aportat de l'actiu "+
+      el("p",{class:"note"},l.length+(l.length===1?" línia":" línies")+" · sumen "+
+        eur(l.reduce((t,c)=>t+(c.imp||0),0))+" · el teu aportat és "+
         eur(a?a.contributed||0:0)));
   };
   pinta();
-  dialog("Aportacions importades · "+(a?a.name:""),cos,
+  dialog("Els extractes diuen · "+(a?a.name:""),cos,
     [["Tancar","btn",()=>{ closeDialog(); render(); }]]);
 }
 function trobaActiu(l){
