@@ -508,6 +508,7 @@ function normalise(o){
   o.compte ??= {}; o.compte.fixes ??= 0;   // despeses fixes de principi de mes
   o.conjunts ??= [];                // grups de categories: {id,nom,cats,pesos}
   o.conjuntsTags ??= [];            // grups d'etiquetes: {id,nom,tags,pesos}
+  o.aliasProd ??= {};               // nom del producte al broker -> actiu
   // Els conjunts van arribar a barrejar categories i etiquetes en un de sol.
   // Ara són dues famílies, i el que estigués barrejat es parteix en dos amb el
   // mateix nom en comptes de perdre'n la meitat.
@@ -4133,6 +4134,348 @@ async function llegeixCartera(file){
   return {file:file.name, date:dataDelNom(file.name), linies};
 }
 /** L'actiu de la cartera que correspon a una línia: primer per ISIN, després pel nom. */
+/* ================================================================== *
+ *  Aportacions des dels extractes del broker                          *
+ * ================================================================== *
+   Tres menes de fitxer, i cadascuna diu una part de la veritat:
+
+   · Moviments del compte (CSV): el que de debo surt i entra. Es la font
+     dels imports, perque l'ordre nomes en porta una estimacio: una ordre
+     de 500 EUR es va cobrar a 496,48.
+   · Ordres d'un fons (CSV, un per ISIN): diu quines operacions hi ha hagut,
+     pero sense signe —un reembors hi surt igual que una compra— i amb
+     l'import estimat. Serveix per trobar el que NO ha passat pel compte:
+     aixo son traspassos entre fons.
+   · Extracte d'una cartera gestionada (XLSX): les seves aportacions.
+
+   El que no es pot deduir no s'endevina: queda per classificar i ho dius tu
+   un cop. */
+const APORT_SRC="brk";                 // marca de les aportacions importades
+function numEs(t){
+  let x=String(t??"").replace(/\s|€|EUR/gi,"").trim();
+  if(!x) return null;
+  const c=x.lastIndexOf(","), d=x.lastIndexOf(".");
+  if(c>=0&&d>=0) x = c>d ? x.replace(/\./g,"").replace(",",".") : x.replace(/,/g,"");
+  else if(c>=0) x=x.replace(/\./g,"").replace(",",".");
+  else if(d>=0 && /^-?\d{1,3}(\.\d{3})+$/.test(x)) x=x.replace(/\./g,"");
+  const v=+x; return isFinite(v)?v:null;
+}
+const dataEs=t=>{ const m=/^(\d{2})\/(\d{2})\/(\d{4})/.exec(String(t||"").trim());
+  return m?m[3]+"-"+m[2]+"-"+m[1]:null; };
+const diesEntre=(a,b)=>Math.round((Date.parse(b)-Date.parse(a))/86400000);
+
+/** Llegeix un fitxer i diu de quina mena és i què hi ha a dins. */
+async function llegeixExtracte(file){
+  const nom=file.name;
+  if(/\.xlsx?$/i.test(nom)){
+    const fulls=await readXlsx(await file.arrayBuffer());
+    const full=(fulls[0]&&fulls[0].rows)||[];   // readXlsx torna {name,rows}
+    let compte=null;
+    const linies=[];
+    for(const r of full){
+      const txt=r.map(c=>String(c??"").trim());
+      const i=txt.findIndex(c=>/^CUENTA:?$/i.test(c));
+      if(i>=0 && txt[i+1]) compte=txt[i+1].replace(/\D/g,"");
+      const d=dataEs(txt[1]);
+      if(!d) continue;
+      linies.push({data:d,concepte:txt[3]||"",imp:numEs(txt[5])});
+    }
+    return {tipus:"cartera",nom,compte,linies:linies.filter(l=>l.imp!=null)};
+  }
+  const files=parseCsv(await file.text());
+  const cap=(files[0]||[]).map(c=>c.trim().toLowerCase());
+  const col=re=>cap.findIndex(c=>re.test(c));
+  if(col(/estado/)>=0 && col(/isin/)>=0){
+    const cD=col(/fecha/), cI=col(/isin/), cM=col(/importe/), cE=col(/estado/);
+    return {tipus:"ordres",nom,linies:files.slice(1).map(r=>({
+      data:dataEs(r[cD]),isin:(r[cI]||"").trim(),imp:numEs(r[cM]),
+      estat:(r[cE]||"").trim()})).filter(l=>l.data&&l.imp!=null)};
+  }
+  if(col(/concepto/)>=0 && col(/importe/)>=0){
+    const cD=col(/fecha de operaci/)>=0?col(/fecha de operaci/):col(/fecha/);
+    const cC=col(/concepto/), cM=col(/importe/);
+    return {tipus:"compte",nom,linies:files.slice(1).map(r=>({
+      data:dataEs(r[cD]),concepte:(r[cC]||"").trim(),imp:numEs(r[cM])}))
+      .filter(l=>l.data&&l.imp!=null)};
+  }
+  throw new Error("no sé què és aquest fitxer: ni ordres, ni moviments del compte, ni cartera");
+}
+
+/** De quin actiu parla una línia del compte. Els noms dels productes es
+    recorden a S.data.aliasProd, així que el que classifiquis un cop ja no es
+    torna a preguntar. */
+function actiuDeConcepte(c){
+  const t=c.toUpperCase();
+  for(const [pat,id] of Object.entries(S.data.aliasProd||{}))
+    if(t.includes(pat)) return S.data.assets.find(a=>a.id===id)||null;
+  return null;
+}
+/* Al compte hi ha de tot: nòmines que hi entren, traspassos del banc,
+   liquidacions d'interessos i les compres. Només les compres són aportacions,
+   i aquesta és la línia que les separa. Si no, una «Aportacion a mi cartera»
+   de 300 € es confon amb una compra de 300 € de la mateixa setmana. */
+function esProducte(c){
+  const t=String(c||"");
+  if(/aportacion|aportacio|transferencia|periodo|interes|irpf|retenci|liq\.|cancelaci/i.test(t))
+    return false;
+  if(/concepto no especificado|concepte no especificat|devolucion/i.test(t)) return false;
+  return /@|index|etp|etc\b|\bfi\b|fund|shares|groupama|value|nasdaq|gold|msci|s&p|unitedhealth/i.test(t);
+}
+function clauProducte(c){
+  return c.toUpperCase().replace(/\s*@.*$/,"").replace(/[^A-Z0-9 ]/g," ")
+    .replace(/\s+/g," ").trim().slice(0,34);
+}
+
+/** Converteix els fitxers llegits en línies d'aportació.
+
+    L'ordre no diu de quin producte del compte parla —només l'ISIN— i el
+    compte no diu l'ISIN, només el nom comercial. S'aparellen per import i
+    data, i d'aquí s'aprèn quin nom del compte és quin actiu: el diccionari
+    es desa i al pròxim extracte ja no cal endevinar res. */
+function aportacionsDe(lots){
+  const compte=lots.filter(l=>l.tipus==="compte")
+    .flatMap(l=>l.linies.map(x=>({...x,fitxer:l.nom})));
+  const ordres=lots.filter(l=>l.tipus==="ordres")
+    .flatMap(l=>l.linies.map(x=>({...x,fitxer:l.nom})));
+  const carteres=lots.filter(l=>l.tipus==="cartera");
+  const fetes=new Set((S.data.contributions||[]).map(c=>c.src).filter(Boolean));
+  const apresos={};                       // nom del compte -> actiu, après aquí
+  const out=[], usada=new Set();
+  const actiuDe=c=>{
+    const t=c.toUpperCase();
+    for(const [pat,id] of Object.entries(apresos)) if(t.includes(pat)) return id;
+    for(const [pat,id] of Object.entries(S.data.aliasProd||{})) if(t.includes(pat)) return id;
+    return null;
+  };
+  const posa=o=>{
+    o.clau=APORT_SRC+":"+o.data+":"+(o.assetId||"?")+":"+o.imp.toFixed(2);
+    o.jaHi=fetes.has(o.clau);
+    out.push(o);
+  };
+  // 1) Casar cada ordre amb el moviment del compte: mateix import (l'ordre el
+  //    porta estimat) i pocs dies després. Només val si hi ha un sol candidat,
+  //    que si no, dues compres iguals la mateixa setmana es creuarien.
+  const casades=new Map();
+  for(const o of ordres){
+    if(o.estat&&!/finalizada|liquidada|ejecutada/i.test(o.estat)) continue;
+    const tol=Math.max(5,o.imp*0.02);
+    // Només compres i vendes de productes: el que no ho és no pot ser la
+    // contrapartida d'una ordre, encara que l'import hi coincideixi.
+    const cands=compte.filter(x=>!usada.has(x)&&esProducte(x.concepte)
+      &&Math.abs(Math.abs(x.imp)-o.imp)<=tol
+      && diesEntre(o.data,x.data)>=0 && diesEntre(o.data,x.data)<=8);
+    if(!cands.length) continue;
+    // Amb més d'un, el més a prop en dies i després en import: deixar-ho córrer
+    // feia que la línia del compte entrés igualment pel seu compte i l'aportació
+    // es comptés dues vegades.
+    cands.sort((x,y)=>diesEntre(o.data,x.data)-diesEntre(o.data,y.data)
+      || Math.abs(Math.abs(x.imp)-o.imp)-Math.abs(Math.abs(y.imp)-o.imp));
+    const m=cands[0];
+    usada.add(m); casades.set(o,m);
+    const a=S.data.assets.find(x=>x.isin&&x.isin.toUpperCase()===o.isin.toUpperCase());
+    if(a&&cands.length===1) apresos[clauProducte(m.concepte)]=a.id;  // això és el que aprèn
+  }
+  // 2) Les ordres, amb l'import de debò quan es coneix.
+  for(const o of ordres){
+    const a=S.data.assets.find(x=>x.isin&&x.isin.toUpperCase()===o.isin.toUpperCase());
+    if(/cancelada|anulada|rechazada/i.test(o.estat||"")) continue;   // no ha existit
+    if(o.estat&&!/finalizada|liquidada|ejecutada/i.test(o.estat)){
+      posa({data:o.data,assetId:a?a.id:null,imp:o.imp,concepte:o.isin,
+        origen:o.fitxer,estat:"pendent",nota:o.estat}); continue;
+    }
+    const m=casades.get(o);
+    if(m) posa({data:m.data,assetId:a?a.id:null,imp:-m.imp,concepte:m.concepte,
+      origen:o.fitxer,estat:"ok"});
+    else posa({data:o.data,assetId:a?a.id:null,imp:o.imp,concepte:o.isin,
+      origen:o.fitxer,estat:"traspas"});
+  }
+  // 3) Traspassos que s'aparellen entre dos fons: d'un surt i a l'altre entra.
+  const pend=out.filter(o=>o.estat==="traspas");
+  for(const x of pend) for(const y of pend){
+    if(x===y||x.parella||y.parella||x.assetId===y.assetId) continue;
+    if(Math.abs(x.imp-y.imp)>Math.max(2,x.imp*0.01)) continue;
+    const d=diesEntre(x.data,y.data);
+    if(d<0||d>8) continue;
+    x.parella=y; y.parella=x;
+    x.imp=-Math.abs(x.imp); x.estat="sortida"; y.estat="entrada";
+  }
+  // 4) Moviments del compte que no ha reclamat cap ordre: compres i vendes de
+  //    productes que no tenen fitxer d'ordres (els ETP, l'or…).
+  for(const x of compte){
+    if(usada.has(x)||!esProducte(x.concepte)) continue;
+    const id=actiuDe(x.concepte);
+    posa({data:x.data,assetId:id,imp:-x.imp,concepte:x.concepte,origen:x.fitxer,
+      estat:id?"ok":"sense actiu",producte:clauProducte(x.concepte)});
+  }
+  // 5) Carteres gestionades: les seves aportacions, i prou.
+  for(const l of carteres){
+    const a=S.data.assets.find(x=>l.compte&&x.isin&&x.isin.includes(l.compte))
+      || S.data.assets.find(x=>l.nom.toUpperCase().includes(x.name.toUpperCase()));
+    for(const li of l.linies){
+      if(!/aportacion/i.test(li.concepte)) continue;
+      posa({data:li.data,assetId:a?a.id:null,imp:li.imp,concepte:li.concepte,
+        origen:l.nom,estat:a?"ok":"sense actiu"});
+    }
+  }
+  out.apresos=apresos;
+  return out.sort((x,y)=>x.data<y.data?1:-1);
+}
+/** El diàleg: deixa-hi els fitxers i mira què en surt. */
+function dialogAportacions(){
+  const inp=el("input",{type:"file",accept:".csv,.xlsx,.xls",multiple:true,style:"display:none"});
+  const zona=el("div",{class:"drop"},
+    "Arrossega-hi els extractes de MyInvestor: les ordres d'un fons (.csv), els "+
+    "moviments del compte (.csv) i les carteres gestionades (.xlsx). Com més n'hi "+
+    "posis de cop, menys coses quedaran per endevinar.",
+    el("div",{style:"margin-top:12px"},
+      el("button",{class:"btn",onclick:()=>inp.click()},"…o tria'ls")));
+  const estat=el("div",{class:"note",style:"margin-top:12px"});
+  const processa=async llista=>{
+    estat.textContent="Llegint…";
+    const lots=[],mals=[];
+    for(const f of llista){
+      try{ lots.push(await llegeixExtracte(f)); }
+      catch(e){ mals.push(f.name+": "+e.message); }
+    }
+    if(!lots.length){ estat.textContent=mals.join(" · ")||"Cap fitxer llegit."; return; }
+    const ap=aportacionsDe(lots);
+    closeDialog(); previewAportacions(ap,lots,mals);
+  };
+  inp.onchange=()=>{ if(inp.files.length) processa([...inp.files]); };
+  zona.addEventListener("dragover",e=>{e.preventDefault();zona.classList.add("over");});
+  zona.addEventListener("dragleave",()=>zona.classList.remove("over"));
+  zona.addEventListener("drop",e=>{e.preventDefault();zona.classList.remove("over");
+    if(e.dataTransfer.files.length) processa([...e.dataTransfer.files]);});
+  dialog("Importar aportacions",el("div",{},zona,inp,estat,
+    el("p",{class:"note"},"L'import que val és el del compte: l'ordre en porta un "+
+      "d'estimat i el fons cobra el del dia. El que no passa pel compte és un "+
+      "traspàs entre fons i t'ho preguntaré. Re-importar el mateix fitxer no "+
+      "duplica res.")),
+    [["Cancel·lar","btn",closeDialog]]);
+}
+/** La previsualització: què s'importarà, què cal que diguis tu, i sobretot
+    què es fa amb l'aportat que ja hi havia.
+
+    Dos règims per actiu, perquè els extractes no tots diuen el mateix:
+    · Substituir — el fitxer d'ordres del fons porta tota la seva vida, o sigui
+      que el que digui mana i l'aportat passa a ser exactament això.
+    · Sumar-hi — una cartera gestionada o un producte sense fitxer d'ordres:
+      l'extracte només cobreix un tros, així que es manté el que hi ha i només
+      s'hi afegeix el que ve després de la data que diguis. */
+function previewAportacions(ap,lots,mals){
+  const A=S.data.assets;
+  const opcions=[["","— ignorar —"],...A.map(a=>[a.id,a.name+" · "+a.entity])];
+  const ultima=id=>(S.data.contributions||[]).filter(c=>c.assetId===id)
+    .map(c=>c.date).sort().at(-1)||"";
+  const regim=new Map();                 // assetId -> {mode,desDe}
+  const regimDe=id=>{
+    if(!regim.has(id)){
+      const ordres=ap.some(x=>x.assetId===id&&/rdenes|ordres/i.test(x.origen||""));
+      regim.set(id,{mode:ordres?"sub":"suma",desDe:ordres?"":ultima(id)});
+    }
+    return regim.get(id);
+  };
+  const viva=x=>!x.jaHi&&x.estat!=="pendent"&&x.assetId&&x.imp;
+  const compten=x=>{ if(!viva(x)) return false;
+    const r=regimDe(x.assetId);
+    return r.mode==="sub" || !r.desDe || x.data>r.desDe; };
+  const cos=el("div",{}), resum=el("div",{style:"margin-bottom:10px"}), taula=el("div",{class:"tw"});
+  const pinta=()=>{
+    const grups=new Map();
+    for(const x of ap.filter(viva)){
+      const g=grups.get(x.assetId)||{n:0,s:0,tot:0}; g.tot++;
+      if(compten(x)){ g.n++; g.s+=x.imp; }
+      grups.set(x.assetId,g);
+    }
+    posa(resum,
+      grups.size?null:el("div",{class:"warnbox",style:"margin-bottom:8px"},
+        "D'aquests fitxers no en surt res de nou: o ja ho tens importat, o les línies "+
+        "encara no tenen actiu assignat. Mira la taula de sota."),
+      el("div",{class:"note",style:"margin-bottom:8px"},
+        "Per a cada actiu, digues si l'extracte substitueix l'aportat o si s'hi suma. "+
+        "Substituir val quan el fitxer porta tota la vida del fons; sumar-hi, quan "+
+        "l'extracte només cobreix un tros."),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Actiu","Aportat ara","L'extracte hi posa","Què fem",
+          "Des de","Quedarà"].map((h,i)=>el("th",{class:i&&i<3?"r":""},h)))),
+        el("tbody",{},[...grups].map(([id,g])=>{
+          const a=A.find(x=>x.id===id); if(!a) return null;
+          const r=regimDe(id);
+          const nou=r.mode==="sub" ? g.s : (a.contributed||0)+g.s;
+          return el("tr",{},
+            el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity)),
+            el("td",{class:"r num mut"},eur(a.contributed||0)),
+            el("td",{class:"r num"},eur(g.s),
+              el("div",{class:"mut",style:"font-size:11px"},g.n+" de "+g.tot+" línies")),
+            el("td",{},sel(r.mode,[["sub","Substituir"],["suma","Sumar-hi"]],
+              v=>{ r.mode=v; pinta(); })),
+            el("td",{},r.mode==="suma"
+              ? el("input",{type:"date",value:r.desDe||"",
+                  title:"Només compten les aportacions posteriors a aquesta data",
+                  onchange:e=>{ r.desDe=e.target.value; pinta(); }})
+              : el("span",{class:"mut"},"—")),
+            el("td",{class:"r num"},el("b",{},eur(nou))),
+          );
+        })))),
+      ap.some(x=>x.jaHi)?el("div",{class:"mut",style:"font-size:12px"},
+        ap.filter(x=>x.jaHi).length+" línies ja importades abans; no es repetiran."):null,
+      mals&&mals.length?el("div",{class:"neg",style:"font-size:12px"},mals.join(" · ")):null);
+    posa(taula,el("table",{},
+      el("thead",{},el("tr",{},["Data","Actiu","Concepte","Import","Què és"]
+        .map((h,i)=>el("th",{class:i===3?"r":""},h)))),
+      el("tbody",{},ap.map(x=>{
+        const fix=x.jaHi||x.estat==="pendent";
+        const fora=viva(x)&&!compten(x);
+        return el("tr",{style:(fix||fora)?"opacity:.5":""},
+          el("td",{class:"mut"},dCa(x.data)),
+          el("td",{},fix?((A.find(a=>a.id===x.assetId)||{}).name||"—")
+            :sel(x.assetId||"",opcions,v=>{
+              x.assetId=v||null;
+              if(v&&x.producte) S.data.aliasProd[x.producte]=v;   // dit un cop, dit per sempre
+              pinta(); })),
+          el("td",{class:"wrap mut"},(x.concepte||"").slice(0,40)),
+          el("td",{class:"r num "+(x.imp>=0?"pos":"neg")},eur(x.imp)),
+          el("td",{},fix?el("span",{class:"mut"},x.jaHi?"ja hi és":"ordre "+(x.nota||"pendent"))
+            :fora?el("span",{class:"mut"},"fora del tram")
+            :(x.estat==="ok"?el("span",{class:"mut"},"del compte")
+              :sel(x.imp>=0?"in":"out",[["in","hi entra"],["out","en surt"]],v=>{
+                x.imp=Math.abs(x.imp)*(v==="in"?1:-1); pinta(); }))),
+        );
+      }))));
+  };
+  pinta();
+  posa(cos,resum,taula);
+  dialog("Aportacions dels extractes",cos,[
+    ["Cancel·lar","btn",closeDialog],
+    ["Importar","btn primary",()=>aplicaAportacions(ap.filter(compten),regim)],
+  ]);
+}
+/** Les desa: una aportació per línia, i l'aportat de cada actiu com toqui. */
+function aplicaAportacions(linies,regim){
+  const perActiu=new Map();
+  for(const x of linies){
+    const l=perActiu.get(x.assetId)||[]; l.push(x); perActiu.set(x.assetId,l);
+  }
+  let n=0;
+  for(const [id,l] of perActiu){
+    const a=S.data.assets.find(y=>y.id===id); if(!a) continue;
+    const r=regim.get(id)||{mode:"suma"};
+    const suma=l.reduce((t,x)=>t+x.imp,0);
+    if(r.mode==="sub"){
+      // L'extracte mana: fora les aportacions que n'havien sortit abans, que si
+      // no es comptarien dues vegades.
+      S.data.contributions=S.data.contributions.filter(c=>c.assetId!==id||!c.src);
+      a.contributed=Math.round(suma*100)/100;
+    } else a.contributed=Math.round(((a.contributed||0)+suma)*100)/100;
+    for(const x of l){
+      S.data.contributions.push({date:x.data,assetId:id,
+        amount:Math.round(x.imp*100)/100,src:x.clau});
+      n++;
+    }
+  }
+  markDirty(); closeDialog(); render();
+  flash(n+(n===1?" aportació importada":" aportacions importades"));
+}
 function trobaActiu(l){
   if(l.isin){
     const a=S.data.assets.find(x=>x.isin && norm(x.isin)===norm(l.isin));
@@ -4543,6 +4886,8 @@ function renderCartera(root){
           title:"Carregar taules carteraDDMmmAAAA.xlsx"},"Importar .xlsx"),
         el("button",{class:"btn",style:"margin-right:8px",onclick:exportaCartera,
           title:"Taula .xlsx per a l'app d'independència financera"},"Exportar .xlsx"),
+        el("button",{class:"btn",style:"margin-right:8px",onclick:dialogAportacions,
+          title:"Treure les aportacions dels extractes del bròker"},"Importar aportacions"),
         el("button",{class:"btn primary",onclick:valuationDialog},"Valoració del mes")),
     ),
     (()=>{const [pa,pb]=periodRange();
