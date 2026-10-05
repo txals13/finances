@@ -509,6 +509,7 @@ function normalise(o){
   o.conjunts ??= [];                // grups de categories: {id,nom,cats,pesos}
   o.conjuntsTags ??= [];            // grups d'etiquetes: {id,nom,tags,pesos}
   o.aliasProd ??= {};               // nom del producte al broker -> actiu
+  o.aportPend ??= [];               // linies dels extractes que esperen actiu
   // Els conjunts van arribar a barrejar categories i etiquetes en un de sol.
   // Ara són dues famílies, i el que estigués barrejat es parteix en dos amb el
   // mateix nom en comptes de perdre'n la meitat.
@@ -4390,7 +4391,9 @@ function previewAportacions(ap,lots,mals){
     posa(resum,
       grups.size?null:el("div",{class:"warnbox",style:"margin-bottom:8px"},
         "D'aquests fitxers no en surt res de nou: o ja ho tens importat, o les línies "+
-        "encara no tenen actiu assignat. Mira la taula de sota."),
+        "encara no tenen actiu assignat. Mira la taula de sota: el que hi deixis sense "+
+        "assignar queda guardat a Cartera, a «Aportacions dels extractes», i ho pots "+
+        "classificar quan vulguis."),
       el("div",{class:"note",style:"margin-bottom:8px"},
         "Per a cada actiu, digues si l'extracte substitueix l'aportat o si s'hi suma. "+
         "Substituir val quan el fitxer porta tota la vida del fons; sumar-hi, quan "+
@@ -4447,11 +4450,11 @@ function previewAportacions(ap,lots,mals){
   posa(cos,resum,taula);
   dialog("Aportacions dels extractes",cos,[
     ["Cancel·lar","btn",closeDialog],
-    ["Importar","btn primary",()=>aplicaAportacions(ap.filter(compten),regim)],
+    ["Importar","btn primary",()=>aplicaAportacions(ap.filter(compten),regim,ap)],
   ]);
 }
 /** Les desa: una aportació per línia, i l'aportat de cada actiu com toqui. */
-function aplicaAportacions(linies,regim){
+function aplicaAportacions(linies,regim,totes){
   const perActiu=new Map();
   for(const x of linies){
     const l=perActiu.get(x.assetId)||[]; l.push(x); perActiu.set(x.assetId,l);
@@ -4469,12 +4472,157 @@ function aplicaAportacions(linies,regim){
     } else a.contributed=Math.round(((a.contributed||0)+suma)*100)/100;
     for(const x of l){
       S.data.contributions.push({date:x.data,assetId:id,
-        amount:Math.round(x.imp*100)/100,src:x.clau});
+        amount:Math.round(x.imp*100)/100,src:x.clau,nota:x.concepte||""});
       n++;
     }
   }
+  // El que no ha entrat no es llença: les línies sense actiu i les ordres que
+  // encara no s'han executat queden aparcades a la pestanya Cartera, amb data i
+  // concepte, perquè les puguis assignar el dia que sàpigues de què són.
+  const clau=x=>x.data+"|"+(x.imp||0).toFixed(2)+"|"+(x.concepte||"");
+  const fets=new Set(linies.map(clau));
+  S.data.aportPend=(S.data.aportPend||[]).filter(x=>!fets.has(clau(x)));
+  if(totes) aparcaAportacions(totes.filter(x=>!x.jaHi&&!linies.includes(x)
+    &&(!x.assetId||x.estat==="pendent")));
+  const q=(S.data.aportPend||[]).length;
   markDirty(); closeDialog(); render();
-  flash(n+(n===1?" aportació importada":" aportacions importades"));
+  flash(n+(n===1?" aportació importada":" aportacions importades")+
+    (q?" · "+q+" per classificar a Cartera":""));
+}
+/** Desa les línies que no se saben, sense repetir-ne cap. */
+function aparcaAportacions(l){
+  const p=(S.data.aportPend??=[]);
+  const clau=x=>x.data+"|"+(x.imp||0).toFixed(2)+"|"+(x.concepte||"");
+  const te=new Set(p.map(clau));
+  for(const x of l){
+    if(te.has(clau(x))) continue;
+    te.add(clau(x));
+    p.push({data:x.data,imp:x.imp,concepte:x.concepte||"",origen:x.origen||"",
+      estat:x.estat||"sense actiu",producte:x.producte||"",nota:x.nota||"",
+      suggerit:x.assetId||""});
+  }
+}
+/** Una línia aparcada passa a ser aportació d'un actiu, i s'aprèn el producte:
+    el pròxim extracte ja no ho tornarà a preguntar. */
+function assignaPend(x,id){
+  const a=S.data.assets.find(y=>y.id===id); if(!a) return;
+  S.data.aportPend=(S.data.aportPend||[]).filter(y=>y!==x);
+  const clau=APORT_SRC+":"+x.data+":"+id+":"+x.imp.toFixed(2);
+  if(!S.data.contributions.some(c=>c.src===clau)){
+    S.data.contributions.push({date:x.data,assetId:id,
+      amount:Math.round(x.imp*100)/100,src:clau,nota:x.concepte||""});
+    a.contributed=Math.round(((a.contributed||0)+x.imp)*100)/100;
+  }
+  if(x.producte) S.data.aliasProd[x.producte]=id;
+  markDirty(); render(); flash(a.name+": "+eur(x.imp));
+}
+/** La treu de l'actiu i la torna a «per classificar»: no es perd. */
+function desfesAport(c){
+  const a=S.data.assets.find(y=>y.id===c.assetId);
+  S.data.contributions=S.data.contributions.filter(x=>x!==c);
+  if(a) a.contributed=Math.round(((a.contributed||0)-(c.amount||0))*100)/100;
+  (S.data.aportPend??=[]).push({data:c.date,imp:c.amount,concepte:c.nota||"",
+    origen:"",estat:"sense actiu",producte:""});
+  markDirty();
+}
+/** La mateixa aportació, un altre actiu: l'aportat dels dos es refà. */
+function mouAport(c,id){
+  const vell=S.data.assets.find(y=>y.id===c.assetId);
+  const nou=S.data.assets.find(y=>y.id===id);
+  if(!nou||id===c.assetId) return;
+  if(vell) vell.contributed=Math.round(((vell.contributed||0)-(c.amount||0))*100)/100;
+  nou.contributed=Math.round(((nou.contributed||0)+(c.amount||0))*100)/100;
+  c.assetId=id;
+  c.src=APORT_SRC+":"+c.date+":"+id+":"+(c.amount||0).toFixed(2);
+  markDirty();
+}
+/** Tot el que han deixat els extractes, en un lloc on hi puguis tornar: les
+    que van entrar i les que esperen que diguis de quin actiu són. */
+function blocAportacions(){
+  const imp=(S.data.contributions||[]).filter(c=>c.src);
+  const pend=S.data.aportPend||[];
+  if(!imp.length&&!pend.length) return null;
+  const A=S.data.assets;
+  const opcions=[["","— quin actiu? —"],...A.map(a=>[a.id,a.name+" · "+a.entity])];
+  const perActiu=new Map();
+  for(const c of imp){
+    const l=perActiu.get(c.assetId)||[]; l.push(c); perActiu.set(c.assetId,l);
+  }
+  return el("div",{class:"card"},
+    el("div",{class:"bar",style:"margin:0 0 8px"},
+      el("h2",{style:"margin:0;flex:1;min-width:180px"},"Aportacions dels extractes"),
+      el("span",{class:"mut"},imp.length+" importades"+
+        (pend.length?" · "+pend.length+" per classificar":""))),
+    pend.length?el("div",{},
+      el("p",{class:"note"},"Aquestes línies surten dels extractes del bròker però no "+
+        "diuen a quin actiu van. Tria'l i s'hi sumen; el nom del producte queda "+
+        "apuntat i el pròxim extracte ja no ho preguntarà. La ✕ la descarta."),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Data","Concepte","Import","Hi entra","Actiu",""]
+          .map((h,i)=>el("th",{class:i===2?"r":""},h)))),
+        el("tbody",{},pend.slice().sort((x,y)=>x.data<y.data?1:-1).map(x=>el("tr",{},
+          el("td",{class:"mut"},dCa(x.data)),
+          el("td",{class:"wrap mut"},(x.concepte||"").slice(0,44)||"—",
+            (()=>{ const a=A.find(y=>y.id===x.suggerit);
+              const peu=[a?"sembla "+a.name:null,x.origen||null].filter(Boolean).join(" · ");
+              return peu?el("div",{class:"mut",style:"font-size:11px"},peu):null; })()),
+          el("td",{class:"r num "+(x.imp>=0?"pos":"neg")},eur(x.imp)),
+          el("td",{},x.estat==="pendent"?el("span",{class:"mut"},"ordre no executada")
+            :sel(x.imp>=0?"in":"out",[["in","hi entra"],["out","en surt"]],
+              v=>{ x.imp=Math.abs(x.imp)*(v==="in"?1:-1); markDirty(); render(); })),
+          el("td",{},sel("",opcions,v=>{ if(v) assignaPend(x,v); })),
+          el("td",{},el("button",{class:"btn ghost",title:"Descartar aquesta línia",
+            onclick:()=>{ S.data.aportPend=pend.filter(y=>y!==x);
+              markDirty(); render(); }},"✕")),
+        )))))):null,
+    imp.length?el("div",{style:"margin-top:10px"},
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Actiu","Línies","Importat","Aportat de l'actiu"]
+          .map((h,i)=>el("th",{class:i?"r":""},h)))),
+        el("tbody",{},[...perActiu].map(([id,l])=>{
+          const a=A.find(x=>x.id===id);
+          return el("tr",{},
+            el("td",{},el("button",{class:"btn ghost",style:"padding:2px 6px",
+              title:"Veure-les una a una",
+              onclick:()=>dialogAportActiu(id)},a?a.name:"(actiu esborrat)")),
+            el("td",{class:"r num mut"},l.length),
+            el("td",{class:"r num"},eur(l.reduce((t,c)=>t+(c.amount||0),0))),
+            el("td",{class:"r num"},a?eur(a.contributed||0):"—"));
+        })))),
+      el("p",{class:"note"},"Pica el nom d'un actiu per veure les seves aportacions "+
+        "importades i rectificar-ne alguna.")):null);
+}
+/** Les aportacions importades d'un actiu, per si cal rectificar-ne alguna. */
+function dialogAportActiu(id){
+  const A=S.data.assets, a=A.find(x=>x.id===id);
+  const opcions=A.map(x=>[x.id,x.name+" · "+x.entity]);
+  const cos=el("div",{});
+  const pinta=()=>{
+    const l=S.data.contributions.filter(c=>c.src&&c.assetId===id)
+      .sort((x,y)=>x.date<y.date?1:-1);
+    posa(cos,
+      el("p",{class:"note"},"Canviar d'actiu una aportació la treu d'aquí i la posa a "+
+        "l'altre, i l'aportat dels dos es refà. La ✕ la torna a «per classificar»: "+
+        "no es perd, i la pots tornar a assignar."),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Data","Concepte","Import","Actiu",""]
+          .map((h,i)=>el("th",{class:i===2?"r":""},h)))),
+        el("tbody",{},l.map(c=>el("tr",{},
+          el("td",{class:"mut"},dCa(c.date)),
+          el("td",{class:"wrap mut"},(c.nota||"").slice(0,44)||"—"),
+          el("td",{class:"r num "+((c.amount||0)>=0?"pos":"neg")},eur(c.amount||0)),
+          el("td",{},sel(c.assetId,opcions,v=>{ mouAport(c,v); pinta(); })),
+          el("td",{},el("button",{class:"btn ghost",
+            title:"Tornar-la a «per classificar»",
+            onclick:()=>{ desfesAport(c); pinta(); }},"✕")),
+        ))))),
+      el("p",{class:"note"},l.length+(l.length===1?" aportació":" aportacions")+" · "+
+        eur(l.reduce((t,c)=>t+(c.amount||0),0))+" importats · aportat de l'actiu "+
+        eur(a?a.contributed||0:0)));
+  };
+  pinta();
+  dialog("Aportacions importades · "+(a?a.name:""),cos,
+    [["Tancar","btn",()=>{ closeDialog(); render(); }]]);
 }
 function trobaActiu(l){
   if(l.isin){
@@ -4890,6 +5038,7 @@ function renderCartera(root){
           title:"Treure les aportacions dels extractes del bròker"},"Importar aportacions"),
         el("button",{class:"btn primary",onclick:valuationDialog},"Valoració del mes")),
     ),
+    blocAportacions(),
     (()=>{const [pa,pb]=periodRange();
       const f=series.filter(p=>p.date>=pa&&p.date<=pb);
       const p0=f[0],p1=f.at(-1);
