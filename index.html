@@ -1253,11 +1253,20 @@ function addMonths(k,n){
 function filtered(){
   const f=S.mov, q=f.q.trim().toLowerCase();
   const [pa,pb]=periodRange();
+  // Amb un grup picat de cada família, els dos costats se sumen: hi entra el
+  // que és de categories o el que porta l'etiqueta, no només el que és de les
+  // dues coses alhora. Sense grups, els filtres es creuen com sempre.
+  const sumen=!!(grupsCatActius().length&&grupsTagActius().length);
   let out=S.data.movements.filter(m=>{
     if(m.date<pa || m.date>pb) return false;
     if(f.account && m.account!==f.account) return false;
-    if(f.cats.length && !f.cats.includes(m.category)) return false;
-    if(f.tags.length && !(m.tags||[]).some(t=>f.tags.includes(t))) return false;
+    if(sumen){
+      if(!f.cats.includes(m.category) &&
+         !(m.tags||[]).some(t=>f.tags.includes(t))) return false;
+    }else{
+      if(f.cats.length && !f.cats.includes(m.category)) return false;
+      if(f.tags.length && !(m.tags||[]).some(t=>f.tags.includes(t))) return false;
+    }
     if(f.kind==="planned"?!m.planned:f.kind&&m.kind!==f.kind) return false;
     if(q && !((m.concept||"")+" "+m.category+" "+(m.city||"")+" "+(m.note||"")+
       " "+(m.tags||[]).join(" ")).toLowerCase().includes(q)) return false;
@@ -1443,8 +1452,10 @@ function provSuggeriments(files){
    «Despeses mínimes», «Viatges», «Lleure» d'una banda; «Colombia», «Caps de
    setmana» de l'altra. Dues famílies separades: un grup de categories escriu
    el filtre de categories i un d'etiquetes el d'etiquetes, que és el que ja hi
-   havia. Picats tots dos, es creuen —«les mínimes DINS del viatge»—, que és
-   com funciona el filtre de Moviments de tota la vida.
+   havia. Picats tots dos, **se sumen**: hi entra el que és d'un o de l'altre,
+   i els dos totals es tenen junts. Es van arribar a creuar —«les mínimes DINS
+   del viatge»— i no servia: el que vol mirar és les mínimes MÉS el viatge, i
+   creuats quedava gairebé tot fora.
 
    Cada línia d'un grup porta el seu %: la benzina pot ser 60 % de la feina i
    40 % de lleure, i cada grup en compta la seva part sense partir cap moviment
@@ -1463,25 +1474,32 @@ function grupsTagActius(){
   return (S.data.conjuntsTags||[]).filter(x=>S.mov.grupsTags.includes(x.id));
 }
 function capGrupActiu(){ return !grupsCatActius().length && !grupsTagActius().length; }
-/* El pes d'un moviment. Dins d'una família se sumen els grups picats, sense
-   passar del 100 %: la benzina al 60 % a Feina i al 40 % a Lleure, tots dos
-   picats, compta sencera. Entre famílies mana la part més petita: si mires les
-   mínimes al 60 % dins d'un viatge comptat al 50 %, el que se'n pot dir amb
-   honestedat és la meitat, no un terç. El que no és de cap grup picat compta
-   sencer. */
-function pesFamilia(l,claus,k){
-  if(!l.length) return 1;
+/* Un moviment és dels grups picats si cau a qualsevol d'ells, sigui de la
+   família que sigui. Sense cap grup picat hi són tots. */
+function dinsGrups(m){
+  const gc=grupsCatActius(), gt=grupsTagActius();
+  if(!gc.length&&!gt.length) return true;
+  return gc.some(x=>grupCats(x).includes(m.category))
+      || (m.tags||[]).some(t=>gt.some(x=>grupTags(x).includes(t)));
+}
+/* El pes d'un moviment: la suma dels grups picats on cau, sense passar del
+   100 %. Val igual dins d'una família que entre famílies —la benzina al 60 % a
+   Feina i al 40 % a Lleure compta sencera, i una despesa mínima feta durant un
+   viatge compta un sol cop encara que els dos grups estiguin picats. El que no
+   és de cap grup picat compta sencer: així una categoria afegida a mà al filtre
+   per sobre del grup no desapareix dels totals. */
+function pesActiu(m){
   let hi=false,t=0;
-  for(const x of l) for(const v of claus) if(k(x).includes(v)){ hi=true; t+=pesLinia(x,v)*100; break; }
+  for(const x of grupsCatActius()) if(grupCats(x).includes(m.category)){
+    hi=true; t+=pesLinia(x,m.category)*100;
+  }
+  for(const x of grupsTagActius()) for(const v of m.tags||[])
+    if(grupTags(x).includes(v)){ hi=true; t+=pesLinia(x,v)*100; break; }
   return hi?Math.min(100,t)/100:1;
 }
-function pesActiu(m){
-  const wc=pesFamilia(grupsCatActius(),[m.category],grupCats);
-  const wt=pesFamilia(grupsTagActius(),m.tags||[],grupTags);
-  return Math.min(wc,wt);
-}
 /** Piques o despiques un grup; el filtre que li toca passa a ser la unió dels
-    seus germans picats. L'altra família no es toca: per això es creuen. */
+    seus germans picats. L'altra família no es toca: els seus van a part i se
+    sumen amb aquests. */
 function aplicaGrup(x,tipus){
   const tag=tipus==="tag";
   const actius=tag?grupsTagActius():grupsCatActius();
@@ -1556,8 +1574,8 @@ function dialogGrup(x,tipus,inicials){
       el("p",{class:"note",style:"margin:0 0 10px"},
         "Un grup és una drecera al filtre "+(tag?"d'etiquetes":"de categories")+": el "+
         "piques i tot el que mires —els totals, la taula i la llista de moviments— es "+
-        "queda amb això. Els grups de categories i els d'esdeveniments es creuen: "+
-        "picant-ne un de cada, veus el que compleix les dues coses. El % diu quina part "+
+        "queda amb això. Els grups de categories i els d'esdeveniments se sumen: "+
+        "picant-ne un de cada, veus les dues coses juntes. El % diu quina part "+
         "compta aquí, sense partir cap moviment; la llista de moviments, això sí, els "+
         "ensenya sencers."),
       el("div",{class:"map"},lbl("Nom",nom)),
@@ -1629,8 +1647,9 @@ function xipsConjunts(){
   const gc=grupsCatActius(), gt=grupsTagActius();
   return el("div",{style:"margin:0 0 10px"},c,t,
     (gc.length&&gt.length)?el("div",{class:"mut",style:"font-size:12px"},
-      "Creuat: només el que és de "+(gc.length===1?"«"+gc[0].nom+"»":gc.length+" grups")+
-      " i alhora de "+(gt.length===1?"«"+gt[0].nom+"»":gt.length+" grups")+"."):null);
+      "Sumat: el que és de "+(gc.length===1?"«"+gc[0].nom+"»":gc.length+" grups")+
+      " més el que és de "+(gt.length===1?"«"+gt[0].nom+"»":gt.length+" grups")+
+      ". El que és de tots dos compta un sol cop."):null);
 }
 /** Fusiona: totes aquestes claus passen a comptar-se sota un sol nom. */
 function fusionaProv(claus,nom){
@@ -1781,9 +1800,8 @@ function resumProveidors(movs){
         const qui=l.length===1 ? "«"+l[0].nom+"»"
           : l.map(x=>"«"+x.nom+"»").slice(0,-1).join(", ")+" i "+
             "«"+l.at(-1).nom+"»";
-        // Dins d'una família se sumen; entre famílies es creuen.
-        const nC=grupsCatActius().length, nT=grupsTagActius().length;
-        const com = (nC&&nT) ? ", creuats" : (l.length>1 ? ", sumats" : "");
+        // Tots els grups picats se sumen, siguin de la família que siguin.
+        const com = l.length>1 ? ", sumats" : "";
         return " Mires "+qui+com+
           (parts.length ? ", i d'aquí només hi compta "+
             parts.map(([c,v])=>v+" % de "+c).join(", ")+"." : ".");
@@ -2397,10 +2415,10 @@ function renderEsdeveniments(){
      moviment només hi compta si és d'algun dels conjunts, i amb la part que li
      toqui. Amb un conjunt de categories, cada esdeveniment surt amb només la
      despesa d'aquelles categories —«què em van costar els viatges en
-     allotjament»—; amb un d'etiquetes, surten només aquells esdeveniments. */
+     allotjament»—; amb un d'etiquetes, surten només aquells esdeveniments.
+     Picats tots dos, se sumen, com a Moviments. */
   const gc=grupsCatActius(), gt=grupsTagActius();
-  const dins=m=>(!gc.length||gc.some(x=>grupCats(x).includes(m.category))) &&
-    (!gt.length||(m.tags||[]).some(t=>gt.some(x=>grupTags(x).includes(t))));
+  const dins=dinsGrups;
   const buit=()=>({n:0,out:0,in:0,cats:new Map()});
   const suma=(e,m)=>{
     const w=pesActiu(m);
@@ -2557,8 +2575,9 @@ function renderEsdeveniments(){
         gt.length?(gt.length===1?"el grup «"+gt[0].nom+"»":gt.length+" grups d'esdeveniments"):null]
         .filter(Boolean).join(" i ")+
       " picat"+((gc.length?1:0)+(gt.length?1:0)>1?"s":"")+
-      ", d'aquests esdeveniments només hi compta el que hi entra. Despica'ls a dalt "+
-      "per veure'ls sencers."):null,
+      ", d'aquests esdeveniments només hi compta el que hi entra"+
+      (gc.length&&gt.length?", sumant els dos grups: el que és de les categories més el "+
+        "que porta l'etiqueta":"")+". Despica'ls a dalt per veure'ls sencers."):null,
     el("p",{class:"note"},"«% despesa» és el pes de cada esdeveniment sobre tota la "+
       "despesa "+(f.any?"del "+f.any:"de l'històric")+" ("+eur(despTot)+"), no només "+
       "sobre la dels esdeveniments: amb uns quants triats, la fila de Total diu quina "+
