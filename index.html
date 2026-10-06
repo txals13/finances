@@ -511,6 +511,7 @@ function normalise(o){
   o.aliasProd ??= {};               // nom del producte al broker -> actiu
   o.aportPend ??= [];               // linies dels extractes que esperen actiu
   o.aportExtracte ??= [];           // el que diuen els extractes del broker
+  o.aliasIsin ??= {};               // ISIN d'un fons -> actiu de l'app
   /* Els extractes van arribar a entrar al registre d'aportacions i a manar
      sobre l'aportat, i no quadrava: porten les mateixes compres que ja hi
      havia apuntades (amb la data de liquidacio, uns dies mes tard) i en canvi
@@ -4618,6 +4619,172 @@ function dialogAportActiu(id){
   dialog("Els extractes diuen · "+(a?a.name:""),cos,
     [["Tancar","btn",()=>{ closeDialog(); render(); }]]);
 }
+/* ---- El cost fiscal: el que de debo hi has posat ------------------------
+
+   L'informe «Plusvalias y minusvalias» d'un fons llista els lots vius: data
+   fiscal d'adquisicio, el que et va costar i el que val ara. Val mes que
+   qualsevol altra font per a l'aportat perque **el cost viatja amb els
+   traspassos**: un traspas de 10.000 EUR que venia d'un fons on n'havies posat
+   8.000 hi entra com a 8.000 de cost i 2.000 de guany latent. Sumant els lots
+   no hi ha manera de comptar dues vegades els diners que han anat saltant de
+   fons en fons, que es el que esguerra qualsevol reconstruccio feta a partir
+   de les compres del compte.
+
+   Les dates son fiscals, no quan va entrar el diner a la cartera: serveixen
+   per al total, no per fer-ne una linia de temps. Per aixo d'aqui nomes en
+   surt l'aportat, i el registre d'aportacions no es toca. */
+function isinDe(t){
+  const m=/\b([A-Z]{2}[A-Z0-9]{9}\d)\b/.exec(String(t||"").toUpperCase());
+  return m?m[1]:null;
+}
+/** Un informe: els lots vius d'un fons. Els de 0 EUR son lots ja venuts. */
+async function llegeixFiscal(file){
+  const files=parseCsv(await file.text());
+  if(!files.length) throw new Error("buit");
+  const cap=files[0].map(x=>norm(x));
+  const iD=cap.findIndex(x=>x.includes("fecha")), iC=cap.findIndex(x=>x.includes("inversion")),
+        iV=cap.findIndex(x=>x.includes("valor")), iR=cap.findIndex(x=>x.includes("resultado"));
+  if(iD<0||iC<0) throw new Error("no sembla un informe de plusvàlues");
+  const lots=[];
+  for(const r of files.slice(1)){
+    const d=dataEs(r[iD]), c=numEs(r[iC]);
+    if(!d||c==null) continue;
+    const v=iV>=0?numEs(r[iV]):null;
+    if(!c && !v) continue;                    // lot ja venut: no hi queda res
+    lots.push({data:d,cost:c,valor:v==null?0:v,res:iR>=0?(numEs(r[iR])||0):0});
+  }
+  if(!lots.length) throw new Error("cap lot viu");
+  return {nom:file.name, isin:isinDe(file.name)||isinDe(await file.text()),
+    lots, cost:lots.reduce((t,x)=>t+x.cost,0), valor:lots.reduce((t,x)=>t+x.valor,0)};
+}
+/** El diàleg: deixa-hi els informes de tots els fons que vulguis. */
+function dialogFiscal(){
+  const inp=el("input",{type:"file",accept:".csv,.xlsx,.xls",multiple:true,style:"display:none"});
+  const zona=el("div",{class:"drop"},
+    "Arrossega-hi els informes «Plusvalías y minusvalías» dels teus fons (.csv). "+
+    "D'una cartera gestionada, posa-hi els de tots els fons que la componen: se sumen.",
+    el("div",{style:"margin-top:12px"},
+      el("button",{class:"btn",onclick:()=>inp.click()},"…o tria'ls")));
+  const estat=el("div",{class:"note",style:"margin-top:12px"});
+  const processa=async llista=>{
+    estat.textContent="Llegint…";
+    const rep=[],mals=[];
+    for(const f of llista){
+      try{ rep.push(await llegeixFiscal(f)); }
+      catch(e){ mals.push(f.name+": "+e.message); }
+    }
+    if(!rep.length){ estat.textContent=mals.join(" · ")||"Cap fitxer llegit."; return; }
+    closeDialog(); previewFiscal(rep,mals);
+  };
+  inp.onchange=()=>{ if(inp.files.length) processa([...inp.files]); };
+  zona.addEventListener("dragover",e=>{e.preventDefault();zona.classList.add("over");});
+  zona.addEventListener("dragleave",()=>zona.classList.remove("over"));
+  zona.addEventListener("drop",e=>{e.preventDefault();zona.classList.remove("over");
+    if(e.dataTransfer.files.length) processa([...e.dataTransfer.files]);});
+  dialog("Importar el cost fiscal",el("div",{},zona,inp,estat,
+    el("p",{class:"note"},"D'aquí en surt l'aportat de cada actiu: la suma del que et "+
+      "van costar els lots que encara tens. Com que el cost viatja amb els traspassos, "+
+      "els diners que han anat saltant de fons en fons no es compten dues vegades. Les "+
+      "dates dels lots són fiscals, així que el registre d'aportacions no es toca: "+
+      "només la xifra de l'aportat, i la decideixes actiu per actiu.")),
+    [["Cancel·lar","btn",closeDialog]]);
+}
+/** Quin actiu és cada fons: per ISIN, pel que vas dir l'últim cop, o ho dius ara. */
+function actiuDeIsin(isin){
+  if(!isin) return "";
+  const a=S.data.assets.find(x=>x.isin&&x.isin.toUpperCase().includes(isin));
+  return a?a.id:(S.data.aliasIsin||{})[isin]||"";
+}
+/** La previsualització: un actiu per fila, amb el que en diu l'informe. */
+function previewFiscal(rep,mals){
+  const A=S.data.assets;
+  const opcions=[["","— ignorar —"],...A.map(a=>[a.id,a.name+" · "+a.entity])];
+  for(const r of rep) r.assetId=actiuDeIsin(r.isin);
+  const posar=new Set(), vistos=new Set();   // actius que s'aplicaran
+  const cos=el("div",{}), dalt=el("div",{style:"margin-bottom:10px"}), baix=el("div",{});
+  const pinta=()=>{
+    const grups=new Map();
+    for(const r of rep){
+      if(!r.assetId) continue;
+      const g=grups.get(r.assetId)||{cost:0,valor:0,lots:0,fons:0};
+      g.cost+=r.cost; g.valor+=r.valor; g.lots+=r.lots.length; g.fons++;
+      grups.set(r.assetId,g);
+    }
+    // Un actiu nou entra marcat; despicar-lo ha de durar, i per això «vistos».
+    for(const id of grups.keys()) if(!vistos.has(id)){ vistos.add(id); posar.add(id); }
+    posa(dalt,
+      el("div",{class:"note",style:"margin-bottom:8px"},
+        "El «valor de l'informe» hauria de quadrar amb la valoració que té l'app. Si hi "+
+        "falta, és que d'aquell actiu encara hi ha fons sense informe, i aleshores el "+
+        "cost tampoc hi serà sencer."),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Actiu","Fons","Lots","Cost fiscal","Valor de l'informe",
+          "Valor a l'app","El teu aportat","Diferència",""]
+          .map((h,i)=>el("th",{class:i&&i<8?"r":""},h)))),
+        el("tbody",{},[...grups].map(([id,g])=>{
+          const a=A.find(x=>x.id===id); if(!a) return null;
+          const vApp=assetValue(a)||0, dif=(Math.round((g.cost-(a.contributed||0))*100)||0)/100;
+          const quadra=Math.abs(g.valor-vApp)<=Math.max(5,vApp*0.01);
+          return el("tr",{},
+            el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity)),
+            el("td",{class:"r num mut"},g.fons),
+            el("td",{class:"r num mut"},g.lots),
+            el("td",{class:"r num"},el("b",{},eur(g.cost))),
+            el("td",{class:"r num"},eur(g.valor)),
+            el("td",{class:"r num "+(quadra?"mut":"neg")},eur(vApp),
+              quadra?null:el("div",{style:"font-size:11px"},"no quadra")),
+            el("td",{class:"r num mut"},eur(a.contributed||0)),
+            el("td",{class:"r num "+(Math.abs(dif)<1?"mut":dif>0?"pos":"neg")},eur(dif)),
+            el("td",{},el("label",{class:"mut",style:"font-size:12px;white-space:nowrap"},
+              el("input",{type:"checkbox",checked:posar.has(id),
+                onchange:e=>{ e.target.checked?posar.add(id):posar.delete(id); pinta(); }}),
+              " posar-hi")));
+        })))),
+      mals&&mals.length?el("div",{class:"neg",style:"font-size:12px"},mals.join(" · ")):null);
+    posa(baix,el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},["Fitxer","ISIN","Lots","Cost","Valor","De quin actiu és"]
+        .map((h,i)=>el("th",{class:i>1&&i<5?"r":""},h)))),
+      el("tbody",{},rep.map(r=>el("tr",{},
+        el("td",{class:"wrap mut"},r.nom.replace(/\.csv$/i,"")),
+        el("td",{class:"mut"},r.isin||"—"),
+        el("td",{class:"r num mut"},r.lots.length),
+        el("td",{class:"r num"},eur(r.cost)),
+        el("td",{class:"r num mut"},eur(r.valor)),
+        el("td",{},sel(r.assetId||"",opcions,v=>{
+          r.assetId=v||"";
+          if(v&&r.isin) S.data.aliasIsin[r.isin]=v;   // dit un cop, dit per sempre
+          pinta(); })),
+      ))))));
+  };
+  pinta();
+  posa(cos,dalt,baix);
+  dialog("El cost fiscal dels teus fons",cos,[
+    ["Cancel·lar","btn",closeDialog],
+    ["Posar-ho a l'aportat","btn primary",()=>aplicaFiscal(rep,posar)],
+  ]);
+}
+/** Ho desa: l'aportat de cada actiu triat, i d'on surt. */
+function aplicaFiscal(rep,posar){
+  const grups=new Map();
+  for(const r of rep){
+    if(!r.assetId||!posar.has(r.assetId)) continue;
+    const g=grups.get(r.assetId)||{cost:0,valor:0,lots:0,fons:[]};
+    g.cost+=r.cost; g.valor+=r.valor; g.lots+=r.lots.length; g.fons.push(r.isin||r.nom);
+    grups.set(r.assetId,g);
+  }
+  let n=0;
+  for(const [id,g] of grups){
+    const a=S.data.assets.find(x=>x.id===id); if(!a) continue;
+    a.contributed=Math.round(g.cost*100)/100;
+    // D'on surt la xifra, per no haver-ho de recordar d'aquí a tres mesos.
+    a.fiscal={date:TODAY,cost:a.contributed,valor:Math.round(g.valor*100)/100,
+      lots:g.lots,fons:g.fons.length};
+    n++;
+  }
+  markDirty(); closeDialog(); render();
+  flash(n?("Aportat refet a partir del cost fiscal: "+n+(n===1?" actiu":" actius")):
+    "No s'ha triat cap actiu");
+}
 function trobaActiu(l){
   if(l.isin){
     const a=S.data.assets.find(x=>x.isin && norm(x.isin)===norm(l.isin));
@@ -5030,6 +5197,9 @@ function renderCartera(root){
           title:"Taula .xlsx per a l'app d'independència financera"},"Exportar .xlsx"),
         el("button",{class:"btn",style:"margin-right:8px",onclick:dialogAportacions,
           title:"Treure les aportacions dels extractes del bròker"},"Importar aportacions"),
+        el("button",{class:"btn",style:"margin-right:8px",onclick:dialogFiscal,
+          title:"Refer l'aportat amb els informes de plusvàlues i minusvàlues"},
+          "Importar cost fiscal"),
         el("button",{class:"btn primary",onclick:valuationDialog},"Valoració del mes")),
     ),
     blocAportacions(),
@@ -5301,6 +5471,10 @@ function assetDialog(a){
       lbl("Compta al rendiment", f.include=sel(a.include?"1":"0",
         [["1","Sí"],["0","No — il·líquid o sense cotització"]],v=>f.include.value=v)),
     ),
+    a.fiscal?el("p",{class:"note"},"L'aportat d'aquí ve de l'informe de plusvàlues del "+
+      dCa(a.fiscal.date)+": "+eur(a.fiscal.cost)+" de cost en "+a.fiscal.lots+" lots de "+
+      a.fiscal.fons+(a.fiscal.fons===1?" fons":" fons")+", que aleshores valien "+
+      eur(a.fiscal.valor)+"."):null,
     el("p",{class:"note"},"El valor es desa com una valoració de la data que hi digui. "+
       "Si en canvies el valor o l'aportat, la data es posa a avui sola —perquè el que "+
       "escrius és d'ara, no una correcció del mes passat—; si vols corregir una "+
