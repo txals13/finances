@@ -512,6 +512,7 @@ function normalise(o){
   o.aportPend ??= [];               // linies dels extractes que esperen actiu
   o.aportExtracte ??= [];           // el que diuen els extractes del broker
   o.aliasIsin ??= {};               // ISIN d'un fons -> actiu de l'app
+  o.ordres ??= [];                  // ordres del broker, una per referencia
   /* Els extractes van arribar a entrar al registre d'aportacions i a manar
      sobre l'aportat, i no quadrava: porten les mateixes compres que ja hi
      havia apuntades (amb la data de liquidacio, uns dies mes tard) i en canvi
@@ -4792,6 +4793,217 @@ function aplicaFiscal(rep,posar){
   flash(n?("Aportat refet a partir del cost fiscal: "+n+(n===1?" actiu":" actius")):
     "No s'ha triat cap actiu");
 }
+/* ---- Les ordres del broker ----------------------------------------------
+
+   Un ETP o un ETC no es un fons: no te regim de traspassos i per aixo no en
+   surt informe de plusvalues. L'unica font del que hi has posat son les
+   ordres, i la xifra que compta es la **neta** —el brut mes la comissio—, que
+   es el que surt del compte. Aqui hi entra el text que copies del detall de
+   l'ordre a MyInvestor, tal qual: la referencia de l'ordre fa de clau, aixi
+   que enganxar dues vegades el mateix no duplica res. */
+function ordresDeText(txt){
+  const out=[], vistes=new Set();      // el mateix text pot portar una ordre dos cops
+  for(const bloc of String(txt||"").split(/^[ \t]*Detalle de la orden[ \t]*$/m).slice(1)){
+    const L=bloc.split(/\r?\n/).map(x=>x.trim());
+    const seg=(et,n=1)=>{ const i=L.indexOf(et); return i<0?"":(L[i+n]||""); };
+    const segPre=(pre,n=1)=>{ const i=L.findIndex(x=>x.startsWith(pre)); return i<0?"":(L[i+n]||""); };
+    const ref=seg("Referencia de la orden"); if(!ref||vistes.has(ref)) continue;
+    vistes.add(ref);
+    const dh=t=>{ const m=/(\d{2})\/(\d{2})\/(\d{4}),?\s*(\d{2}:\d{2})?/.exec(t||"");
+      return m?{data:m[3]+"-"+m[2]+"-"+m[1],hora:m[4]||""}:{data:"",hora:""}; };
+    // La data bona és la d'execució: l'ordre d'un vespre es creua l'endemà al
+    // matí, i és el dia que es creua quan surten els diners.
+    const ex=dh(seg("Fecha de ejecución")), or=dh(seg("Fecha de la orden"));
+    const net=numEs(seg("Importe neto en divisa"));
+    const op=seg("Orden").toLowerCase();
+    out.push({ref, data:ex.data||or.data, hora:ex.hora||or.hora,
+      isin:seg("ISIN"), valor:seg("Nombre del valor"), mercat:seg("Mercado"),
+      op:/venta|vender/i.test(op)?"venda":"compra",
+      estat:seg("Estado").toLowerCase(),
+      titols:numEs(seg("Títulos")), preu:numEs(seg("Precio")),
+      brut:numEs(seg("Importe bruto en divisa")),
+      com:numEs(segPre("Comisión"))||0, canons:numEs(segPre("Cánones"))||0,
+      net:net==null?numEs(seg("Importe neto")):Math.abs(net)});
+  }
+  return out;
+}
+/** El diàleg: el text enganxat, o els .txt que en tinguis desats. */
+function dialogOrdres(){
+  const inp=el("input",{type:"file",accept:".txt,.csv",multiple:true,style:"display:none"});
+  const area=el("textarea",{rows:6,style:"width:100%;margin-top:10px",
+    placeholder:"Enganxa aquí el detall de l'ordre, tal com surt a MyInvestor. "+
+      "En pots posar quantes vulguis, una darrere l'altra."});
+  const zona=el("div",{class:"drop"},
+    "Arrossega-hi els fitxers de text amb el detall de les ordres, o enganxa'l aquí sota.",
+    el("div",{style:"margin-top:12px"},
+      el("button",{class:"btn",onclick:()=>inp.click()},"…o tria'ls")));
+  const estat=el("div",{class:"note",style:"margin-top:8px"});
+  const mira=(l,mals)=>{
+    const o=l.filter(x=>x.net!=null&&x.data);
+    if(!o.length){ estat.textContent=mals.join(" · ")||
+      "D'aquí no en surt cap ordre. Copia el detall sencer, des de «Detalle de la orden»."; return; }
+    closeDialog(); previewOrdres(o,mals);
+  };
+  const deFitxers=async llista=>{
+    estat.textContent="Llegint…";
+    const l=[],mals=[];
+    for(const f of llista){
+      try{ const t=await f.text(); const o=ordresDeText(t);
+        if(!o.length) mals.push(f.name+": cap ordre"); else l.push(...o); }
+      catch(e){ mals.push(f.name+": "+e.message); }
+    }
+    mira(l,mals);
+  };
+  inp.onchange=()=>{ if(inp.files.length) deFitxers([...inp.files]); };
+  zona.addEventListener("dragover",e=>{e.preventDefault();zona.classList.add("over");});
+  zona.addEventListener("dragleave",()=>zona.classList.remove("over"));
+  zona.addEventListener("drop",e=>{e.preventDefault();zona.classList.remove("over");
+    if(e.dataTransfer.files.length) deFitxers([...e.dataTransfer.files]);});
+  dialog("Importar ordres",el("div",{},zona,inp,area,estat,
+    el("p",{class:"note"},"D'aquí en surt l'aportat dels actius que no són fons —els "+
+      "ETP i l'ETC—, que no tenen informe de plusvàlues. De cada ordre s'agafa l'import "+
+      "net, comissió inclosa, i la data d'execució. Les vendes resten. Tornar a "+
+      "enganxar una ordre que ja hi és no la duplica.")),
+    [["Cancel·lar","btn",closeDialog],
+     ["Llegir","btn primary",()=>mira(ordresDeText(area.value),[])]]);
+}
+/** La previsualització: què diuen les ordres de cada actiu. */
+function previewOrdres(noves,mals){
+  const A=S.data.assets;
+  const opcions=[["","— ignorar —"],...A.map(a=>[a.id,a.name+" · "+a.entity])];
+  const reg=S.data.ordres||[];
+  const refs=new Set(reg.map(o=>o.ref));
+  for(const o of noves){
+    o.jaHi=refs.has(o.ref);
+    o.feta=/finalizada|ejecutada|liquidada/.test(o.estat||"");
+    o.assetId=actiuDeIsin(o.isin);
+  }
+  const posar=new Set(), vistos=new Set();
+  const compta=o=>o.feta&&!o.jaHi&&o.assetId&&o.net;
+  const signe=o=>o.op==="venda"?-o.net:o.net;
+  const cos=el("div",{}), dalt=el("div",{style:"margin-bottom:10px"}), baix=el("div",{});
+  const pinta=()=>{
+    const grups=new Map();
+    for(const o of noves){
+      if(!o.assetId||!o.feta) continue;
+      const g=grups.get(o.assetId)||{n:0,nou:0,s:0};
+      g.n++; if(!o.jaHi){ g.nou++; g.s+=signe(o); }
+      grups.set(o.assetId,g);
+    }
+    for(const id of grups.keys()) if(!vistos.has(id)){ vistos.add(id); posar.add(id); }
+    posa(dalt,
+      el("div",{class:"note",style:"margin-bottom:8px"},
+        "L'aportat passarà a ser la suma de TOTES les ordres registrades de l'actiu, no "+
+        "només les d'ara: les compres sumen i les vendes resten."),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Actiu","Ordres noves","Sumen","Ja registrades",
+          "L'aportat quedarà","El teu aportat ara",""]
+          .map((h,i)=>el("th",{class:i&&i<6?"r":""},h)))),
+        el("tbody",{},[...grups].map(([id,g])=>{
+          const a=A.find(x=>x.id===id); if(!a) return null;
+          const velles=reg.filter(o=>o.assetId===id);
+          const total=Math.round((velles.reduce((t,o)=>t+(o.op==="venda"?-o.net:o.net),0)+g.s)*100)/100;
+          return el("tr",{},
+            el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity)),
+            el("td",{class:"r num mut"},g.nou),
+            el("td",{class:"r num"},eur(g.s)),
+            el("td",{class:"r num mut"},velles.length),
+            el("td",{class:"r num"},el("b",{},eur(total))),
+            el("td",{class:"r num mut"},eur(a.contributed||0)),
+            el("td",{},el("label",{class:"mut",style:"font-size:12px;white-space:nowrap"},
+              el("input",{type:"checkbox",checked:posar.has(id),
+                onchange:e=>{ e.target.checked?posar.add(id):posar.delete(id); pinta(); }}),
+              " posar-hi")));
+        })))),
+      mals&&mals.length?el("div",{class:"neg",style:"font-size:12px"},mals.join(" · ")):null);
+    posa(baix,el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},["Data","Valor","Op.","Títols","Preu","Net","De quin actiu és",""]
+        .map((h,i)=>el("th",{class:i>2&&i<6?"r":""},h)))),
+      el("tbody",{},noves.map(o=>el("tr",{style:(o.jaHi||!o.feta)?"opacity:.5":""},
+        el("td",{class:"mut"},dCa(o.data),o.hora?el("span",{class:"mut"}," "+o.hora):null),
+        el("td",{class:"wrap mut"},(o.valor||o.isin||"").slice(0,30),
+          el("div",{style:"font-size:11px"},o.isin)),
+        el("td",{class:o.op==="venda"?"neg":"mut"},o.op),
+        el("td",{class:"r num mut"},o.titols??"—"),
+        el("td",{class:"r num mut"},o.preu==null?"—":eurRaw(o.preu)),
+        el("td",{class:"r num "+(o.op==="venda"?"neg":"pos")},eur(signe(o))),
+        el("td",{},sel(o.assetId||"",opcions,v=>{
+          o.assetId=v||"";
+          if(v&&o.isin) S.data.aliasIsin[o.isin]=v;   // dit un cop, dit per sempre
+          pinta(); })),
+        el("td",{class:"mut",style:"font-size:12px"},
+          o.jaHi?"ja registrada":!o.feta?("no executada ("+o.estat+")"):""),
+      ))))));
+  };
+  pinta();
+  posa(cos,dalt,baix);
+  dialog("Les ordres del bròker",cos,[
+    ["Cancel·lar","btn",closeDialog],
+    ["Registrar-les","btn primary",()=>aplicaOrdres(noves.filter(compta),posar)],
+  ]);
+}
+/** Les desa i, dels actius triats, en refà l'aportat. */
+function aplicaOrdres(noves,posar){
+  const reg=(S.data.ordres??=[]);
+  const refs=new Set(reg.map(o=>o.ref));
+  let n=0;
+  for(const o of noves){
+    if(refs.has(o.ref)) continue;
+    refs.add(o.ref); n++;
+    reg.push({ref:o.ref,data:o.data,hora:o.hora,assetId:o.assetId,isin:o.isin,
+      valor:o.valor,mercat:o.mercat,op:o.op,titols:o.titols,preu:o.preu,
+      brut:o.brut,com:o.com,canons:o.canons,net:o.net});
+  }
+  let m=0;
+  for(const id of posar){
+    const a=S.data.assets.find(x=>x.id===id); if(!a) continue;
+    const l=reg.filter(o=>o.assetId===id);
+    const suma=l.reduce((t,o)=>t+(o.op==="venda"?-o.net:o.net),0);
+    a.contributed=Math.round(suma*100)/100;
+    a.ordres={date:TODAY,net:a.contributed,n:l.length};
+    // Com al cost fiscal: la valoració d'avui ha de portar l'aportat bo.
+    const sn=S.data.snapshots.find(x=>x.assetId===id&&x.date===TODAY);
+    if(sn) sn.cost=a.contributed;
+    m++;
+  }
+  markDirty(); closeDialog(); render();
+  flash(n+(n===1?" ordre registrada":" ordres registrades")+
+    (m?" · aportat refet a "+m+(m===1?" actiu":" actius"):""));
+}
+/** Les ordres registrades d'un actiu, per si cal treure'n alguna. */
+function dialogOrdresActiu(id){
+  const a=S.data.assets.find(x=>x.id===id);
+  const cos=el("div",{});
+  const pinta=()=>{
+    const l=(S.data.ordres||[]).filter(o=>o.assetId===id)
+      .sort((x,y)=>x.data<y.data?1:-1);
+    const suma=l.reduce((t,o)=>t+(o.op==="venda"?-o.net:o.net),0);
+    posa(cos,
+      el("p",{class:"note"},"L'import que compta és el net: el brut més la comissió, que "+
+        "és el que surt del compte. La ✕ treu l'ordre del registre; l'aportat no es "+
+        "refà fins que tornis a importar."),
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Data","Op.","Títols","Preu","Brut","Comissió","Net",""]
+          .map((h,i)=>el("th",{class:i>1&&i<7?"r":""},h)))),
+        el("tbody",{},l.map(o=>el("tr",{},
+          el("td",{class:"mut"},dCa(o.data)),
+          el("td",{class:o.op==="venda"?"neg":"mut"},o.op),
+          el("td",{class:"r num mut"},o.titols??"—"),
+          el("td",{class:"r num mut"},o.preu==null?"—":eurRaw(o.preu)),
+          el("td",{class:"r num mut"},eur(o.brut||0)),
+          el("td",{class:"r num mut"},eur(o.com||0)),
+          el("td",{class:"r num "+(o.op==="venda"?"neg":"")},
+            eur(o.op==="venda"?-o.net:o.net)),
+          el("td",{},el("button",{class:"btn ghost",title:"Treure-la del registre",
+            onclick:()=>{ S.data.ordres=(S.data.ordres||[]).filter(x=>x!==o);
+              markDirty(); pinta(); }},"✕")),
+        ))))),
+      el("p",{class:"note"},l.length+(l.length===1?" ordre":" ordres")+" · sumen "+
+        eur(suma)+" · el teu aportat és "+eur(a?a.contributed||0:0)));
+  };
+  pinta();
+  dialog("Ordres · "+(a?a.name:""),cos,[["Tancar","btn",()=>{ closeDialog(); render(); }]]);
+}
 function trobaActiu(l){
   if(l.isin){
     const a=S.data.assets.find(x=>x.isin && norm(x.isin)===norm(l.isin));
@@ -4944,8 +5156,9 @@ function aplicaCartera(lots){
       /* L'aportat del full és el que hi tens escrit a mà. Si d'aquest actiu
          se n'ha importat el cost fiscal, el full porta la xifra vella i no
          l'ha de desfer: només se n'agafa el valor. */
-      if(!a.fiscal) a.contributed=li.aportat;
-      setAssetValue(a,l.date,li.valor,a.fiscal?(a.contributed||0):li.aportat);
+      const seu=a.fiscal||a.ordres;      // aportat que ve d'una font de debò
+      if(!seu) a.contributed=li.aportat;
+      setAssetValue(a,l.date,li.valor,seu?(a.contributed||0):li.aportat);
       nSnap++;
     }
     recomputeTotal(l.date,true);          // instantània completa: el total és la suma
@@ -4988,10 +5201,10 @@ function previewCartera(lots){
       "La data surt del nom del fitxer; si no s'endevina, o no és la bona, canvia-la aquí. "+
       "De cada fitxer s'agafa el valor i l'aportat de cada actiu, i el total del dia serà "+
       "la suma."),
-    (()=>{ const f=S.data.assets.filter(a=>a.fiscal); if(!f.length) return null;
+    (()=>{ const f=S.data.assets.filter(a=>a.fiscal||a.ordres); if(!f.length) return null;
       return el("p",{class:"note",style:"margin:0 0 12px"},
         "De "+f.map(a=>a.name).join(", ")+" només se n'agafarà el valor: l'aportat ve "+
-        "del cost fiscal dels informes de plusvàlues i el full no el desfarà."); })(),
+        "del cost fiscal o de les ordres, i el full no el desfarà."); })(),
     totalNous?el("div",{class:"warnbox"},
       totalNous+(totalNous===1?" línia no correspon":" línies no corresponen")+
       " a cap actiu que ja tinguis. Es crearan actius nous. Si havien de coincidir, "+
@@ -5214,6 +5427,8 @@ function renderCartera(root){
         el("button",{class:"btn",style:"margin-right:8px",onclick:dialogFiscal,
           title:"Refer l'aportat amb els informes de plusvàlues i minusvàlues"},
           "Importar cost fiscal"),
+        el("button",{class:"btn",style:"margin-right:8px",onclick:dialogOrdres,
+          title:"Refer l'aportat amb les ordres del bròker"},"Importar ordres"),
         el("button",{class:"btn primary",onclick:valuationDialog},"Valoració del mes")),
     ),
     blocAportacions(),
@@ -5485,6 +5700,11 @@ function assetDialog(a){
       lbl("Compta al rendiment", f.include=sel(a.include?"1":"0",
         [["1","Sí"],["0","No — il·líquid o sense cotització"]],v=>f.include.value=v)),
     ),
+    a.ordres?el("p",{class:"note"},"L'aportat d'aquí surt de les ordres del bròker: "+
+      a.ordres.n+(a.ordres.n===1?" ordre":" ordres")+" que sumen "+eur(a.ordres.net)+
+      ", comptades el "+dCa(a.ordres.date)+". ",
+      el("button",{class:"btn ghost",style:"padding:2px 6px",
+        onclick:()=>{ closeDialog(); dialogOrdresActiu(a.id); }},"Veure-les")):null,
     a.fiscal?el("p",{class:"note"},"L'aportat d'aquí ve de l'informe de plusvàlues del "+
       dCa(a.fiscal.date)+": "+eur(a.fiscal.cost)+" de cost en "+a.fiscal.lots+" lots de "+
       a.fiscal.fons+(a.fiscal.fons===1?" fons":" fons")+", que aleshores valien "+
