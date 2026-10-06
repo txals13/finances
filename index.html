@@ -4776,6 +4776,13 @@ function aplicaFiscal(rep,posar){
   for(const [id,g] of grups){
     const a=S.data.assets.find(x=>x.id===id); if(!a) continue;
     a.contributed=Math.round(g.cost*100)/100;
+    /* Si avui ja hi ha valoració desada, ha de portar l'aportat bo. Cada
+       valoració guarda l'aportat d'aquell dia, i si el punt d'avui es quedés
+       amb el vell, el gràfic de «El que hi has posat contra el que val»
+       ensenyaria un esglaó amb una xifra que ja no existeix. Els punts d'abans
+       no es toquen: allò és el que sabies aleshores. */
+    const sn=S.data.snapshots.find(x=>x.assetId===id&&x.date===TODAY);
+    if(sn) sn.cost=a.contributed;
     // D'on surt la xifra, per no haver-ho de recordar d'aquí a tres mesos.
     a.fiscal={date:TODAY,cost:a.contributed,valor:Math.round(g.valor*100)/100,
       lots:g.lots,fons:g.fons.length};
@@ -4934,8 +4941,11 @@ function aplicaCartera(lots){
         S.data.assets.push(a); nNous++;
       }
       if(li.inici && !a.start) a.start=li.inici;
-      a.contributed=li.aportat;          // l'aportat d'aquell dia
-      setAssetValue(a,l.date,li.valor,li.aportat);
+      /* L'aportat del full és el que hi tens escrit a mà. Si d'aquest actiu
+         se n'ha importat el cost fiscal, el full porta la xifra vella i no
+         l'ha de desfer: només se n'agafa el valor. */
+      if(!a.fiscal) a.contributed=li.aportat;
+      setAssetValue(a,l.date,li.valor,a.fiscal?(a.contributed||0):li.aportat);
       nSnap++;
     }
     recomputeTotal(l.date,true);          // instantània completa: el total és la suma
@@ -4978,6 +4988,10 @@ function previewCartera(lots){
       "La data surt del nom del fitxer; si no s'endevina, o no és la bona, canvia-la aquí. "+
       "De cada fitxer s'agafa el valor i l'aportat de cada actiu, i el total del dia serà "+
       "la suma."),
+    (()=>{ const f=S.data.assets.filter(a=>a.fiscal); if(!f.length) return null;
+      return el("p",{class:"note",style:"margin:0 0 12px"},
+        "De "+f.map(a=>a.name).join(", ")+" només se n'agafarà el valor: l'aportat ve "+
+        "del cost fiscal dels informes de plusvàlues i el full no el desfarà."); })(),
     totalNous?el("div",{class:"warnbox"},
       totalNous+(totalNous===1?" línia no correspon":" línies no corresponen")+
       " a cap actiu que ja tinguis. Es crearan actius nous. Si havien de coincidir, "+
