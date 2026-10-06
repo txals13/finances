@@ -5570,6 +5570,39 @@ function lastSnapshotDate(a){
     però el registre d'aportacions heretat del full no quadra amb l'aportat total
     i en sortien xifres impossibles, com un aportat que puja com més enrere vas.
     Val més no ensenyar res que ensenyar una línia inventada. */
+/** El registre d'aportacions d'un actiu explica tot el seu aportat?
+
+    Si la suma dels apunts és la xifra d'ara, el registre no té forats: es pot
+    anar enrere restant-los, i abans del primer apunt l'aportat era zero. Si no
+    hi quadra no es pot fer res. Wind Renovables n'és el cas: hi ha un sol apunt
+    —un sanejament de −20.423,20 €— i l'aportat de 15.102,82 € ve d'abans, de
+    manera que dir que el 2025 era zero seria inventar-s'ho, i restar el
+    sanejament convertiria en «guany» el dia que vas reconèixer que els diners
+    no hi eren. */
+function registreSencer(a){
+  let n=0,s=0;
+  for(const x of S.data.contributions) if(x.assetId===a.id){ n++; s+=x.amount; }
+  if(!n) return false;
+  const ap=Math.abs(a.contributed||0);
+  return Math.abs(s-(a.contributed||0)) <= Math.max(25,ap*0.05);
+}
+/** Des de quan el registre d'aportacions d'un actiu es pot creure.
+
+    O bé ho diu `contribFrom` —el posa qui importa l'extracte del compte—, o bé
+    el primer apunt del registre arriba abans que l'actiu valgués res: aleshores
+    el registre neix amb l'actiu i no li falta cap tros pel camí. */
+function registreDesDe(a){
+  let prim=null;
+  if(registreSencer(a)) for(const x of S.data.contributions)
+    if(x.assetId===a.id && (!prim||x.date<prim)) prim=x.date;
+  if(prim) for(const s of S.data.snapshots)
+    if(s.assetId===a.id && s.date<prim && s.value>0.005){ prim=null; break; }  // ja en tenies abans
+  if(!a.contribFrom) return prim;
+  /* `contribFrom` diu des d'on es va comprovar que el registre és sencer, no
+     que abans hi falti res: si el primer apunt arriba amb l'actiu mateix, val
+     la data més antiga de les dues. */
+  return prim && prim<a.contribFrom ? prim : a.contribFrom;
+}
 function assetCostAt(a,date){
   let base=null;
   for(const s of S.data.snapshots)
@@ -5585,7 +5618,8 @@ function assetCostAt(a,date){
      sabem el registre sencer: `contribFrom` diu des de quan ho es, i el posa qui
      importa l'extracte del compte d'on surten les compres. Sense aixo no es
      reconstrueix res, que amb un registre a mitges surten aportats negatius. */
-  if(a.contribFrom && date>=a.contribFrom){
+  const des=registreDesDe(a);
+  if(des && date>=des){
     let post=null;
     for(const s of S.data.snapshots)
       if(s.assetId===a.id && s.cost!=null && s.date>date && (!post||s.date<post.date)) post=s;
@@ -5593,9 +5627,23 @@ function assetCostAt(a,date){
       let c=post.cost;
       for(const x of S.data.contributions)
         if(x.assetId===a.id && x.date>date && x.date<=post.date) c-=x.amount;
-      return Math.abs(c)<0.005 ? 0 : c;
+      /* Un aportat negatiu no existeix: vol dir que el registre d'aquest actiu
+         suma una mica més que l'aportat d'ara —passa quan l'aportat ve del cost
+         fiscal, que descompta el guany que portaven incorporat els traspassos—.
+         El sobrant cau als dies en què encara no en tenies res. */
+      return c<0.005 ? 0 : c;
     }
   }
+  /* Encara no el tenies: no val res, no hi ha cap apunt anterior, i o bé és
+     abans del dia que el vas obrir o bé el registre explica tot l'aportat. Això
+     no és una dada que falti, és un zero, i saber-ho és el que permet tancar
+     els anys del començament en comptes de deixar-los en blanc. Sense l'una
+     cosa o l'altra, un actiu valorat a 0 per falta de cotització —BEV
+     Hospitality— passaria per no tenir-ne cap, i l'aportat de la cartera
+     perdria 53.722,87 € d'un dia per l'altre. */
+  if(!assetValueAt(a,date) &&
+     !S.data.contributions.some(x=>x.assetId===a.id && x.date<=date) &&
+     ((a.start && date<a.start) || registreSencer(a))) return 0;
   return null;
 }
 /** Aportat de tota la cartera en una data. Només val si el sabem de TOTS els
@@ -5603,8 +5651,8 @@ function assetCostAt(a,date){
     d'una altra data. Passava al 28/08/2026, on Hospitality i Renovables encara
     no tenien valoració: l'aportat sortia 128.972 € en comptes de 197.798 € i el
     balanç feia un salt de 68.826 € que no havia passat mai. */
-function portfolioCostAt(date){
-  const c=S.data.assets.map(a=>assetCostAt(a,date));
+function portfolioCostAt(date,llista){
+  const c=(llista||S.data.assets).map(a=>assetCostAt(a,date));
   return c.length && !c.some(v=>v==null) ? c.reduce((s,v)=>s+v,0) : null;
 }
 /** La primera data en què tenim l'aportat de tota la cartera, no d'uns quants. */
@@ -6169,12 +6217,18 @@ function blocEvolucio(clau,grups,nota){
    Només es pot fer des que es desa l'aportat a cada valoració: abans d'això el
    fitxer només té el valor, i de la pujada no se'n pot separar què eren diners
    nous. Els anys que no arriben no s'inventen, es diuen. */
+/** El guany de la cartera, any per any.
+
+    Compta només els actius que compten al rendiment, com la resta de la
+    pestanya: els dos il·líquids sense cotització hi posaven un forat fix de
+    68.826 € que no es movia mai, i el compte corrent i el DCA hi entraven amb
+    un «aportat» que és el saldo. Deixant-los fora, el que queda és el que de
+    debò ha rendit. */
 function blocGuanyAny(){
-  const A=S.data.assets;
-  const rec=new Map((S.data.portfolioTotals||[]).map(t=>[t.date,t.total]));
-  const valorA=d=>rec.has(d)?rec.get(d):A.reduce((s,a)=>s+assetValueAt(a,d),0);
+  const A=S.data.assets.filter(a=>a.include);
+  const valorA=d=>A.reduce((s,a)=>s+assetValueAt(a,d),0);
   const totes=[...new Set(S.data.snapshots.map(s=>s.date))].sort();
-  const bones=totes.filter(d=>portfolioCostAt(d)!=null);
+  const bones=totes.filter(d=>portfolioCostAt(d,A)!=null);
   const titol="Guany de la cartera, any per any";
   if(bones.length<2) return el("div",{class:"card"},
     el("h2",{},titol),
@@ -6189,14 +6243,17 @@ function blocGuanyAny(){
     const abans=bones.filter(d=>d<y+"-01-01").at(-1);   // el tancament de l'any passat
     const d0=abans||dins[0], d1=dins.at(-1);
     if(!d0||!d1||d0===d1) return null;
-    const v0=valorA(d0), c0=portfolioCostAt(d0), v1=valorA(d1), c1=portfolioCostAt(d1);
+    const v0=valorA(d0), c0=portfolioCostAt(d0,A), v1=valorA(d1), c1=portfolioCostAt(d1,A);
     const apo=c1-c0, guany=(v1-c1)-(v0-c0);
     // Sobre el que hi havia treballant: el valor del principi més el que hi has
     // anat posant. No és una TIR, però no menteix sobre quina és la base.
     const base=v0+Math.max(0,apo);
-    return {y,d0,d1,v0,v1,apo,guany,pct:base?guany/base:null,sencer:!!abans};
+    // «Parcial» només si el dia que arrenca ja hi havia alguna cosa: un any que
+    // comença amb la cartera buida no es perd res encara que no sigui l'1 de gener.
+    return {y,d0,d1,v0,v1,apo,guany,pct:base?guany/base:null,
+      sencer:!!abans||(!v0&&!c0)};
   }).filter(Boolean);
-  const falten=[...new Set(totes.filter(d=>!portfolioCostAt(d)).map(d=>d.slice(0,4)))]
+  const falten=[...new Set(totes.filter(d=>portfolioCostAt(d,A)==null).map(d=>d.slice(0,4)))]
     .filter(y=>!files.some(f=>f.y===y));
   const T=files.reduce((a,f)=>({apo:a.apo+f.apo,guany:a.guany+f.guany}),{apo:0,guany:0});
   return el("div",{class:"card"},
@@ -6223,12 +6280,14 @@ function blocGuanyAny(){
       "El guany és el que ha pujat el balanç —valor menys aportat— del primer dia a "+
       "l'últim: les aportacions es resten a totes dues bandes i per això no hi compten. "+
       "El % és sobre el valor inicial més el que hi has posat durant l'any, que és el "+
-      "que hi havia treballant."+
+      "que hi havia treballant. Hi entren els "+A.length+" actius que compten al "+
+      "rendiment; els il·líquids sense cotització i els comptes en queden fora."+
       (falten.length ? " De "+falten.join(", ")+" no se'n pot dir res: en aquelles "+
         "valoracions no hi ha l'aportat desat, i sense això no hi ha manera de separar "+
         "el que va rendir del que hi vas posar." : "")+
       (files.some(f=>!f.sencer) ? " L'any marcat com a parcial no arrenca de l'1 de "+
-        "gener, sinó del primer dia amb l'aportat desat." : "")),
+        "gener, sinó del primer dia que se'n sap l'aportat, i aquell dia ja hi havia "+
+        "cartera: del tros que falta no se'n diu res." : "")),
   );
 }
 function renderRendiment(root){
