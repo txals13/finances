@@ -512,6 +512,19 @@ function normalise(o){
   o.aportPend ??= [];               // linies dels extractes que esperen actiu
   o.aportExtracte ??= [];           // el que diuen els extractes del broker
   o.aliasIsin ??= {};               // ISIN d'un fons -> actiu de l'app
+  /* Les claus velles duien l'actiu a dins i per això la mateixa línia hi va
+     entrar dos cops: un cop sense assignar i un altre ja amb l'actiu après.
+     Es refan amb la clau d'ara i les repetides se'n van; de cada parella es
+     queda la que té actiu. */
+  if(o.aportExtracte.length){
+    const bo=new Map();
+    for(const x of o.aportExtracte){
+      x.clau=clauAport(x.data,x.imp,x.concepte);
+      const hi=bo.get(x.clau);
+      if(!hi || (!hi.assetId && x.assetId)) bo.set(x.clau,x);
+    }
+    o.aportExtracte=[...bo.values()];
+  }
   o.ordres ??= [];                  // ordres del broker, una per referencia
   /* Els extractes van arribar a entrar al registre d'aportacions i a manar
      sobre l'aportat, i no quadrava: porten les mateixes compres que ja hi
@@ -4186,6 +4199,17 @@ async function llegeixCartera(file){
    El que no es pot deduir no s'endevina: queda per classificar i ho dius tu
    un cop. */
 const APORT_SRC="brk";                 // marca de les aportacions importades
+/** Què identifica una línia d'extracte: el dia, l'import i el producte.
+
+    L'actiu NO hi entra, i això és tot el quid: l'actiu el tries després, i
+    quan la clau el duia a dins passava que una línia registrada sense assignar
+    quedava com a «brk:2026-09-09:?:2124.96», i al següent extracte —ja amb el
+    producte après— la mateixa línia sortia com a «brk:2026-09-09:c7ed…:2124.96»,
+    no es reconeixia i entrava un altre cop. */
+function clauAport(data,imp,concepte){
+  return APORT_SRC+":"+data+":"+Math.abs(+imp||0).toFixed(2)+":"+
+    clauProducte(concepte||"");
+}
 function numEs(t){
   let x=String(t??"").replace(/\s|€|EUR/gi,"").trim();
   if(!x) return null;
@@ -4275,6 +4299,7 @@ function aportacionsDe(lots){
   const carteres=lots.filter(l=>l.tipus==="cartera");
   const fetes=new Set((S.data.aportExtracte||[]).map(c=>c.clau).filter(Boolean));
   const apresos={};                       // nom del compte -> actiu, après aquí
+  const emeses=new Set();                 // claus ja tretes en aquesta passada
   const out=[], usada=new Set();
   const actiuDe=c=>{
     const t=c.toUpperCase();
@@ -4283,7 +4308,9 @@ function aportacionsDe(lots){
     return null;
   };
   const posa=o=>{
-    o.clau=APORT_SRC+":"+o.data+":"+(o.assetId||"?")+":"+o.imp.toFixed(2);
+    o.clau=clauAport(o.data,o.imp,o.concepte);
+    if(emeses.has(o.clau)) return;      // la mateixa línia per dues fonts alhora
+    emeses.add(o.clau);
     o.jaHi=fetes.has(o.clau);
     out.push(o);
   };
@@ -4502,7 +4529,7 @@ function assignaPend(x,id){
   const a=S.data.assets.find(y=>y.id===id); if(!a) return;
   S.data.aportPend=(S.data.aportPend||[]).filter(y=>y!==x);
   const reg=(S.data.aportExtracte??=[]);
-  const clau=x.clau||APORT_SRC+":"+x.data+":"+id+":"+x.imp.toFixed(2);
+  const clau=x.clau||clauAport(x.data,x.imp,x.concepte);
   if(!reg.some(c=>c.clau===clau))
     reg.push({data:x.data,assetId:id,imp:Math.round(x.imp*100)/100,
       concepte:x.concepte||"",origen:x.origen||"",clau});
@@ -4520,7 +4547,6 @@ function desfesAport(c){
 function mouAport(c,id){
   if(!id||id===c.assetId) return;
   c.assetId=id;
-  c.clau=APORT_SRC+":"+c.data+":"+id+":"+(c.imp||0).toFixed(2);
   markDirty();
 }
 /** Tot el que han deixat els extractes, en un lloc on hi puguis tornar: el que
