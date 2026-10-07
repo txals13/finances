@@ -263,6 +263,7 @@ const S = {
             cats:[], catOpen:false, catQ:"" },
   imp: null,           // estat de l'assistent d'importació
 };
+const TABS=["resum","moviments","mesos","real","cartera","rendiment","fire","categories"];
 const TODAY = new Date().toISOString().slice(0,10);
 /* Per sota d'aquest ingres mensual la taxa d'estalvi no diu res util
    (un mes a mig fer amb 26 EUR d'ingressos dona -4.061 %), aixi que s'amaga. */
@@ -294,6 +295,67 @@ const NF0= new Intl.NumberFormat("ca-ES",{maximumFractionDigits:0});
    exportes (CSV, xlsx) no es toca mai: si l'amagués, el fitxer seria inútil. */
 let ocult = (()=>{ try{ return localStorage.getItem("finances:ocult")==="1"; }catch{ return false; } })();
 const MASCARA = "•••";
+/* ---- La vista, tal com la vas deixar ---------------------------------
+   La pestanya, els filtres, l'ordre de les taules i si una gràfica va en € o
+   en %: tot això és d'aquest aparell, com el mode discret, i va al navegador i
+   no al fitxer. Al fitxer hi faria nosa de dues maneres: cada clic marcaria
+   les dades com a brutes i et demanaria desar, i amb el Drive el PC i el mòbil
+   es trepitjarien la vista l'un a l'altre. */
+const UI_KEY="finances:vista";
+const UI_PARTS=["tab","mov","period","real","cartera","rend","desp","ev","tcat"];
+/* El que no es guarda: què tenies obert i a mig escriure quan vas tancar —els
+   desplegables i les seves cerques— i fins on havies estirat les llistes. Són
+   el lloc on eres, no com vols mirar-t'ho. */
+const UI_FORA=new Set(["catOpen","catQ","tagOpen","tagQ","limit"]);
+function desaVista(){
+  try{
+    const o={};
+    for(const k of UI_PARTS){
+      const v=S[k];
+      if(v==null||typeof v!=="object"){ o[k]=v; continue; }
+      o[k]={};
+      for(const [n,x] of Object.entries(v)) if(!UI_FORA.has(n)) o[k][n]=x;
+    }
+    localStorage.setItem(UI_KEY,JSON.stringify(o));
+  }catch{}
+}
+function llegeixVista(){
+  let o=null;
+  try{ o=JSON.parse(localStorage.getItem(UI_KEY)||"null"); }catch{ return; }
+  if(!o||typeof o!=="object") return;
+  for(const k of UI_PARTS){
+    const v=o[k];
+    if(v===undefined||v===null) continue;
+    const ara=S[k];
+    if(ara&&typeof ara==="object"&&!Array.isArray(ara)&&typeof v==="object"){
+      // Només les claus que l'app encara coneix i amb el mateix tipus: una
+      // versió nova pot haver-ne canviat alguna, i una de vella no ha de
+      // ressuscitar amb un valor que ja no vol dir res.
+      for(const n of Object.keys(ara))
+        if(n in v && !UI_FORA.has(n) &&
+           (ara[n]==null || v[n]==null || typeof ara[n]===typeof v[n])) ara[n]=v[n];
+    }else if(typeof v===typeof ara) S[k]=v;
+  }
+  if(!TABS.includes(S.tab)) S.tab="resum";
+}
+/** Un filtre que apunta a una categoria, una etiqueta o un grup que ja no
+    existeix no filtra res i et deixa mirant una taula buida sense saber per
+    què. En carregar les dades es treuen els que han quedat orfes. */
+function netejaVista(){
+  const cats=new Set(totesCats()), tags=new Set(totesTags());
+  const gc=new Set((S.data.conjunts||[]).map(x=>x.id));
+  const gt=new Set((S.data.conjuntsTags||[]).map(x=>x.id));
+  const nom=l=>Array.isArray(l)?l.filter(Boolean):[];
+  S.mov.cats=nom(S.mov.cats).filter(c=>cats.has(c));
+  S.mov.tags=nom(S.mov.tags).filter(t=>tags.has(t));
+  S.mov.grups=nom(S.mov.grups).filter(id=>gc.has(id));
+  S.mov.grupsTags=nom(S.mov.grupsTags).filter(id=>gt.has(id));
+  S.ev.cats=nom(S.ev.cats).filter(c=>cats.has(c));
+  S.ev.tags=nom(S.ev.tags).filter(t=>tags.has(t));
+  S.tcat.cats=nom(S.tcat.cats).filter(c=>cats.has(c));
+  if(S.desp.cat&&!cats.has(S.desp.cat)) S.desp.cat=null;
+  if(S.desp.tag&&!tags.has(S.desp.tag)) S.desp.tag=null;
+}
 const eurRaw  = v => (v==null||isNaN(v)) ? "—" : NF.format(v)+" €";
 const eur0Raw = v => (v==null||isNaN(v)) ? "—" : NF0.format(v)+" €";
 const eur  = v => ocult ? ((v==null||isNaN(v))?"—":MASCARA) : eurRaw(v);
@@ -439,6 +501,7 @@ async function loadFromHandle(h){
 }
 function loadData(obj){
   S.data=normalise(obj); S.dirty=false; $("#bSave").disabled=true;
+  netejaVista();
   render(); setStatus();
   writeBackup(false);
 }
@@ -6902,6 +6965,10 @@ function render(){
   ({resum:renderResum,moviments:renderMoviments,mesos:renderMesos,real:renderReal,
     cartera:renderCartera,rendiment:renderRendiment,fire:renderFire,
     categories:renderCategories})[S.tab](root);
+  // Tot el que es pinta surt de l'estat, així que aquí ja està decidit. Amb
+  // retard, que un sol gest pot fer uns quants renders seguits.
+  clearTimeout(desaVista.t);
+  desaVista.t=setTimeout(desaVista,400);
 }
 
 /* ================================================================== *
@@ -6953,6 +7020,7 @@ function marcaOrigen(tipus,detall){ S.origen={tipus,detall,quan:new Date()}; }
 
 (async function boot(){
   pintaOcult();
+  llegeixVista();
   try{ const t=localStorage.getItem("finances:theme");
     if(t) document.documentElement.setAttribute("data-theme",t); }catch{}
   // Llegir la còpia ABANS de carregar el fitxer: carregar-lo la sobreescriu.
