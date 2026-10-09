@@ -612,7 +612,17 @@ function normalise(o){
   o.provAlias ??= {};               // concepte del banc -> nom del proveïdor agrupat
   o.provIgnora ??= [];              // suggeriments de fusió que has dit que no
   o.compte.dia ??= null;                    // i el dia que te les acaben de passar
-  for(const a of o.assets){ a.include ??= true; a.contributed ??= 0; }
+  /* Hi ha actius que ja no reben diners: només en tornen. BEV Hospitality i
+     Wind Renovables en són, i el que en recuperes no és un guany mentre no
+     hagis tret tot el que hi vas posar —és retorn d'inversió—, o sigui que el
+     que entra baixa l'aportat en comptes de pujar-lo. Es dedueix un cop, dels
+     que no compten al rendiment i no tenen cap valoració per sobre de zero, i
+     després es canvia a mà a la fitxa de l'actiu. */
+  const ambValor=new Set(o.snapshots.filter(x=>x.value>0.005).map(x=>x.assetId));
+  for(const a of o.assets){
+    a.include ??= true; a.contributed ??= 0;
+    a.retorn ??= (!a.include && !ambValor.has(a.id) && (a.contributed||0)>0);
+  }
   o.fire = Object.assign({},FIRE_DEF,o.fire||{});
   for(const m of o.movements){
     m.id ??= uid(); m.tags ??= []; m.planned ??= (m.date>TODAY);
@@ -5590,7 +5600,25 @@ function valuationDialog(){
   const last=[...new Set(S.data.snapshots.map(s=>s.date))].sort().pop();
   const dEnd=(()=>{ const d=new Date(TODAY); // per defecte, final del mes en curs
     return new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).toISOString().slice(0,10); })();
-  const vals=new Map(), adds=new Map(), prevCel=new Map();
+  const vals=new Map(), adds=new Map(), prevCel=new Map(), mesCel=new Map();
+  /* El que ja has apuntat aquest mes, actiu per actiu. Escrivint-hi un número
+     no es reemplaça: s'hi suma, que una mateixa inversió pot rebre diners dos
+     cops el mateix mes i totes dues vegades han de constar. */
+  const mesDe=d=>String(d||"").slice(0,7);
+  const apuntsMes=(a,d)=>(S.data.contributions||[])
+    .filter(x=>x.assetId===a.id && mesDe(x.date)===mesDe(d));
+  const pintaMes=a=>{
+    const d=fDate.value, l=apuntsMes(a,d);
+    const ja=l.reduce((t,x)=>t+x.amount,0);
+    const escrit=adds.get(a.id).llegir();
+    const nou=escrit ? (a.retorn?-Math.abs(escrit):escrit) : 0;
+    posa(mesCel.get(a.id),
+      l.length?el("span",{class:ja<0?"neg":"pos"},eur(ja)):el("span",{class:"mut"},"—"),
+      l.length?el("div",{class:"mut",style:"font-size:11px"},
+        l.length+(l.length===1?" apunt":" apunts")):null,
+      nou?el("div",{style:"font-size:11px"},"quedarà ",
+        el("b",{class:(ja+nou)<0?"neg":"pos"},eur(ja+nou))):null);
+  };
   // Si tries una data anterior, els valors proposats han de ser els d'aquell moment,
   // no els d'avui: si no, escriuries les xifres d'ara al passat sense adonar-te'n.
   const refresca=d=>{
@@ -5598,34 +5626,48 @@ function valuationDialog(){
       const v=d ? assetValueAt(a,d) : assetValue(a);
       vals.get(a.id).posa(v);
       prevCel.get(a.id).textContent=v?eur(v):"—";
+      pintaMes(a);
     }
   };
   const fDate=el("input",{type:"date",value:dEnd,onchange:e=>refresca(e.target.value)});
   const rows=A.map(a=>{
     const prev=assetValueAt(a,dEnd);
     const v=campImport(prev);
-    const c=campImport(null,{placeholder:"± —",signe:true});
+    const c=campImport(null,{placeholder:a.retorn?"retorn —":"± —",signe:!a.retorn});
     vals.set(a.id,v); adds.set(a.id,c);
+    c.addEventListener("change",()=>pintaMes(a));
     const cel=el("td",{class:"r num mut"},lastSnapshotDate(a)?eur(prev):"—");
     prevCel.set(a.id,cel);
+    const mes=el("td",{class:"r num"});
+    mesCel.set(a.id,mes);
     return el("tr",{},
-      el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity)),
-      cel, el("td",{},v), el("td",{},c));
+      el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity),
+        a.retorn?el("div",{class:"mut",style:"font-size:11px"},"retorn d'inversió"):null),
+      cel, el("td",{},v), mes, el("td",{},c));
   });
+  for(const a of A) pintaMes(a);
   dialog("Valoració del mes",el("div",{},
     el("div",{class:"bar"},el("span",{},"Data de la valoració:"),fDate,
       el("span",{class:"mut",style:"font-size:12px"},last?"l'última va ser el "+dCa(last):"")),
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},el("th",{},"Actiu"),el("th",{class:"r"},"Valor a la data"),
-        el("th",{class:"r"},"Valor nou"),el("th",{class:"r"},"Aportació del mes",
+        el("th",{class:"r"},"Valor nou"),
+        el("th",{class:"r"},"Ja apuntat al mes"),
+        el("th",{class:"r"},"Aportació del mes",
           el("div",{class:"mut",style:"font-weight:400;font-size:11px"},
-            "negativa si en treus")))),
+            "s'hi suma")))),
       el("tbody",{},rows))),
     el("p",{class:"note"},"Deixa el valor com està si un actiu no s'ha mogut. Un 0 també és "+
       "una valoració vàlida —els actius il·líquids ho són— i cal desar-la perquè el seu "+
       "aportat compti al balanç del mes. L'aportació és opcional i va amb signe: positiva "+
       "si hi poses diners, negativa si en treus o si en deprecies el valor aportat. Se suma "+
       "amb el seu signe al que tens aportat en aquell actiu."),
+    el("p",{class:"note"},"«Ja apuntat al mes» és el que consta del mes de la data que hi "+
+      "hagi a dalt, i el que escriguis s'hi suma: dues aportacions al mateix actiu el "+
+      "mateix mes hi consten totes dues. Als actius marcats com a retorn d'inversió "+
+      "—BEV i Wind— el que hi posis es resta de l'aportat, perquè mentre no en recuperis "+
+      "tot el que hi vas posar això no és guany, és recuperar; si algun dia hi tornes a "+
+      "posar diners, canvia-ho a la seva fitxa."),
   ),[
     ["Cancel·lar","btn",closeDialog],
     ["Desar la valoració","btn primary",()=>{
@@ -5635,8 +5677,11 @@ function valuationDialog(){
         const v=vals.get(a.id).llegir(), c=adds.get(a.id).llegir();
         // primer l'aportació: així el punt es desa amb l'aportat ja actualitzat
         if(c!=null&&c!==0){
-          S.data.contributions.push({date,assetId:a.id,amount:c});
-          a.contributed=Math.round(((a.contributed||0)+c)*100)/100; ap++;
+          // D'un actiu que torna diners, el que hi escrius és el que t'ha
+          // tornat: baixa l'aportat, hi posis el signe que hi posis.
+          const imp=a.retorn ? -Math.abs(c) : c;
+          S.data.contributions.push({date,assetId:a.id,amount:imp});
+          a.contributed=Math.round(((a.contributed||0)+imp)*100)/100; ap++;
         }
         if(v!=null){ setAssetValue(a,date,v); n++; }   // el total, en acabar
       }
@@ -5836,6 +5881,9 @@ function assetDialog(a){
       lbl("Cartera",  f.wallet=sel(a.wallet||"",[["","— cap —"],...wal.map(w=>[w,w])],v=>f.wallet.value=v)),
       lbl("Compta al rendiment", f.include=sel(a.include?"1":"0",
         [["1","Sí"],["0","No — il·líquid o sense cotització"]],v=>f.include.value=v)),
+      lbl("Els diners que hi entren", f.retorn=sel(a.retorn?"1":"0",
+        [["0","Són aportació — pugen l'aportat"],
+         ["1","Són retorn d'inversió — baixen l'aportat"]],v=>f.retorn.value=v)),
     ),
     a.ordres?el("p",{class:"note"},"L'aportat d'aquí surt de les ordres del bròker: "+
       a.ordres.n+(a.ordres.n===1?" ordre":" ordres")+" que sumen "+eur(a.ordres.net)+
@@ -5858,6 +5906,7 @@ function assetDialog(a){
       const ap=f.contributed.llegir();
       a.contributed=ap==null?0:ap;
       a.wallet=f.wallet.value||null; a.include=f.include.value==="1";
+      a.retorn=f.retorn.value==="1";
       const nou=f.value.llegir();
       if(nou!=null && f.vdate.value){   // amb l'aportat ja desat
         setAssetValue(a,f.vdate.value,nou);
