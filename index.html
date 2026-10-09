@@ -6709,10 +6709,20 @@ function calcTax(gain){
   return t;
 }
 /** Capital i cost d'adquisició reals, de la cartera. */
+/** El capital que compta per al FIRE.
+
+    Les inversions que només tornen diners i no cotitzen —BEV Hospitality, Wind
+    Renovables— en queden fora: no són diners que puguis anar afegint cada mes
+    ni retirar quan et convingui, i mentre no els recuperis no hi ha res que
+    rendeixi. El seu cost tampoc hi compta, i això importa tant com el valor:
+    si hi fos, la part de guany de la cartera sortiria més petita del que és i
+    els impostos de la retirada quedarien curts. */
 function fireCapital(){
-  const A=S.data.assets;
+  const fora=S.data.assets.filter(a=>a.retornDe&&!a.include);
+  const A=S.data.assets.filter(a=>!fora.includes(a));
   return { value:A.reduce((s,a)=>s+assetValue(a),0),
-           cost: A.reduce((s,a)=>s+(a.contributed||0),0) };
+           cost: A.reduce((s,a)=>s+(a.contributed||0),0),
+           fora:fora.map(a=>a.name) };
 }
 /** Mitjanes mensuals mesurades: el que de debò estalvies i inverteixes. */
 function fireMeasured(){
@@ -6795,7 +6805,7 @@ function fireModel(){
     mesos=Math.ceil(hi);
   } else if(cap.value>=goal) mesos=0;
 
-  return {goal,capital:cap.value,cost:cap.cost,monthly,rate,inflation,
+  return {goal,capital:cap.value,cost:cap.cost,foraFire:cap.fora,monthly,rate,inflation,
     coastYear,fase3Year,ageNow,ageFire,lifespan,income,fase2Annual,retRate,
     capitalAtCoast,capitalAtFire,capitalNeeded,gainFraction,grossAnnual,
     swr,annualWithdrawal,monthlyNetFire,monthlyNetToday,mesos,
@@ -6872,7 +6882,8 @@ function renderFire(root){
 
   posa(root,
     el("div",{class:"grid kpis",style:"margin-bottom:14px"},
-      kpi("Capital actual",eur0(M.capital),"la teva cartera, avui"),
+      kpi("Capital actual",eur0(M.capital),"la teva cartera, avui"+
+        (M.foraFire.length?" · sense "+M.foraFire.join(" i "):"")),
       kpi("Objectiu Coast FIRE",eur0(M.goal),"a assolir el "+M.coastYear),
       kpi("Assolit",pct(M.progress),eur0(Math.max(0,M.goal-M.capital))+" per arribar-hi",
         M.progress>=1?"pos":""),
