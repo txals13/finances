@@ -5924,6 +5924,11 @@ function recomputeTotal(date,silenci){
 }
 function assetDialog(a){
   const teniaRetorn=!!a.retornDe;
+  /* Amb el valor calculat dels retorns, l'aportat i el valor no s'escriuen
+     aquí: surten del total invertit i dels moviments. Deixar-hi els camps
+     oberts era pitjor que no tenir-los —els omplies, desaves i no passava
+     res—, així que es mostren en sec i es diu d'on surten. */
+  const calculat=!!restantRetorn(a,TODAY);
   const cls=[...new Set(S.data.assets.map(x=>x.class))].sort();
   const wal=[...new Set(S.data.assets.map(x=>x.wallet).filter(Boolean))].sort();
   const dVal=lastSnapshotDate(a)||TODAY;
@@ -5933,7 +5938,7 @@ function assetDialog(a){
   /* Si canvies el valor o l'aportat, això és una dada d'avui, no una correcció
      de la valoració antiga: la data salta a avui sola. Si la mous tu, mana la teva. */
   const avui=()=>{
-    if(dataTocada || f.vdate.value===TODAY) return;
+    if(!f.vdate || dataTocada || f.vdate.value===TODAY) return;
     f.vdate.value=TODAY;
     pista.textContent="data posada a avui";
     setTimeout(()=>{ if(pista.textContent==="data posada a avui") pista.textContent=""; },2500);
@@ -5948,9 +5953,13 @@ function assetDialog(a){
       lbl("Data d'inici", f.start=el("input",{type:"date",value:a.start||""})),
       // A la fitxa els imports van a l'esquerra, com la resta de camps del
       // formulari; a la taula de la valoració, a la dreta amb les xifres.
-      lbl("Aportat", f.contributed=ambAvui(campImport(a.contributed??null,{dreta:false}))),
-      lbl("Valor actual", f.value=ambAvui(campImport(assetValue(a)||null,{dreta:false}))),
-      lbl("…a data de", f.vdate=el("input",{type:"date",value:dVal,
+      lbl("Aportat", calculat
+        ? el("span",{class:"mut"},eur(a.contributed||0)+" · es calcula")
+        : (f.contributed=ambAvui(campImport(a.contributed??null,{dreta:false})))),
+      lbl("Valor actual", calculat
+        ? el("span",{class:"mut"},eur(assetValue(a))+" · es calcula")
+        : (f.value=ambAvui(campImport(assetValue(a)||null,{dreta:false})))),
+      calculat?null:lbl("…a data de", f.vdate=el("input",{type:"date",value:dVal,
         onchange:()=>{ dataTocada=true; pista.textContent=""; }})),
       lbl("Cartera",  f.wallet=sel(a.wallet||"",[["","— cap —"],...wal.map(w=>[w,w])],v=>f.wallet.value=v)),
       lbl("Compta al rendiment", f.include=sel(a.include?"1":"0",
@@ -5972,7 +5981,8 @@ function assetDialog(a){
         (a.retornDe.tag?(a.retornDe.cat?" amb ":"")+"«"+a.retornDe.tag+"»":"")+"), "+
         "o sigui que en queden "+eur(q)+". El valor i l'aportat són aquesta xifra, i per "+
         "això el balanç és zero: mentre no en tornis a treure més del que hi vas posar, "+
-        "recuperar no és guanyar. Les quotes del préstec no hi compten."); })():null,
+        "recuperar no és guanyar. Les quotes del préstec no hi compten. Per tornar a "+
+        "posar-hi el valor a mà, buida el «Total invertit»."); })():null,
     a.ordres?el("p",{class:"note"},"L'aportat d'aquí surt de les ordres del bròker: "+
       a.ordres.n+(a.ordres.n===1?" ordre":" ordres")+" que sumen "+eur(a.ordres.net)+
       ", comptades el "+dCa(a.ordres.date)+". ",
@@ -5982,7 +5992,7 @@ function assetDialog(a){
       dCa(a.fiscal.date)+": "+eur(a.fiscal.cost)+" de cost en "+a.fiscal.lots+" lots de "+
       a.fiscal.fons+(a.fiscal.fons===1?" fons":" fons")+", que aleshores valien "+
       eur(a.fiscal.valor)+"."):null,
-    el("p",{class:"note"},"El valor es desa com una valoració de la data que hi digui. "+
+    calculat?null:el("p",{class:"note"},"El valor es desa com una valoració de la data que hi digui. "+
       "Si en canvies el valor o l'aportat, la data es posa a avui sola —perquè el que "+
       "escrius és d'ara, no una correcció del mes passat—; si vols corregir una "+
       "valoració antiga, canvia-la tu i es quedarà on la deixis. ",pista),
@@ -5991,8 +6001,7 @@ function assetDialog(a){
     ["Desar","btn primary",()=>{
       a.name=f.name.value.trim(); a.class=f.class.value; a.entity=f.entity.value.trim();
       a.isin=f.isin.value.trim()||null; a.start=f.start.value||null;
-      const ap=f.contributed.llegir();
-      a.contributed=ap==null?0:ap;
+      if(f.contributed){ const ap=f.contributed.llegir(); a.contributed=ap==null?0:ap; }
       a.wallet=f.wallet.value||null; a.include=f.include.value==="1";
       a.retorn=f.retorn.value==="1";
       // Amb un total invertit i algun filtre, el valor passa a sortir dels
@@ -6001,8 +6010,8 @@ function assetDialog(a){
       a.retornDe=(base>0&&(f.rcat.value||f.rtag.value))
         ? {base:Math.round(base*100)/100,cat:f.rcat.value||"",tag:f.rtag.value||""} : null;
       const estrena=!teniaRetorn&&!!a.retornDe;
-      const nou=f.value.llegir();
-      if(nou!=null && f.vdate.value){   // amb l'aportat ja desat
+      const nou=f.value?f.value.llegir():null;
+      if(nou!=null && f.vdate && f.vdate.value){   // amb l'aportat ja desat
         setAssetValue(a,f.vdate.value,nou);
         ensureTotal(f.vdate.value);
       }
