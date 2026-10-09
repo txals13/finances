@@ -398,6 +398,7 @@ const monthsBetween=(a,b)=>{const o=[];let[y,m]=a.split("-").map(Number);const[Y
 
 let backupTimer=null;
 function markDirty(){
+  sincronitzaRetorns();
   S.dirty=true; $("#bSave").disabled=false; $("#bSave").textContent="● Desar"; setStatus();
   // Xarxa de seguretat: si es tanca el navegador amb feina sense desar, es recupera.
   clearTimeout(backupTimer);
@@ -501,7 +502,7 @@ async function loadFromHandle(h){
 }
 function loadData(obj){
   S.data=normalise(obj); S.dirty=false; $("#bSave").disabled=true;
-  netejaVista();
+  netejaVista(); sincronitzaRetorns();
   render(); setStatus();
   writeBackup(false);
 }
@@ -5354,6 +5355,7 @@ function exportaCartera(){
 /** Últim valor conegut d'un actiu: la valoració més recent, o el camp `last`
     per als actius sense sèrie mensual, que són els il·líquids. */
 function assetValue(a){
+  const r=restantRetorn(a,TODAY); if(r!=null) return r;
   let best=null;
   for(const s of S.data.snapshots)
     if(s.assetId===a.id && (!best||s.date>best.date)) best=s;
@@ -5608,6 +5610,7 @@ function valuationDialog(){
   const apuntsMes=(a,d)=>(S.data.contributions||[])
     .filter(x=>x.assetId===a.id && mesDe(x.date)===mesDe(d));
   const pintaMes=a=>{
+    if(!mesCel.has(a.id)||!adds.get(a.id).llegir) return;
     const d=fDate.value, l=apuntsMes(a,d);
     const ja=l.reduce((t,x)=>t+x.amount,0);
     const escrit=adds.get(a.id).llegir();
@@ -5624,7 +5627,7 @@ function valuationDialog(){
   const refresca=d=>{
     for(const a of A){
       const v=d ? assetValueAt(a,d) : assetValue(a);
-      vals.get(a.id).posa(v);
+      if(vals.get(a.id).posa) vals.get(a.id).posa(v);
       prevCel.get(a.id).textContent=v?eur(v):"—";
       pintaMes(a);
     }
@@ -5632,17 +5635,20 @@ function valuationDialog(){
   const fDate=el("input",{type:"date",value:dEnd,onchange:e=>refresca(e.target.value)});
   const rows=A.map(a=>{
     const prev=assetValueAt(a,dEnd);
-    const v=campImport(prev);
-    const c=campImport(null,{placeholder:a.retorn?"retorn —":"± —",signe:!a.retorn});
+    const auto=!!restantRetorn(a,dEnd);
+    const v=auto ? el("span",{class:"mut"},"es calcula dels retorns") : campImport(prev);
+    const c=auto ? el("span",{class:"mut"},"—")
+                 : campImport(null,{placeholder:a.retorn?"retorn —":"± —",signe:!a.retorn});
     vals.set(a.id,v); adds.set(a.id,c);
-    c.addEventListener("change",()=>pintaMes(a));
+    if(!auto) c.addEventListener("change",()=>pintaMes(a));
     const cel=el("td",{class:"r num mut"},lastSnapshotDate(a)?eur(prev):"—");
     prevCel.set(a.id,cel);
     const mes=el("td",{class:"r num"});
     mesCel.set(a.id,mes);
     return el("tr",{},
       el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity),
-        a.retorn?el("div",{class:"mut",style:"font-size:11px"},"retorn d'inversió"):null),
+        a.retorn?el("div",{class:"mut",style:"font-size:11px"},
+          auto?"el que queda per recuperar":"retorn d'inversió"):null),
       cel, el("td",{},v), mes, el("td",{},c));
   });
   for(const a of A) pintaMes(a);
@@ -5674,7 +5680,9 @@ function valuationDialog(){
       const date=fDate.value; if(!date) return;
       let n=0,ap=0;
       for(const a of A){
-        const v=vals.get(a.id).llegir(), c=adds.get(a.id).llegir();
+        const cv=vals.get(a.id), cc=adds.get(a.id);
+        if(!cv.llegir) continue;            // el seu valor surt dels moviments
+        const v=cv.llegir(), c=cc.llegir?cc.llegir():null;
         // primer l'aportació: així el punt es desa amb l'aportat ja actualitzat
         if(c!=null&&c!==0){
           // D'un actiu que torna diners, el que hi escrius és el que t'ha
@@ -5738,6 +5746,8 @@ function registreDesDe(a){
   return prim && prim<a.contribFrom ? prim : a.contribFrom;
 }
 function assetCostAt(a,date){
+  // Val el mateix que el valor: el que queda per recuperar.
+  const q=restantRetorn(a,date); if(q!=null) return q;
   let base=null;
   for(const s of S.data.snapshots)
     if(s.assetId===a.id && s.cost!=null && s.date<=date && (!base||s.date>base.date)) base=s;
@@ -5796,7 +5806,70 @@ function firstCostDate(){
   return null;
 }
 /** Valor d'un actiu tal com era en una data: l'última valoració que no la sobrepassa. */
+/* ---- Una inversió que només torna diners -------------------------------
+
+   Wind Project no cotitza: ningú no en dirà mai un preu. El que sí que se sap
+   és quant hi vas posar i quant n'ha tornat, i la diferència —el que et queda
+   per recuperar— és l'únic número honest que se'n pot ensenyar. S'escriu el
+   total invertit a la fitxa de l'actiu i es diu quins moviments són retorns
+   (una categoria i una etiqueta, «RETORN» amb «WIND PROJECT»): cada un va
+   baixant la xifra tot sol, sense haver-ho d'apuntar dos cops.
+
+   El valor i l'aportat són el mateix número, i per això el balanç és zero:
+   mentre no n'hagis tret més del que hi vas posar, recuperar no és guanyar.
+
+   El que NO hi entra són les amortitzacions del préstec. Pagar el préstec que
+   va finançar la inversió és servir un deute, no posar diners al projecte;
+   barrejar-ho faria que el valor pugés cada cop que pagues una quota. */
+function retornsFins(a,date){
+  const r=a.retornDe; if(!r) return 0;
+  let t=0;
+  for(const m of S.data.movements){
+    if(r.cat && m.category!==r.cat) continue;
+    if(r.tag && !(m.tags||[]).includes(r.tag)) continue;
+    if(date && m.date>date) continue;
+    t+=Math.abs(m.amount);
+  }
+  return Math.round(t*100)/100;
+}
+/** El que queda per recuperar en una data. null si l'actiu no va així. */
+function restantRetorn(a,date){
+  const r=a.retornDe; if(!r||!(r.base>0)) return null;
+  return Math.max(0,Math.round((r.base-retornsFins(a,date))*100)/100);
+}
+/** El valor que en diuen les valoracions desades, sense el càlcul dels
+    retorns: serveix per saber què constava abans d'engegar-lo. */
+function valorSnapshot(a,date){
+  let best=null;
+  for(const s of S.data.snapshots)
+    if(s.assetId===a.id && s.date<=date && (!best||s.date>best.date)) best=s;
+  return best?best.value:0;
+}
+/** Els totals de cartera ja apuntats porten aquest actiu a zero. Aquí se'ls hi
+    suma el que ara sabem que valia aquell dia, sense refer-los sencers: molts
+    venen escrits a mà del full i hi podia haver coses que no estan desglossades. */
+function sumaAlsTotals(a){
+  let n=0;
+  for(const t of S.data.portfolioTotals||[]){
+    const nou=restantRetorn(a,t.date);
+    if(nou==null) continue;
+    const dif=Math.round((nou-valorSnapshot(a,t.date))*100)/100;
+    if(!dif) continue;
+    t.total=Math.round((t.total+dif)*100)/100; n++;
+  }
+  return n;
+}
+/** Manté l'aportat al dia: el llegeixen moltes pantalles i ha de dir el mateix
+    que el valor. Es crida en carregar i cada cop que es toca res. */
+function sincronitzaRetorns(){
+  if(!S.data) return;
+  for(const a of S.data.assets){
+    const v=restantRetorn(a,TODAY);
+    if(v!=null){ a.contributed=v; a.last=v; }
+  }
+}
 function assetValueAt(a,date){
+  const r=restantRetorn(a,date); if(r!=null) return r;
   let best=null;
   for(const s of S.data.snapshots)
     if(s.assetId===a.id && s.date<=date && (!best||s.date>best.date)) best=s;
@@ -5850,6 +5923,7 @@ function recomputeTotal(date,silenci){
   }
 }
 function assetDialog(a){
+  const teniaRetorn=!!a.retornDe;
   const cls=[...new Set(S.data.assets.map(x=>x.class))].sort();
   const wal=[...new Set(S.data.assets.map(x=>x.wallet).filter(Boolean))].sort();
   const dVal=lastSnapshotDate(a)||TODAY;
@@ -5884,7 +5958,21 @@ function assetDialog(a){
       lbl("Els diners que hi entren", f.retorn=sel(a.retorn?"1":"0",
         [["0","Són aportació — pugen l'aportat"],
          ["1","Són retorn d'inversió — baixen l'aportat"]],v=>f.retorn.value=v)),
+      lbl("Total invertit", f.base=campImport((a.retornDe||{}).base??null,
+        {dreta:false,placeholder:"— no es calcula —"})),
+      lbl("Categoria del retorn", f.rcat=sel((a.retornDe||{}).cat||"",
+        [["","— cap —"],...totesCats().map(c=>[c,c])],v=>f.rcat.value=v)),
+      lbl("Etiqueta del retorn", f.rtag=sel((a.retornDe||{}).tag||"",
+        [["","— cap —"],...totesTags().map(t=>[t,t])],v=>f.rtag.value=v)),
     ),
+    a.retornDe?(()=>{ const t=retornsFins(a,TODAY), q=restantRetorn(a,TODAY);
+      return el("p",{class:"note"},"El valor d'aquest actiu es calcula: dels "+
+        eur(a.retornDe.base)+" que hi vas posar n'han tornat "+eur(t)+
+        (a.retornDe.cat?" («"+a.retornDe.cat+"»":" (")+
+        (a.retornDe.tag?(a.retornDe.cat?" amb ":"")+"«"+a.retornDe.tag+"»":"")+"), "+
+        "o sigui que en queden "+eur(q)+". El valor i l'aportat són aquesta xifra, i per "+
+        "això el balanç és zero: mentre no en tornis a treure més del que hi vas posar, "+
+        "recuperar no és guanyar. Les quotes del préstec no hi compten."); })():null,
     a.ordres?el("p",{class:"note"},"L'aportat d'aquí surt de les ordres del bròker: "+
       a.ordres.n+(a.ordres.n===1?" ordre":" ordres")+" que sumen "+eur(a.ordres.net)+
       ", comptades el "+dCa(a.ordres.date)+". ",
@@ -5907,12 +5995,37 @@ function assetDialog(a){
       a.contributed=ap==null?0:ap;
       a.wallet=f.wallet.value||null; a.include=f.include.value==="1";
       a.retorn=f.retorn.value==="1";
+      // Amb un total invertit i algun filtre, el valor passa a sortir dels
+      // moviments; sense, l'actiu torna a anar a mà com qualsevol altre.
+      const base=f.base.llegir();
+      a.retornDe=(base>0&&(f.rcat.value||f.rtag.value))
+        ? {base:Math.round(base*100)/100,cat:f.rcat.value||"",tag:f.rtag.value||""} : null;
+      const estrena=!teniaRetorn&&!!a.retornDe;
       const nou=f.value.llegir();
       if(nou!=null && f.vdate.value){   // amb l'aportat ja desat
         setAssetValue(a,f.vdate.value,nou);
         ensureTotal(f.vdate.value);
       }
-      markDirty(); closeDialog(); render();
+      markDirty();
+      /* Fins ara aquest actiu valia zero i els totals de cartera ja apuntats el
+         porten així. Refer-los és cosa seva, no meva: es pregunta. */
+      const quants=estrena ? (S.data.portfolioTotals||[])
+        .filter(t=>Math.abs((restantRetorn(a,t.date)||0)-valorSnapshot(a,t.date))>0.005).length : 0;
+      closeDialog(); render();
+      if(quants) dialog("I els totals que ja tens apuntats?",el("div",{},
+        el("p",{},"Hi ha "+quants+" valoracions de tota la cartera on "+a.name+
+          " hi consta amb el valor que tenia abans —normalment zero—, i el total "+
+          "d'aquells dies es va quedar curt."),
+        el("p",{class:"note"},"Si els poses al dia, a cada data s'hi suma el que ara "+
+          "sabem que valia aquell dia. No es refan sencers: la resta del total es "+
+          "queda tal com la tenies."),
+      ),[
+        ["Deixar-los com estan","btn",()=>{ closeDialog(); render(); }],
+        ["Posar-los al dia","btn primary",()=>{
+          const n=sumaAlsTotals(a); markDirty(); closeDialog(); render();
+          flash(n+(n===1?" total actualitzat":" totals actualitzats"));
+        }],
+      ]);
     }],
   ]);
 }
