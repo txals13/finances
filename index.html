@@ -569,7 +569,7 @@ function normalise(o){
   if(!o.profilesSeeded){ o.importProfiles.push(...SABADELL); o.profilesSeeded=true; }
   o.assets ??= []; o.snapshots ??= []; o.contributions ??= []; o.portfolioTotals ??= [];
   o.events ??= {};                  // etiqueta -> {from,to}: les dates escrites a mà
-  o.compte ??= {}; o.compte.fixes ??= 0;   // despeses fixes de principi de mes
+  o.compte ??= {}; o.compte.fixes ??= null;   // null: la xifra suggerida
   o.conjunts ??= [];                // grups de categories: {id,nom,cats,pesos}
   o.conjuntsTags ??= [];            // grups d'etiquetes: {id,nom,tags,pesos}
   o.aliasProd ??= {};               // nom del producte al broker -> actiu
@@ -3701,8 +3701,42 @@ function dataSaldo(){
     que venen just després. I, si saps el dia, també les d'aquest mes quan el
     saldo és d'abans d'aquell dia: del dia 1 al dia que te les passen, la VISA
     del mes ja és pagada però les fixes encara no, i sense el dia no es pot saber. */
+/** El que surt del compte cada mes sense passar per la targeta: rebuts,
+    transferències, efectiu… La mitjana dels últims mesos tancats, que és el que
+    es pot esperar del mes que ve.
+
+    En queden fora la targeta —la VISA ja té la seva línia al panell i sumar-la
+    aquí la comptaria dues vegades—, els traspassos i els moviments previstos.
+    Sis mesos: prou llarg per no dependre d'un mes rar i prou curt per
+    assemblar-se al mes vinent. També en surt la mediana, que avisa quan la
+    mitjana se l'ha menjat un mes extraordinari. */
+function fixesSuggerides(n=6){
+  if(!S.data) return null;
+  const T=transferCats(), per=new Map(), ara=TODAY.slice(0,7);
+  for(const m of S.data.movements){
+    if(m.planned||m.amount>=0||T.has(m.category)) continue;
+    if((m.account||"")==="targeta") continue;
+    const k=m.date.slice(0,7);
+    if(k>=ara) continue;                       // el mes en curs encara no compta
+    per.set(k,(per.get(k)||0)-m.amount);
+  }
+  const ks=[...per.keys()].sort().slice(-n);
+  if(!ks.length) return null;
+  const vals=ks.map(k=>per.get(k)), suma=vals.reduce((a,b)=>a+b,0);
+  const ord=[...vals].sort((a,b)=>a-b), h=ord.length>>1;
+  return {imp:Math.round(suma/vals.length*100)/100,
+    mediana:Math.round((ord.length%2?ord[h]:(ord[h-1]+ord[h])/2)*100)/100,
+    n:ks.length, de:ks[0], a:ks.at(-1)};
+}
+/** El que es farà servir: el que hi hagis escrit tu, o el suggerit. */
+function fixesImport(){
+  const C=S.data.compte;
+  if(C.fixes!=null && C.fixes!=="") return +C.fixes||0;
+  const s=fixesSuggerides();
+  return s?s.imp:0;
+}
 function fixesPendents(visa){
-  const C=S.data.compte, imp=+C.fixes||0, dia=+C.dia||null;
+  const C=S.data.compte, imp=fixesImport(), dia=+C.dia||null;
   if(!imp) return {imp,dia,tot:0,det:[]};
   const mV=visa.data.slice(0,7), quan=k=>dia?k+"-"+String(dia).padStart(2,"0"):null;
   const det=[], ant=addMonths(mV,-1), saldo=dataSaldo();
@@ -3754,10 +3788,26 @@ function panellCompte(){
         ocult ? el("span",{class:"num"},"−"+eur(fx.imp))
               : el("input",{type:"number",step:"10",min:"0",value:fx.imp||"",placeholder:"0",
                   style:"text-align:right;width:110px",
-                  title:"L'import de tot el que et passen els primers dies del mes",
-                  onchange:e=>{ S.data.compte.fixes=Math.max(0,+e.target.value||0);
+                  title:"El que comptes que et passarà pel compte el mes vinent. "+
+                    "Buida'l per tornar al suggerit.",
+                  onchange:e=>{ const v=e.target.value.trim();
+                    // Buit vol dir «fes servir el suggerit», no zero.
+                    S.data.compte.fixes = v==="" ? null : Math.max(0,+v||0);
                     markDirty(); render(); }}),
-        el("span",{},"les "+deMes(visa.data.slice(0,7))+", just després de la VISA · "+
+        el("span",{},(()=>{ const sg=fixesSuggerides(); if(!sg) return null;
+          const meu=S.data.compte.fixes!=null&&S.data.compte.fixes!=="";
+          return el("div",{class:"mut",style:"font-size:12px;margin-bottom:2px"},
+            "suggerit "+eur(sg.imp)+" · el que ha sortit del compte de mitjana els últims "+
+            sg.n+" mesos ("+mLabel(sg.de)+"–"+mLabel(sg.a)+"), sense la targeta",
+            Math.abs(sg.mediana-sg.imp)>sg.imp*0.25
+              ? el("span",{},", amb algun mes extraordinari pel mig: la mediana és "+
+                  eur(sg.mediana)) : null,
+            meu?el("button",{class:"btn ghost",style:"padding:1px 6px;margin-left:6px",
+              title:"Tornar al valor suggerit",
+              onclick:()=>{ S.data.compte.fixes=null; markDirty(); render(); }},
+              "fer servir el suggerit"):null);
+        })(),
+          "les "+deMes(visa.data.slice(0,7))+", just després de la VISA · "+
             "te les acaben de passar el dia ",
           ocult ? (fx.dia||"—")
                 : el("input",{type:"number",min:"1",max:"31",step:"1",value:fx.dia||"",
