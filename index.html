@@ -623,6 +623,12 @@ function normalise(o){
   const ambValor=new Set(o.snapshots.filter(x=>x.value>0.005).map(x=>x.assetId));
   for(const a of o.assets){
     a.include ??= true; a.contributed ??= 0;
+    /* Guany que ja venia fet de fora. Un traspàs d'una altra entitat arriba amb
+       el seu cost fiscal antic i el guany acumulat a dins: si l'aportat fos
+       només el cost fiscal, aquell guany —que no has fet tu aquí— sortiria com
+       a rendiment de la cartera el dia que hi entra. Aquí s'hi suma perquè el
+       benefici compti des del que valien els diners en arribar. */
+    a.guanyExtern ??= 0;
     a.retorn ??= (!a.include && !ambValor.has(a.id) && (a.contributed||0)>0);
   }
   o.fire = Object.assign({},FIRE_DEF,o.fire||{});
@@ -4703,13 +4709,14 @@ function blocCostFiscal(){
         (pend.length?" · "+pend.length+" línies d'extracte per classificar":""))),
     reg.length?el("div",{},
       el("div",{class:"tw"},el("table",{},
-        el("thead",{},el("tr",{},["Actiu","Fons","Lots","Cost fiscal","Valor dels informes",
-          "El teu aportat","Diferència","Últim informe"]
-          .map((h,i)=>el("th",{class:i&&i<7?"r":""},h)))),
+        el("thead",{},el("tr",{},["Actiu","Fons","Lots","Cost fiscal","+ guany de fora",
+          "Valor dels informes","El teu aportat","Diferència","Últim informe"]
+          .map((h,i)=>el("th",{class:i&&i<8?"r":""},h)))),
         el("tbody",{},[...perActiu].map(([id,l])=>{
           const a=A.find(x=>x.id===id);
           const cost=l.reduce((t,f)=>t+f.cost,0);
-          const dif=(Math.round((cost-(a?a.contributed||0:0))*100)||0)/100;
+          const gx=a?a.guanyExtern||0:0;
+          const dif=(Math.round((cost+gx-(a?a.contributed||0:0))*100)||0)/100;
           return el("tr",{},
             el("td",{},el("button",{class:"btn ghost",style:"padding:2px 6px",
               title:"Veure'n els fons",
@@ -4717,6 +4724,7 @@ function blocCostFiscal(){
             el("td",{class:"r num mut"},l.length),
             el("td",{class:"r num mut"},l.reduce((t,f)=>t+(f.lots||0),0)),
             el("td",{class:"r num"},eur(cost)),
+            el("td",{class:"r num mut"},gx?eur(gx):"—"),
             el("td",{class:"r num mut"},eur(l.reduce((t,f)=>t+(f.valor||0),0))),
             el("td",{class:"r num"},a?eur(a.contributed||0):"—"),
             el("td",{class:"r num "+(Math.abs(dif)<1?"mut":dif>0?"pos":"neg")},eur(dif)),
@@ -4760,6 +4768,11 @@ function blocCostFiscal(){
                 el("td",{class:"r num "+sgn(g)},pct(f.cost?g/f.cost:null)));
             })))));
       })(),
+      (S.data.assets||[]).some(a=>a.guanyExtern)?el("p",{class:"note"},
+        "«+ guany de fora» és el que ja estava guanyat quan els diners van entrar a la "+
+        "cartera: ve dels traspassos d'una altra entitat, que arriben amb el seu cost "+
+        "fiscal antic. Se suma a l'aportat perquè no surti com a rendiment teu, i es "+
+        "queda fora del cost fiscal, que és el que compta per a Hisenda."):null,
       el("p",{class:"note"},"Això és la foto d'avui i no es mou amb el període: els lots "+
         "dels informes porten la data fiscal, que no és quan hi va entrar el diner. "+
         "L'aportat d'un fons és la suma dels informes que n'has pujat. "+
@@ -5058,7 +5071,7 @@ function aplicaFiscal(rep,posar){
     const a=S.data.assets.find(x=>x.id===id); if(!a) continue;
     const l=reg.filter(f=>f.assetId===id);
     if(!l.length) continue;
-    a.contributed=Math.round(l.reduce((t,f)=>t+f.cost,0)*100)/100;
+    a.contributed=Math.round((l.reduce((t,f)=>t+f.cost,0)+(a.guanyExtern||0))*100)/100;
     // La valoració d'avui ha de portar l'aportat bo; les d'abans no es toquen.
     const sn=S.data.snapshots.find(x=>x.assetId===id&&x.date===TODAY);
     if(sn) sn.cost=a.contributed;
@@ -6220,6 +6233,8 @@ function assetDialog(a){
       lbl("Els diners que hi entren", f.retorn=sel(a.retorn?"1":"0",
         [["0","Són aportació — pugen l'aportat"],
          ["1","Són retorn d'inversió — baixen l'aportat"]],v=>f.retorn.value=v)),
+      lbl("Guany que venia de fora", f.gext=campImport(a.guanyExtern||null,
+        {dreta:false,placeholder:"0,00 €"})),
       lbl("Total invertit", f.base=campImport((a.retornDe||{}).base??null,
         {dreta:false,placeholder:"— no es calcula —"})),
       lbl("Categoria del retorn", f.rcat=sel((a.retornDe||{}).cat||"",
@@ -6251,6 +6266,11 @@ function assetDialog(a){
       ", comptades el "+dCa(a.ordres.date)+". ",
       el("button",{class:"btn ghost",style:"padding:2px 6px",
         onclick:()=>{ closeDialog(); dialogOrdresActiu(a.id); }},"Veure-les")):null,
+    a.guanyExtern?el("p",{class:"note"},"D'aquest actiu, "+eur(a.guanyExtern)+" són guany "+
+      "que ja venia fet quan els diners hi van entrar —un traspàs d'una altra entitat "+
+      "arriba amb el seu cost fiscal antic—, i per això se sumen a l'aportat: el "+
+      "benefici es compta des del que valien els diners en arribar, no des del cost "+
+      "fiscal. Al cost fiscal, per a Hisenda, no hi compten."):null,
     a.fiscal?el("p",{class:"note"},"L'aportat d'aquí ve de l'informe de plusvàlues del "+
       dCa(a.fiscal.date)+": "+eur(a.fiscal.cost)+" de cost en "+a.fiscal.lots+" lots de "+
       a.fiscal.fons+(a.fiscal.fons===1?" fons":" fons")+", que aleshores valien "+
@@ -6267,6 +6287,7 @@ function assetDialog(a){
       if(f.contributed){ const ap=f.contributed.llegir(); a.contributed=ap==null?0:ap; }
       a.wallet=f.wallet.value||null; a.include=f.include.value==="1";
       a.retorn=f.retorn.value==="1";
+      a.guanyExtern=Math.round((f.gext.llegir()||0)*100)/100;
       // Amb un total invertit i algun filtre, el valor passa a sortir dels
       // moviments; sense, l'actiu torna a anar a mà com qualsevol altre.
       const base=f.base.llegir();
@@ -6951,7 +6972,9 @@ function fireCapital(){
   const fora=S.data.assets.filter(a=>a.retornDe&&!a.include);
   const A=S.data.assets.filter(a=>!fora.includes(a));
   return { value:A.reduce((s,a)=>s+assetValue(a),0),
-           cost: A.reduce((s,a)=>s+(a.contributed||0),0),
+           // El que tributa es mesura contra el cost fiscal, i el guany que
+           // venia fet de fora també tributarà el dia que el realitzis.
+           cost: A.reduce((s,a)=>s+(a.contributed||0)-(a.guanyExtern||0),0),
            fora:fora.map(a=>a.name) };
 }
 /** Mitjanes mensuals mesurades: el que de debò estalvies i inverteixes. */
