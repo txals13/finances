@@ -6705,8 +6705,13 @@ function blocDespesa(){
       linesChart(llista.map(m=>mLabel(m)),series,{h:230}),
       el("div",{class:"legend"},series.map(q=>el("span",{},
         el("i",{style:"background:"+q.color}),
-        (()=>{ const t=q.values.filter(v=>v!=null).reduce((a,b)=>a+b,0);
-          return q.label+" · "+eur0(t)+quota(t); })()))));
+        (()=>{ const v=q.values.filter(x=>x!=null);
+          const t=v.reduce((a,b)=>a+b,0);
+          /* La mitjana es reparteix entre els mesos en què allò existia, no
+             entre tots els del període: una categoria que va néixer al juny no
+             ha de sortir barata perquè abans no hi era. */
+          const mitj=v.length?t/v.length:0;
+          return q.label+" · "+eur0(t)+" · "+eur0(mitj)+"/mes"+quota(t); })()))));
   }
   return el("div",{class:"card"},
     el("div",{class:"bar",style:"margin:0 0 8px"},
@@ -6716,13 +6721,16 @@ function blocDespesa(){
     xips, cos,
     el("p",{class:"note"},(mode==="cat"
       ? "Despesa de cada mes, dins del període triat. Els traspassos no hi compten. "+
-        "A la llegenda, el total del període i quina part és de tota la despesa."
+        "A la llegenda, el total del període, la mitjana mensual i quina part és de "+
+        "tota la despesa."
       : "Només hi surt el que has etiquetat. Cada línia viu entre el primer i "+
         "l'últim mes amb despesa d'aquell esdeveniment. A la llegenda, el total "+
-        "del període i quina part és de tota la despesa.")+
+        "del període, la mitjana mensual i quina part és de tota la despesa.")+
+      " La mitjana mensual es reparteix entre els mesos en què allò ja existia, "+
+      "no entre tots els del període."+
       " El % es compta sobre tota la despesa del període ("+eur(despPer)+")."+
       (S.desp.sumar&&tri.length>1?" Amb «Sumar-les», els que triïs fan una sola "+
-        "línia amb el total; a la llegenda, la suma del període.":"")+
+        "línia amb el total; a la llegenda, la suma del període i la seva mitjana.":"")+
       (S.desp.total?" «Totes les despeses» compta tot el que has gastat cada mes, "+
         "també el de les categories que ara no surtin dibuixades.":"")));
 }
