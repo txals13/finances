@@ -4634,29 +4634,49 @@ function mouAport(c,id){
 function grafiqueOrdres(){
   const ord=(S.data.ordres||[]).filter(o=>o.data).sort((x,y)=>x.data<y.data?-1:1);
   if(ord.length<2) return null;
-  const mes=d=>d.slice(0,7);
-  const llista=[]; let m=mes(ord[0].data); const fi=mes(TODAY);
-  while(m<=fi && llista.length<120){ llista.push(m); m=addMonths(m,1); }
-  const ids=[...new Set(ord.map(o=>o.assetId))];
+  const mes=d=>String(d).slice(0,7);
+  // El període mana, com a la resta de la pestanya. El que hi havia posat abans
+  // de començar no es perd: la línia arrenca amb aquell acumulat, que si no,
+  // mirant el 2026 semblaria que vas començar de zero el gener.
+  const [pa,pb]=periodRange();
+  const m0=mes(pa)>mes(ord[0].data)?mes(pa):mes(ord[0].data);
+  const m1=mes(pb)<mes(TODAY)?mes(pb):mes(TODAY);
+  if(m1<m0) return null;
+  const llista=[]; let m=m0;
+  while(m<=m1 && llista.length<240){ llista.push(m); m=addMonths(m,1); }
+  if(!llista.length) return null;
+  const dins=ord.filter(o=>mes(o.data)>=m0&&mes(o.data)<=m1);
+  const ids=[...new Set(ord.map(o=>o.assetId))]
+    .filter(id=>ord.some(o=>o.assetId===id&&mes(o.data)<=m1));
+  if(!ids.length) return null;
+  const signe=o=>o.op==="venda"?-o.net:o.net;
   const series=ids.map((id,i)=>{
     const l=ord.filter(o=>o.assetId===id);
-    let t=0; const per=new Map();
-    for(const o of l){ t+=o.op==="venda"?-o.net:o.net; per.set(mes(o.data),Math.round(t*100)/100); }
-    let darrer=0;
+    let t=l.filter(o=>mes(o.data)<m0).reduce((x,o)=>x+signe(o),0);   // el que ja hi havia
+    const per=new Map();
+    for(const o of l.filter(o=>mes(o.data)>=m0)){
+      t+=signe(o); per.set(mes(o.data),Math.round(t*100)/100);
+    }
+    let darrer=Math.round(l.filter(o=>mes(o.data)<m0).reduce((x,o)=>x+signe(o),0)*100)/100;
+    const neix=mes(l[0].data);
     const a=S.data.assets.find(x=>x.id===id);
     return {label:a?a.name:"—", color:PALETA[i%PALETA.length],
       values:llista.map(k=>{ if(per.has(k)) darrer=per.get(k);
-        return k<mes(l[0].data) ? null : darrer; })};
+        return k<neix ? null : darrer; })};
   });
+  const fora=ord.length-dins.length;
   return el("div",{class:"card"},
     el("h2",{},"El que has anat posant, segons les ordres"),
     linesChart(llista.map(k=>mLabel(k)),series,{h:200}),
     el("div",{class:"legend"},series.map(q=>el("span",{},
       el("i",{style:"background:"+q.color}),
       q.label+" · "+eur0(q.values.filter(v=>v!=null).at(-1)||0)))),
-    el("p",{class:"note"},"L'import de cada ordre amb la seva data d'execució, acumulat. "+
-      "Les vendes resten. Només hi surten els actius que tenen ordres registrades: "+
-      "els fons no en tenen, que les seves compres van per l'informe de plusvàlues."));
+    el("p",{class:"note"},"L'import de cada ordre amb la seva data d'execució, acumulat; "+
+      "les vendes resten. Dins del període triat hi ha "+dins.length+
+      (dins.length===1?" ordre":" ordres")+
+      (fora?", i la línia arrenca amb el que ja hi havia posat abans":"")+
+      ". Només hi surten els actius amb ordres registrades: els fons no en tenen, "+
+      "que les seves compres van per l'informe de plusvàlues."));
 }
 /** El cost fiscal, que és d'on surt l'aportat dels fons.
 
@@ -4731,7 +4751,9 @@ function blocCostFiscal(){
                 el("td",{class:"r num "+sgn(g)},pct(f.cost?g/f.cost:null)));
             })))));
       })(),
-      el("p",{class:"note"},"L'aportat d'un fons és la suma dels informes que n'has pujat. "+
+      el("p",{class:"note"},"Això és la foto d'avui i no es mou amb el període: els lots "+
+        "dels informes porten la data fiscal, que no és quan hi va entrar el diner. "+
+        "L'aportat d'un fons és la suma dels informes que n'has pujat. "+
         "Tornar a pujar-ne un substitueix el seu i deixa els altres on són, així que els "+
         "pots anar actualitzant d'un en un. Una diferència vol dir que l'aportat s'ha "+
         "tocat des de l'últim informe.")):null,
