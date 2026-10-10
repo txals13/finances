@@ -4725,8 +4725,17 @@ function blocCostFiscal(){
       (()=>{ const l=reg.slice().sort((x,y)=>y.cost-x.cost);
         if(l.length<2) return null;
         const nom=f=>titolFons(f.isin,f.titol)||f.isin||f.nom;
+        /* Les barres van per actiu, no per fons: Cartera Metal és una barra amb
+           els seus set fons dins, que és com te la mires a la cartera. El
+           desglossament per fons el tens a la taula de sota. */
+        const barres=[...perActiu].map(([id,fs])=>{
+          const a=A.find(x=>x.id===id);
+          return {label:(a?a.name:"—").slice(0,16),
+            cost:fs.reduce((t,f)=>t+f.cost,0),
+            valor:fs.reduce((t,f)=>t+(f.valor||0),0)};
+        }).sort((x,y)=>y.cost-x.cost);
         return el("div",{style:"margin-top:12px"},
-          barChart(l.map(f=>({...f,label:nom(f).slice(0,16)})),
+          barChart(barres,
             [{label:"Cost fiscal",color:"var(--inv)",get:f=>f.cost},
              {label:"Valor de l'informe",color:"var(--pos)",get:f=>f.valor||0}],
             {h:210}),
@@ -4849,29 +4858,44 @@ async function llegeixFiscal(file){
 }
 /** El diàleg: deixa-hi els informes de tots els fons que vulguis. */
 function dialogFiscal(){
+  const MENA=/\.(csv|xlsx?)$/i;
   const inp=el("input",{type:"file",accept:".csv,.xlsx,.xls",multiple:true,style:"display:none"});
+  // Triar la carpeta i no haver-hi d'entrar: el navegador en treu tot el que hi
+  // ha a dins, subcarpetes incloses.
+  const dir=el("input",{type:"file",webkitdirectory:true,multiple:true,style:"display:none"});
   const zona=el("div",{class:"drop"},
-    "Arrossega-hi els informes «Plusvalías y minusvalías» dels teus fons (.csv). "+
-    "D'una cartera gestionada, posa-hi els de tots els fons que la componen: se sumen.",
+    "Arrossega-hi els informes «Plusvalías y minusvalías» dels teus fons, o la "+
+    "carpeta que els conté: si dins hi tens una subcarpeta per fons, les obre totes.",
     el("div",{style:"margin-top:12px"},
-      el("button",{class:"btn",onclick:()=>inp.click()},"…o tria'ls")));
+      el("button",{class:"btn",style:"margin-right:8px",onclick:()=>dir.click()},
+        "Triar una carpeta"),
+      el("button",{class:"btn",onclick:()=>inp.click()},"…o fitxers solts")));
   const estat=el("div",{class:"note",style:"margin-top:12px"});
   const processa=async llista=>{
     estat.textContent="Llegint…";
-    const rep=[],mals=[];
+    const rep=[],mals=[]; let gens=0;
     for(const f of llista){
       try{ rep.push(await llegeixFiscal(f)); }
-      catch(e){ mals.push(f.name+": "+e.message); }
+      // D'una carpeta en surt de tot: el que no és un informe no és un error
+      // que calgui ensenyar fitxer a fitxer, només una cosa que no hi anava.
+      catch(e){ if(llista.length>3) gens++; else mals.push(f.name+": "+e.message); }
     }
+    if(gens) mals.push(gens+(gens===1?" fitxer que no és un informe":
+      " fitxers que no són informes")+", ignorats");
     if(!rep.length){ estat.textContent=mals.join(" · ")||"Cap fitxer llegit."; return; }
     closeDialog(); previewFiscal(rep,mals);
   };
-  inp.onchange=()=>{ if(inp.files.length) processa([...inp.files]); };
+  const dels=l=>{ const f=filtraFitxers(l,MENA);
+    if(!f.length){ estat.textContent="Aquí dins no hi ha cap .csv ni cap .xlsx."; return; }
+    processa(f); };
+  inp.onchange=()=>{ if(inp.files.length) dels(inp.files); };
+  dir.onchange=()=>{ if(dir.files.length) dels(dir.files); };
   zona.addEventListener("dragover",e=>{e.preventDefault();zona.classList.add("over");});
   zona.addEventListener("dragleave",()=>zona.classList.remove("over"));
-  zona.addEventListener("drop",e=>{e.preventDefault();zona.classList.remove("over");
-    if(e.dataTransfer.files.length) processa([...e.dataTransfer.files]);});
-  dialog("Importar el cost fiscal",el("div",{},zona,inp,estat,
+  zona.addEventListener("drop",async e=>{e.preventDefault();zona.classList.remove("over");
+    estat.textContent="Llegint la carpeta…";
+    dels(await fitxersArrossegats(e.dataTransfer));});
+  dialog("Importar el cost fiscal",el("div",{},zona,inp,dir,estat,
     el("p",{class:"note"},"D'aquí en surt l'aportat de cada actiu: la suma del que et "+
       "van costar els lots que encara tens. Com que el cost viatja amb els traspassos, "+
       "els diners que han anat saltant de fons en fons no es compten dues vegades. Les "+
@@ -4879,6 +4903,33 @@ function dialogFiscal(){
       "només la xifra de l'aportat, i la decideixes actiu per actiu.")),
     [["Cancel·lar","btn",closeDialog]]);
 }
+/** Els fitxers que porta un «drop», entrant a les carpetes si n'hi ha.
+
+    Arrossegar-hi una carpeta donava una llista buida: el navegador no la
+    desplega sol, l'has de recórrer tu. Entra fins al fons, que és el que
+    permet deixar-hi la carpeta on tens una subcarpeta per fons amb l'últim
+    informe de cada un a dins. */
+async function fitxersArrossegats(dt){
+  const ents=[...(dt.items||[])]
+    .map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
+  if(!ents.length) return [...dt.files];
+  const out=[];
+  const llegeix=e=>new Promise(res=>{
+    if(e.isFile) e.file(f=>{ out.push(f); res(); },()=>res());
+    else if(e.isDirectory){
+      const r=e.createReader(), tot=[];
+      const seg=()=>r.readEntries(l=>{
+        if(!l.length){ Promise.all(tot.map(llegeix)).then(res); return; }
+        tot.push(...l); seg();
+      },()=>res());
+      seg();
+    } else res();
+  });
+  await Promise.all(ents.map(llegeix));
+  return out;
+}
+/** D'una carpeta en surt de tot: només els que tenen pinta del que busques. */
+const filtraFitxers=(l,re)=>[...l].filter(f=>re.test(f.name)&&!/^[._]/.test(f.name));
 /** El nom d'un fons. L'informe de plusvàlues no en porta cap —només la taula de
     lots—, així que es mira si l'ISIN ja és conegut d'algun altre lloc: d'un
     actiu que el porti, d'una ordre del bròker o del que hi vas escriure tu.
@@ -5089,13 +5140,17 @@ function ordresDeText(txt){
 /** El diàleg: el text enganxat, o els .txt que en tinguis desats. */
 function dialogOrdres(){
   const inp=el("input",{type:"file",accept:".txt,.csv",multiple:true,style:"display:none"});
+  const dir=el("input",{type:"file",webkitdirectory:true,multiple:true,style:"display:none"});
   const area=el("textarea",{rows:6,style:"width:100%;margin-top:10px",
     placeholder:"Enganxa aquí el detall de l'ordre, tal com surt a MyInvestor. "+
       "En pots posar quantes vulguis, una darrere l'altra."});
   const zona=el("div",{class:"drop"},
-    "Arrossega-hi els fitxers de text amb el detall de les ordres, o enganxa'l aquí sota.",
+    "Arrossega-hi els fitxers de text amb el detall de les ordres —o la carpeta que "+
+    "els conté—, o enganxa'l aquí sota.",
     el("div",{style:"margin-top:12px"},
-      el("button",{class:"btn",onclick:()=>inp.click()},"…o tria'ls")));
+      el("button",{class:"btn",style:"margin-right:8px",onclick:()=>dir.click()},
+        "Triar una carpeta"),
+      el("button",{class:"btn",onclick:()=>inp.click()},"…o fitxers solts")));
   const estat=el("div",{class:"note",style:"margin-top:8px"});
   const mira=(l,mals)=>{
     const o=l.filter(x=>x.net!=null&&x.data);
@@ -5113,12 +5168,17 @@ function dialogOrdres(){
     }
     mira(l,mals);
   };
-  inp.onchange=()=>{ if(inp.files.length) deFitxers([...inp.files]); };
+  const dels=l=>{ const f=filtraFitxers(l,/\.(txt|csv)$/i);
+    if(!f.length){ estat.textContent="Aquí dins no hi ha cap .txt ni cap .csv."; return; }
+    deFitxers(f); };
+  inp.onchange=()=>{ if(inp.files.length) dels(inp.files); };
+  dir.onchange=()=>{ if(dir.files.length) dels(dir.files); };
   zona.addEventListener("dragover",e=>{e.preventDefault();zona.classList.add("over");});
   zona.addEventListener("dragleave",()=>zona.classList.remove("over"));
-  zona.addEventListener("drop",e=>{e.preventDefault();zona.classList.remove("over");
-    if(e.dataTransfer.files.length) deFitxers([...e.dataTransfer.files]);});
-  dialog("Importar ordres",el("div",{},zona,inp,area,estat,
+  zona.addEventListener("drop",async e=>{e.preventDefault();zona.classList.remove("over");
+    estat.textContent="Llegint la carpeta…";
+    dels(await fitxersArrossegats(e.dataTransfer));});
+  dialog("Importar ordres",el("div",{},zona,inp,dir,area,estat,
     el("p",{class:"note"},"D'aquí en surt l'aportat dels actius que no són fons —els "+
       "ETP i l'ETC—, que no tenen informe de plusvàlues. De cada ordre s'agafa l'import "+
       "net, comissió inclosa, i la data d'execució. Les vendes resten. Tornar a "+
