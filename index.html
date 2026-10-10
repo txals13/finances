@@ -4704,11 +4704,11 @@ function blocCostFiscal(){
         })))),
       (()=>{ const l=reg.slice().sort((x,y)=>y.cost-x.cost);
         if(l.length<2) return null;
-        const nom=f=>{ const a=A.find(x=>x.id===f.assetId);
-          return (f.isin||f.nom).slice(0,14)+(a?" · "+a.name.slice(0,12):""); };
+        const nom=f=>titolFons(f.isin,f.titol)||f.isin||f.nom;
         return el("div",{style:"margin-top:12px"},
-          barChart(l,[{label:"Cost fiscal",color:"var(--inv)",get:f=>f.cost},
-                      {label:"Valor de l'informe",color:"var(--pos)",get:f=>f.valor||0}],
+          barChart(l.map(f=>({...f,label:nom(f).slice(0,16)})),
+            [{label:"Cost fiscal",color:"var(--inv)",get:f=>f.cost},
+             {label:"Valor de l'informe",color:"var(--pos)",get:f=>f.valor||0}],
             {h:210}),
           el("div",{class:"legend"},
             el("span",{},el("i",{style:"background:var(--inv)"}),"Cost fiscal · "+
@@ -4719,8 +4719,12 @@ function blocCostFiscal(){
             el("thead",{},el("tr",{},["Fons","Cost","Valor","Guany","%"]
               .map((h,i)=>el("th",{class:i?"r":""},h)))),
             el("tbody",{},l.map(f=>{ const g=Math.round(((f.valor||0)-f.cost)*100)/100;
+              const a=A.find(x=>x.id===f.assetId);
               return el("tr",{},
-                el("td",{class:"wrap mut"},nom(f)),
+                el("td",{class:"wrap"},nom(f),
+                  el("div",{class:"mut",style:"font-size:11px"},
+                    // Si el fons es diu com l'actiu, no cal dir-ho dos cops.
+                    [f.isin,(a&&a.name!==nom(f))?a.name:null].filter(Boolean).join(" · "))),
                 el("td",{class:"r num mut"},eur(f.cost)),
                 el("td",{class:"r num mut"},eur(f.valor||0)),
                 el("td",{class:"r num "+sgn(g)},eur(g)),
@@ -4853,6 +4857,20 @@ function dialogFiscal(){
       "només la xifra de l'aportat, i la decideixes actiu per actiu.")),
     [["Cancel·lar","btn",closeDialog]]);
 }
+/** El nom d'un fons. L'informe de plusvàlues no en porta cap —només la taula de
+    lots—, així que es mira si l'ISIN ja és conegut d'algun altre lloc: d'un
+    actiu que el porti, d'una ordre del bròker o del que hi vas escriure tu.
+    Si no, queda l'ISIN, que almenys no s'inventa res. */
+function titolFons(isin,escrit){
+  if(escrit&&escrit.trim()) return escrit.trim();
+  if(!isin) return "";
+  const a=S.data.assets.find(x=>x.isin&&x.isin.toUpperCase().includes(isin.toUpperCase()));
+  if(a) return a.name;
+  const o=(S.data.ordres||[]).find(x=>x.isin&&x.isin.toUpperCase()===isin.toUpperCase());
+  if(o&&o.valor) return o.valor;
+  const f=(S.data.fiscalFons||[]).find(x=>x.isin===isin&&x.titol);
+  return f?f.titol:"";
+}
 /** Quin actiu és cada fons: per ISIN, pel que vas dir l'últim cop, o ho dius ara. */
 function actiuDeIsin(isin){
   if(!isin) return "";
@@ -4868,6 +4886,7 @@ function previewFiscal(rep,mals){
     const ja=reg.find(f=>f.isin&&r.isin&&f.isin===r.isin);
     r.assetId=actiuDeIsin(r.isin)||(ja?ja.assetId:"");
     r.ja=ja||null;                       // d'aquest fons ja n'hi havia un informe
+    r.titol=titolFons(r.isin,ja?ja.titol:"");
   }
   const posar=new Set(), vistos=new Set();   // actius que s'aplicaran
   const cos=el("div",{}), dalt=el("div",{style:"margin-bottom:10px"}), baix=el("div",{});
@@ -4922,10 +4941,12 @@ function previewFiscal(rep,mals){
         })))),
       mals&&mals.length?el("div",{class:"neg",style:"font-size:12px"},mals.join(" · ")):null);
     posa(baix,el("div",{class:"tw"},el("table",{},
-      el("thead",{},el("tr",{},["Fitxer","ISIN","Lots","Cost","Valor","De quin actiu és",""]
+      el("thead",{},el("tr",{},["Fons","ISIN","Lots","Cost","Valor","De quin actiu és",""]
         .map((h,i)=>el("th",{class:i>1&&i<5?"r":""},h)))),
       el("tbody",{},rep.map(r=>el("tr",{},
-        el("td",{class:"wrap mut"},r.nom.replace(/\.csv$/i,"")),
+        el("td",{},el("input",{type:"text",value:r.titol||"",placeholder:"nom del fons",
+          style:"width:100%",onchange:e=>{ r.titol=e.target.value; pinta(); }}),
+          el("div",{class:"mut",style:"font-size:11px"},r.nom.replace(/\.csv$/i,""))),
         el("td",{class:"mut"},r.isin||"—"),
         el("td",{class:"r num mut"},r.lots.length),
         el("td",{class:"r num"},eur(r.cost)),
@@ -4951,7 +4972,8 @@ function aplicaFiscal(rep,posar){
   let n=0;
   for(const r of rep){
     if(!r.assetId||!posar.has(r.assetId)) continue;
-    const fila={isin:r.isin||"",nom:r.nom,assetId:r.assetId,data:TODAY,
+    const fila={isin:r.isin||"",nom:r.nom,titol:(r.titol||"").trim(),
+      assetId:r.assetId,data:TODAY,
       cost:Math.round(r.cost*100)/100, valor:Math.round(r.valor*100)/100,
       lots:r.lots.length};
     const i=reg.findIndex(f=>(f.isin&&r.isin&&f.isin===r.isin)||(!f.isin&&!r.isin&&f.nom===r.nom));
@@ -4990,7 +5012,10 @@ function dialogFiscalActiu(id){
         el("thead",{},el("tr",{},["Fons","Lots","Cost fiscal","Valor","Pujat el",""]
           .map((h,i)=>el("th",{class:i&&i<4?"r":""},h)))),
         el("tbody",{},l.map(f=>el("tr",{},
-          el("td",{class:"wrap"},f.isin||f.nom),
+          el("td",{},el("input",{type:"text",value:titolFons(f.isin,f.titol),
+            placeholder:"nom del fons",style:"width:100%",
+            onchange:e=>{ f.titol=e.target.value.trim(); markDirty(); pinta(); }}),
+            el("div",{class:"mut",style:"font-size:11px"},f.isin||f.nom)),
           el("td",{class:"r num mut"},f.lots??"—"),
           el("td",{class:"r num"},eur(f.cost)),
           el("td",{class:"r num mut"},eur(f.valor||0)),
