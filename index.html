@@ -303,10 +303,10 @@ const MASCARA = "•••";
    es trepitjarien la vista l'un a l'altre. */
 const UI_KEY="finances:vista";
 const UI_PARTS=["tab","mov","period","real","cartera","rend","desp","ev","tcat"];
-/* El que no es guarda: què tenies obert i a mig escriure quan vas tancar —els
-   desplegables i les seves cerques— i fins on havies estirat les llistes. Són
-   el lloc on eres, no com vols mirar-t'ho. */
-const UI_FORA=new Set(["catOpen","catQ","tagOpen","tagQ","limit"]);
+/* El que no es guarda: si un desplegable es va quedar obert i fins on havies
+   estirat les llistes. Això és el lloc on eres, no com vols mirar-t'ho. El que
+   sí que es guarda és tot el que tries, cerques dels desplegables incloses. */
+const UI_FORA=new Set(["catOpen","tagOpen","limit"]);
 function desaVista(){
   try{
     const o={};
@@ -353,8 +353,15 @@ function netejaVista(){
   S.ev.cats=nom(S.ev.cats).filter(c=>cats.has(c));
   S.ev.tags=nom(S.ev.tags).filter(t=>tags.has(t));
   S.tcat.cats=nom(S.tcat.cats).filter(c=>cats.has(c));
-  if(S.desp.cat&&!cats.has(S.desp.cat)) S.desp.cat=null;
-  if(S.desp.tag&&!tags.has(S.desp.tag)) S.desp.tag=null;
+  /* La tria de «Com evoluciona la despesa» és una llista de categories o
+     d'etiquetes, no un sol valor. Tractant-la com un valor, `cats.has(llista)`
+     era sempre fals i la tria s'esborrava en obrir l'app: cada cop tornaves a
+     trobar-hi les cinc grosses. Un null vol dir «encara no has triat res», i
+     s'ha de respectar perquè és el que dispara aquell valor per defecte. */
+  if(Array.isArray(S.desp.cat)) S.desp.cat=S.desp.cat.filter(c=>cats.has(c));
+  else if(S.desp.cat!=null) S.desp.cat=null;
+  if(Array.isArray(S.desp.tag)) S.desp.tag=S.desp.tag.filter(t=>tags.has(t));
+  else if(S.desp.tag!=null) S.desp.tag=null;
 }
 const eurRaw  = v => (v==null||isNaN(v)) ? "—" : NF.format(v)+" €";
 const eur0Raw = v => (v==null||isNaN(v)) ? "—" : NF0.format(v)+" €";
