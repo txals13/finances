@@ -4624,6 +4624,40 @@ function mouAport(c,id){
   c.assetId=id;
   markDirty();
 }
+/* Dues gràfiques, una per cada font, perquè diuen coses diferents i barrejar-les
+   enganyaria. Les ordres porten la data de debò de cada compra: es poden anar
+   acumulant dia a dia i surt el que has anat posant. Els lots dels informes
+   porten la data fiscal, que NO és quan hi va entrar el diner —els de Cartera
+   Metal s'acaben el desembre del 2025 i els diners hi van arribar el març del
+   2026—, així que d'aquests se'n fa la foto d'avui: cost contra valor, fons per
+   fons, que és el que de debò hi diuen. */
+function grafiqueOrdres(){
+  const ord=(S.data.ordres||[]).filter(o=>o.data).sort((x,y)=>x.data<y.data?-1:1);
+  if(ord.length<2) return null;
+  const mes=d=>d.slice(0,7);
+  const llista=[]; let m=mes(ord[0].data); const fi=mes(TODAY);
+  while(m<=fi && llista.length<120){ llista.push(m); m=addMonths(m,1); }
+  const ids=[...new Set(ord.map(o=>o.assetId))];
+  const series=ids.map((id,i)=>{
+    const l=ord.filter(o=>o.assetId===id);
+    let t=0; const per=new Map();
+    for(const o of l){ t+=o.op==="venda"?-o.net:o.net; per.set(mes(o.data),Math.round(t*100)/100); }
+    let darrer=0;
+    const a=S.data.assets.find(x=>x.id===id);
+    return {label:a?a.name:"—", color:PALETA[i%PALETA.length],
+      values:llista.map(k=>{ if(per.has(k)) darrer=per.get(k);
+        return k<mes(l[0].data) ? null : darrer; })};
+  });
+  return el("div",{class:"card"},
+    el("h2",{},"El que has anat posant, segons les ordres"),
+    linesChart(llista.map(k=>mLabel(k)),series,{h:200}),
+    el("div",{class:"legend"},series.map(q=>el("span",{},
+      el("i",{style:"background:"+q.color}),
+      q.label+" · "+eur0(q.values.filter(v=>v!=null).at(-1)||0)))),
+    el("p",{class:"note"},"L'import de cada ordre amb la seva data d'execució, acumulat. "+
+      "Les vendes resten. Només hi surten els actius que tenen ordres registrades: "+
+      "els fons no en tenen, que les seves compres van per l'informe de plusvàlues."));
+}
 /** El cost fiscal, que és d'on surt l'aportat dels fons.
 
     Un informe per fons: cada un es desa sota el seu ISIN i només substitueix el
@@ -4668,6 +4702,31 @@ function blocCostFiscal(){
             el("td",{class:"r num "+(Math.abs(dif)<1?"mut":dif>0?"pos":"neg")},eur(dif)),
             el("td",{class:"mut"},dCa(l.map(f=>f.data).sort().at(-1))));
         })))),
+      (()=>{ const l=reg.slice().sort((x,y)=>y.cost-x.cost);
+        if(l.length<2) return null;
+        const nom=f=>{ const a=A.find(x=>x.id===f.assetId);
+          return (f.isin||f.nom).slice(0,14)+(a?" · "+a.name.slice(0,12):""); };
+        return el("div",{style:"margin-top:12px"},
+          barChart(l,[{label:"Cost fiscal",color:"var(--inv)",get:f=>f.cost},
+                      {label:"Valor de l'informe",color:"var(--pos)",get:f=>f.valor||0}],
+            {h:210}),
+          el("div",{class:"legend"},
+            el("span",{},el("i",{style:"background:var(--inv)"}),"Cost fiscal · "+
+              eur0(l.reduce((t,f)=>t+f.cost,0))),
+            el("span",{},el("i",{style:"background:var(--pos)"}),"Valor · "+
+              eur0(l.reduce((t,f)=>t+(f.valor||0),0)))),
+          el("div",{class:"tw",style:"margin-top:6px"},el("table",{},
+            el("thead",{},el("tr",{},["Fons","Cost","Valor","Guany","%"]
+              .map((h,i)=>el("th",{class:i?"r":""},h)))),
+            el("tbody",{},l.map(f=>{ const g=Math.round(((f.valor||0)-f.cost)*100)/100;
+              return el("tr",{},
+                el("td",{class:"wrap mut"},nom(f)),
+                el("td",{class:"r num mut"},eur(f.cost)),
+                el("td",{class:"r num mut"},eur(f.valor||0)),
+                el("td",{class:"r num "+sgn(g)},eur(g)),
+                el("td",{class:"r num "+sgn(g)},pct(f.cost?g/f.cost:null)));
+            })))));
+      })(),
       el("p",{class:"note"},"L'aportat d'un fons és la suma dels informes que n'has pujat. "+
         "Tornar a pujar-ne un substitueix el seu i deixa els altres on són, així que els "+
         "pots anar actualitzant d'un en un. Una diferència vol dir que l'aportat s'ha "+
@@ -5586,6 +5645,7 @@ function renderCartera(root){
         el("button",{class:"btn primary",onclick:valuationDialog},"Valoració del mes")),
     ),
     blocCostFiscal(),
+    grafiqueOrdres(),
     (()=>{const [pa,pb]=periodRange();
       const f=series.filter(p=>p.date>=pa&&p.date<=pb);
       const p0=f[0],p1=f.at(-1);
@@ -5801,6 +5861,16 @@ function registreDesDe(a){
 function assetCostAt(a,date){
   // Val el mateix que el valor: el que queda per recuperar.
   const q=restantRetorn(a,date); if(q!=null) return q;
+  /* Amb les ordres registrades no cal reconstruir res: cada compra porta la
+     seva data i el seu import net, i el cost d'un dia és la suma de les que
+     havien passat. És la mateixa xifra que surt del registre d'aportacions
+     —estan fetes de les mateixes operacions—, però aquí no depèn que hi hagis
+     apuntat tot, ni de l'aportat d'avui. */
+  if(a.ordres){
+    const l=(S.data.ordres||[]).filter(o=>o.assetId===a.id&&o.data<=date);
+    if(l.length||(S.data.ordres||[]).some(o=>o.assetId===a.id))
+      return Math.round(l.reduce((t,o)=>t+(o.op==="venda"?-o.net:o.net),0)*100)/100;
+  }
   let base=null;
   for(const s of S.data.snapshots)
     if(s.assetId===a.id && s.cost!=null && s.date<=date && (!base||s.date>base.date)) base=s;
