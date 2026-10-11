@@ -6056,8 +6056,13 @@ function renderCartera(root){
 function valuationDialog(){
   const A=S.data.assets;
   const last=[...new Set(S.data.snapshots.map(s=>s.date))].sort().pop();
-  const dEnd=(()=>{ const d=new Date(TODAY); // per defecte, final del mes en curs
-    return new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).toISOString().slice(0,10); })();
+  /* Per defecte, avui: és el dia que saps aquests valors. Abans hi posava
+     l'últim del mes en curs i quedava una valoració amb data futura que manava
+     a tota l'app —el «Valor actual», el guany per any, el que escrius a la
+     fitxa— sense que es veiés d'on sortia. Per als gràfics tant hi fa: de cada
+     mes agafen la valoració més propera al final, i aquesta ho és. Si la vols
+     datar a final de mes, canvia-la aquí i prou. */
+  const dEnd=TODAY;
   const vals=new Map(), adds=new Map(), prevCel=new Map(), mesCel=new Map();
   /* El que ja has apuntat aquest mes, actiu per actiu. Escrivint-hi un número
      no es reemplaça: s'hi suma, que una mateixa inversió pot rebre diners dos
