@@ -1442,10 +1442,23 @@ function renderMoviments(root){
     el("div",{class:"grid kpis",style:"margin-bottom:14px"},
       kpi("Moviments",NF0.format(all.length),all.length!==S.data.movements.length
         ?"de "+NF0.format(S.data.movements.length):"tots"),
-      kpi("Ingressos",eur(inc),mAvg(inc),"pos"),
-      kpi("Pagaments",eur(exp),mAvg(exp),"neg"),
-      kpi("Net",eur(sum),"ingressos − pagaments",sgn(sum)),
-      kpi("Traspassos",eur(tra),"targeta i inversió, fora dels totals","invc"),
+      /* Amb el filtre de tipus posat, el que en queda fora val zero —i un zero
+         sec sembla una dada, no un filtre. Val més dir-ho: al mòbil, on la
+         vista es recorda per aparell, un filtre oblidat feia pensar que l'app
+         no sumava els ingressos. */
+      (()=>{ const tapat=f.kind&&f.kind!=="income"&&f.kind!=="planned";
+        return kpi("Ingressos",tapat?"—":eur(inc),
+          tapat?"el filtre de dalt els deixa fora":mAvg(inc),tapat?"mut":"pos"); })(),
+      (()=>{ const tapat=f.kind==="income"||f.kind==="transfer";
+        return kpi("Pagaments",tapat?"—":eur(exp),
+          tapat?"el filtre de dalt els deixa fora":mAvg(exp),tapat?"mut":"neg"); })(),
+      kpi("Net",f.kind&&f.kind!=="planned"?"—":eur(sum),
+        f.kind&&f.kind!=="planned"?"amb el filtre posat no vol dir res":"ingressos − pagaments",
+        f.kind&&f.kind!=="planned"?"mut":sgn(sum)),
+      (()=>{ const tapat=f.kind&&f.kind!=="transfer"&&f.kind!=="planned";
+        return kpi("Traspassos",tapat?"—":eur(tra),
+          tapat?"el filtre de dalt els deixa fora":"targeta i inversió, fora dels totals",
+          tapat?"mut":"invc"); })(),
     ),
     resumProveidors(all),
     el("div",{class:"card"},bar,el("div",{class:"tw"},tbl),
