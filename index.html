@@ -4717,6 +4717,13 @@ function grafiqueOrdres(){
      fa un any que no hi afegeixes res no ha de sortir com si hi posessis
      quatre duros cada mes. Els mesos de pel mig sense cap ordre sí que hi
      compten, que són mesos en què no hi vas afegir res. */
+  /* El nom del valor i el seu ISIN, tal com els porten les ordres: a Fons hi
+     surt el fons amb el seu ISIN sota, i aquí ha de sortir el mateix. */
+  const quinValor=l=>{
+    const o=l.slice().reverse().find(x=>x.valor||x.isin)||{};
+    const a=A.find(x=>x.id===l[0].assetId);
+    return [o.valor||null, o.isin||(a?a.isin:null)].filter(Boolean).join(" · ");
+  };
   const mesosDe=l=>{
     const a=mes(l[0].data), b=mes(l.at(-1).data);
     let n=1, k=a; while(k<b && n<600){ n++; k=addMonths(k,1); }
@@ -4773,7 +4780,8 @@ function grafiqueOrdres(){
         return el("tr",{},
           el("td",{},el("button",{class:"btn ghost",style:"padding:2px 6px",
             title:"Veure'n les ordres",
-            onclick:()=>dialogOrdresActiu(id)},a?a.name:"(actiu esborrat)")),
+            onclick:()=>dialogOrdresActiu(id)},a?a.name:"(actiu esborrat)"),
+            el("div",{class:"mut",style:"font-size:11px"},quinValor(l))),
           el("td",{class:"r num mut"},l.length),
           el("td",{class:"r num mut"},eur(compres)),
           el("td",{class:"r num mut"},vendes?eur(-vendes):"—"),
@@ -4795,7 +4803,7 @@ function grafiqueOrdres(){
          actiu per actiu. Allà el cost surt dels informes; aquí, de les ordres. */
       const barres=[...perActiu].map(([id,l])=>{
         const a=A.find(x=>x.id===id);
-        return {label:(a?a.name:"—").slice(0,16),
+        return {label:(a?a.name:"—").slice(0,16), peu:quinValor(l),
           cost:Math.round(l.reduce((t,o)=>t+signe(o),0)*100)/100,
           valor:a?assetValue(a)||0:0};
       }).sort((x,y)=>y.cost-x.cost);
@@ -4813,7 +4821,8 @@ function grafiqueOrdres(){
             .map((h,i)=>el("th",{class:i?"r":""},h)))),
           el("tbody",{},barres.map(f=>{ const g=Math.round((f.valor-f.cost)*100)/100;
             return el("tr",{},
-              el("td",{class:"wrap"},f.label),
+              el("td",{class:"wrap"},f.label,
+                el("div",{class:"mut",style:"font-size:11px"},f.peu)),
               el("td",{class:"r num mut"},eur(f.cost)),
               el("td",{class:"r num mut"},eur(f.valor)),
               el("td",{class:"r num "+sgn(g)},eur(g)),
@@ -4833,7 +4842,8 @@ function grafiqueOrdres(){
           const a=A.find(x=>x.id===o.assetId);
           return el("tr",{},
             el("td",{class:"mut"},dCa(o.data)),
-            el("td",{class:"wrap mut"},(a?a.name:o.isin||"—")),
+            el("td",{class:"wrap mut"},(a?a.name:o.isin||"—"),
+              o.valor?el("div",{style:"font-size:11px"},o.valor):null),
             el("td",{class:o.op==="venda"?"neg":"mut"},o.op),
             el("td",{class:"r num mut"},o.titols??"—"),
             el("td",{class:"r num mut"},o.preu==null?"—":eurRaw(o.preu)),
