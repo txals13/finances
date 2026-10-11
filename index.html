@@ -4752,7 +4752,7 @@ function grafiqueOrdres(){
   })();
   return el("div",{class:"card"},
     el("div",{class:"bar",style:"margin:0 0 8px"},
-      el("h2",{style:"margin:0;flex:1;min-width:180px"},"El que has anat posant, segons les ordres"),
+      el("h2",{style:"margin:0;flex:1;min-width:180px"},"Ordres"),
       el("span",{class:"mut"},reg.length+(reg.length===1?" ordre":" ordres")+
         " · "+dins.length+" dins del període")),
     el("div",{class:"tw"},el("table",{},
@@ -4812,6 +4812,18 @@ function grafiqueOrdres(){
     té escrit. Les línies dels extractes del bròker, que són un registre a part i
     no manen sobre cap xifra, queden al final en un botó. */
 function blocCostFiscal(){
+  /* Quants mesos fa que hi poses diners, segons el teu registre d'aportacions:
+     del primer apunt a l'últim. És l'únic calendari que en tenim —les dates
+     dels lots són fiscals i no diuen quan va entrar el diner—, i per això la
+     mitjana d'un fons que ha rebut traspassos surt alta: allò va entrar de
+     cop, no mes a mes. */
+  const mesosPosant=a=>{
+    const l=(S.data.contributions||[]).filter(x=>x.assetId===a.id).map(x=>x.date).sort();
+    const de=l[0]||a.start, fi=l.at(-1)||TODAY;
+    if(!de) return null;
+    const m=d=>+d.slice(0,4)*12 + +d.slice(5,7);
+    return Math.max(1,m(fi)-m(de)+1);
+  };
   const reg=S.data.fiscalFons||[];
   const pend=S.data.aportPend||[];
   const extr=S.data.aportExtracte||[];
@@ -4824,14 +4836,14 @@ function blocCostFiscal(){
   const opcions=[["","— quin actiu? —"],...A.map(a=>[a.id,a.name+" · "+a.entity])];
   return el("div",{class:"card"},
     el("div",{class:"bar",style:"margin:0 0 8px"},
-      el("h2",{style:"margin:0;flex:1;min-width:180px"},"Cost fiscal"),
+      el("h2",{style:"margin:0;flex:1;min-width:180px"},"Fons"),
       el("span",{class:"mut"},reg.length+(reg.length===1?" informe":" informes")+
         (pend.length?" · "+pend.length+" línies d'extracte per classificar":""))),
     reg.length?el("div",{},
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},["Actiu","Fons","Lots","Cost fiscal","+ guany de fora",
-          "Valor dels informes","El teu aportat","Diferència","Últim informe"]
-          .map((h,i)=>el("th",{class:i&&i<8?"r":""},h)))),
+          "Al mes","Valor dels informes","El teu aportat","Diferència","Últim informe"]
+          .map((h,i)=>el("th",{class:i&&i<9?"r":""},h)))),
         el("tbody",{},[...perActiu].map(([id,l])=>{
           const a=A.find(x=>x.id===id);
           const cost=l.reduce((t,f)=>t+f.cost,0);
@@ -4845,6 +4857,8 @@ function blocCostFiscal(){
             el("td",{class:"r num mut"},l.reduce((t,f)=>t+(f.lots||0),0)),
             el("td",{class:"r num"},eur(cost)),
             el("td",{class:"r num mut"},gx?eur(gx):"—"),
+            el("td",{class:"r num mut"},(()=>{ const n=a?mesosPosant(a):null;
+              return n?eur((cost+gx)/n)+"/mes":"—"; })()),
             el("td",{class:"r num mut"},eur(l.reduce((t,f)=>t+(f.valor||0),0))),
             el("td",{class:"r num"},a?eur(a.contributed||0):"—"),
             el("td",{class:"r num "+(Math.abs(dif)<1?"mut":dif>0?"pos":"neg")},eur(dif)),
@@ -4895,6 +4909,9 @@ function blocCostFiscal(){
         "queda fora del cost fiscal, que és el que compta per a Hisenda."):null,
       el("p",{class:"note"},"Això és la foto d'avui i no es mou amb el període: els lots "+
         "dels informes porten la data fiscal, que no és quan hi va entrar el diner. "+
+        "«Al mes» reparteix l'aportat entre els mesos que van del primer apunt del teu "+
+        "registre d'aportacions a l'últim: és l'únic calendari que hi ha, i d'un fons "+
+        "que ha rebut traspassos surt alta a posta, perquè allò va entrar de cop. "+
         "L'aportat d'un fons és la suma dels informes que n'has pujat. "+
         "Tornar a pujar-ne un substitueix el seu i deixa els altres on són, així que els "+
         "pots anar actualitzant d'un en un. Una diferència vol dir que l'aportat s'ha "+
