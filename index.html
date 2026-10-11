@@ -4762,8 +4762,8 @@ function grafiqueOrdres(){
         " · "+dins.length+" dins del període")),
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},["Actiu","Ordres","Compres","Vendes","Invertit",
-        "Al mes","El teu aportat","Diferència","Última ordre"]
-        .map((h,i)=>el("th",{class:i&&i<8?"r":""},h)))),
+        "Al mes","Valor actual","El teu aportat","Diferència","Última ordre"]
+        .map((h,i)=>el("th",{class:i&&i<9?"r":""},h)))),
       el("tbody",{},[...perActiu].map(([id,l])=>{
         const a=A.find(x=>x.id===id);
         const compres=l.filter(o=>o.op!=="venda").reduce((t,o)=>t+o.net,0);
@@ -4779,6 +4779,7 @@ function grafiqueOrdres(){
           el("td",{class:"r num mut"},vendes?eur(-vendes):"—"),
           el("td",{class:"r num"},eur(net)),
           el("td",{class:"r num mut"},eur(net/mesosDe(l))+"/mes"),
+          el("td",{class:"r num mut"},a?eur(assetValue(a)||0):"—"),
           el("td",{class:"r num"},a?eur(a.contributed||0):"—"),
           el("td",{class:"r num "+(Math.abs(dif)<1?"mut":dif>0?"pos":"neg")},eur(dif)),
           el("td",{class:"mut"},dCa(l.map(o=>o.data).sort().at(-1))));
@@ -4789,6 +4790,36 @@ function grafiqueOrdres(){
       "primera ordre a l'última, no entre tots els que fa que el tens. Una diferència "+
       "vol dir que l'aportat s'ha tocat des de l'última importació. Pica el nom d'un "+
       "actiu per veure'n les ordres una a una."),
+    (()=>{ if(perActiu.size<2) return null;
+      /* Les mateixes barres que a Fons: el que hi has posat contra el que val,
+         actiu per actiu. Allà el cost surt dels informes; aquí, de les ordres. */
+      const barres=[...perActiu].map(([id,l])=>{
+        const a=A.find(x=>x.id===id);
+        return {label:(a?a.name:"—").slice(0,16),
+          cost:Math.round(l.reduce((t,o)=>t+signe(o),0)*100)/100,
+          valor:a?assetValue(a)||0:0};
+      }).sort((x,y)=>y.cost-x.cost);
+      return el("div",{style:"margin-top:12px"},
+        barChart(barres,[{label:"Invertit",color:"var(--inv)",get:f=>f.cost},
+                         {label:"Valor actual",color:"var(--pos)",get:f=>f.valor}],
+          {h:210}),
+        el("div",{class:"legend"},
+          el("span",{},el("i",{style:"background:var(--inv)"}),"Invertit · "+
+            eur0(barres.reduce((t,f)=>t+f.cost,0))),
+          el("span",{},el("i",{style:"background:var(--pos)"}),"Valor · "+
+            eur0(barres.reduce((t,f)=>t+f.valor,0)))),
+        el("div",{class:"tw",style:"margin-top:6px"},el("table",{},
+          el("thead",{},el("tr",{},["Actiu","Invertit","Valor","Guany","%"]
+            .map((h,i)=>el("th",{class:i?"r":""},h)))),
+          el("tbody",{},barres.map(f=>{ const g=Math.round((f.valor-f.cost)*100)/100;
+            return el("tr",{},
+              el("td",{class:"wrap"},f.label),
+              el("td",{class:"r num mut"},eur(f.cost)),
+              el("td",{class:"r num mut"},eur(f.valor)),
+              el("td",{class:"r num "+sgn(g)},eur(g)),
+              el("td",{class:"r num "+sgn(g)},pct(f.cost?g/f.cost:null)));
+          })))));
+    })(),
     grafica,
     grafica?el("p",{class:"note"},"L'acumulat mes a mes dins del període triat; si ve "+
       "carregat d'abans, la línia hi arrenca amb el que ja hi havia posat. Només hi "+
