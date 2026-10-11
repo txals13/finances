@@ -4707,6 +4707,16 @@ function grafiqueOrdres(){
   for(const o of ord){
     const l=perActiu.get(o.assetId)||[]; l.push(o); perActiu.set(o.assetId,l);
   }
+  /* La mitjana es reparteix entre els mesos que van del primer a l'últim cop
+     que hi vas posar diners, no entre tots els que fa que el tens: un actiu on
+     fa un any que no hi afegeixes res no ha de sortir com si hi posessis
+     quatre duros cada mes. Els mesos de pel mig sense cap ordre sí que hi
+     compten, que són mesos en què no hi vas afegir res. */
+  const mesosDe=l=>{
+    const a=mes(l[0].data), b=mes(l.at(-1).data);
+    let n=1, k=a; while(k<b && n<600){ n++; k=addMonths(k,1); }
+    return n;
+  };
   /* La gràfica va amb el període, com la resta de la pestanya. El que hi havia
      posat abans de començar no es perd: la línia hi arrenca amb aquell
      acumulat, que si no, mirant el 2026 semblaria que vas començar de zero. */
@@ -4728,7 +4738,8 @@ function grafiqueOrdres(){
       }
       let darrer=previ;
       const neix=mes(l[0].data), a=A.find(x=>x.id===id);
-      return {label:a?a.name:"—", color:PALETA[i%PALETA.length],
+      const net=l.reduce((x,o)=>x+signe(o),0);
+      return {label:a?a.name:"—", color:PALETA[i%PALETA.length], alMes:net/mesosDe(l),
         values:llista.map(k=>{ if(per.has(k)) darrer=per.get(k);
           return k<neix ? null : darrer; })};
     });
@@ -4736,7 +4747,8 @@ function grafiqueOrdres(){
       linesChart(llista.map(k=>mLabel(k)),series,{h:200}),
       el("div",{class:"legend"},series.map(q=>el("span",{},
         el("i",{style:"background:"+q.color}),
-        q.label+" · "+eur0(q.values.filter(v=>v!=null).at(-1)||0)))));
+        q.label+" · "+eur0(q.values.filter(v=>v!=null).at(-1)||0)+
+        (q.alMes?" · "+eur0(q.alMes)+"/mes":"")))));
   })();
   return el("div",{class:"card"},
     el("div",{class:"bar",style:"margin:0 0 8px"},
@@ -4745,8 +4757,8 @@ function grafiqueOrdres(){
         " · "+dins.length+" dins del període")),
     el("div",{class:"tw"},el("table",{},
       el("thead",{},el("tr",{},["Actiu","Ordres","Compres","Vendes","Invertit",
-        "El teu aportat","Diferència","Última ordre"]
-        .map((h,i)=>el("th",{class:i&&i<7?"r":""},h)))),
+        "Al mes","El teu aportat","Diferència","Última ordre"]
+        .map((h,i)=>el("th",{class:i&&i<8?"r":""},h)))),
       el("tbody",{},[...perActiu].map(([id,l])=>{
         const a=A.find(x=>x.id===id);
         const compres=l.filter(o=>o.op!=="venda").reduce((t,o)=>t+o.net,0);
@@ -4761,14 +4773,17 @@ function grafiqueOrdres(){
           el("td",{class:"r num mut"},eur(compres)),
           el("td",{class:"r num mut"},vendes?eur(-vendes):"—"),
           el("td",{class:"r num"},eur(net)),
+          el("td",{class:"r num mut"},eur(net/mesosDe(l))+"/mes"),
           el("td",{class:"r num"},a?eur(a.contributed||0):"—"),
           el("td",{class:"r num "+(Math.abs(dif)<1?"mut":dif>0?"pos":"neg")},eur(dif)),
           el("td",{class:"mut"},dCa(l.map(o=>o.data).sort().at(-1))));
       })))),
     el("p",{class:"note"},"L'aportat d'aquests actius és la suma de les seves ordres: "+
       "l'import net de cada una, comissió inclosa, amb la data d'execució. Les vendes "+
-      "resten. Una diferència vol dir que l'aportat s'ha tocat des de l'última "+
-      "importació. Pica el nom d'un actiu per veure'n les ordres una a una."),
+      "resten. «Al mes» reparteix el que hi has posat entre els mesos que van de la "+
+      "primera ordre a l'última, no entre tots els que fa que el tens. Una diferència "+
+      "vol dir que l'aportat s'ha tocat des de l'última importació. Pica el nom d'un "+
+      "actiu per veure'n les ordres una a una."),
     grafica,
     grafica?el("p",{class:"note"},"L'acumulat mes a mes dins del període triat; si ve "+
       "carregat d'abans, la línia hi arrenca amb el que ja hi havia posat. Només hi "+
