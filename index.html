@@ -4695,51 +4695,99 @@ function mouAport(c,id){
    2026—, així que d'aquests se'n fa la foto d'avui: cost contra valor, fons per
    fons, que és el que de debò hi diuen. */
 function grafiqueOrdres(){
-  const ord=(S.data.ordres||[]).filter(o=>o.data).sort((x,y)=>x.data<y.data?-1:1);
-  if(ord.length<2) return null;
+  const reg=(S.data.ordres||[]).filter(o=>o.data);
+  if(!reg.length) return null;
+  const A=S.data.assets;
   const mes=d=>String(d).slice(0,7);
-  // El període mana, com a la resta de la pestanya. El que hi havia posat abans
-  // de començar no es perd: la línia arrenca amb aquell acumulat, que si no,
-  // mirant el 2026 semblaria que vas començar de zero el gener.
-  const [pa,pb]=periodRange();
-  const m0=mes(pa)>mes(ord[0].data)?mes(pa):mes(ord[0].data);
-  const m1=mes(pb)<mes(TODAY)?mes(pb):mes(TODAY);
-  if(m1<m0) return null;
-  const llista=[]; let m=m0;
-  while(m<=m1 && llista.length<240){ llista.push(m); m=addMonths(m,1); }
-  if(!llista.length) return null;
-  const dins=ord.filter(o=>mes(o.data)>=m0&&mes(o.data)<=m1);
-  const ids=[...new Set(ord.map(o=>o.assetId))]
-    .filter(id=>ord.some(o=>o.assetId===id&&mes(o.data)<=m1));
-  if(!ids.length) return null;
   const signe=o=>o.op==="venda"?-o.net:o.net;
-  const series=ids.map((id,i)=>{
-    const l=ord.filter(o=>o.assetId===id);
-    let t=l.filter(o=>mes(o.data)<m0).reduce((x,o)=>x+signe(o),0);   // el que ja hi havia
-    const per=new Map();
-    for(const o of l.filter(o=>mes(o.data)>=m0)){
-      t+=signe(o); per.set(mes(o.data),Math.round(t*100)/100);
-    }
-    let darrer=Math.round(l.filter(o=>mes(o.data)<m0).reduce((x,o)=>x+signe(o),0)*100)/100;
-    const neix=mes(l[0].data);
-    const a=S.data.assets.find(x=>x.id===id);
-    return {label:a?a.name:"—", color:PALETA[i%PALETA.length],
-      values:llista.map(k=>{ if(per.has(k)) darrer=per.get(k);
-        return k<neix ? null : darrer; })};
-  });
-  const fora=ord.length-dins.length;
+  const ord=reg.slice().sort((x,y)=>x.data<y.data?-1:1);
+  const [pa,pb]=periodRange();
+  const dins=ord.filter(o=>o.data>=pa&&o.data<=pb);
+  const perActiu=new Map();
+  for(const o of ord){
+    const l=perActiu.get(o.assetId)||[]; l.push(o); perActiu.set(o.assetId,l);
+  }
+  /* La gràfica va amb el període, com la resta de la pestanya. El que hi havia
+     posat abans de començar no es perd: la línia hi arrenca amb aquell
+     acumulat, que si no, mirant el 2026 semblaria que vas començar de zero. */
+  const grafica=(()=>{
+    if(ord.length<2) return null;
+    const m0=mes(pa)>mes(ord[0].data)?mes(pa):mes(ord[0].data);
+    const m1=mes(pb)<mes(TODAY)?mes(pb):mes(TODAY);
+    if(m1<m0) return null;
+    const llista=[]; let m=m0;
+    while(m<=m1 && llista.length<240){ llista.push(m); m=addMonths(m,1); }
+    const ids=[...perActiu.keys()].filter(id=>ord.some(o=>o.assetId===id&&mes(o.data)<=m1));
+    if(!ids.length||!llista.length) return null;
+    const series=ids.map((id,i)=>{
+      const l=perActiu.get(id);
+      const previ=Math.round(l.filter(o=>mes(o.data)<m0).reduce((x,o)=>x+signe(o),0)*100)/100;
+      let t=previ; const per=new Map();
+      for(const o of l.filter(o=>mes(o.data)>=m0)){
+        t+=signe(o); per.set(mes(o.data),Math.round(t*100)/100);
+      }
+      let darrer=previ;
+      const neix=mes(l[0].data), a=A.find(x=>x.id===id);
+      return {label:a?a.name:"—", color:PALETA[i%PALETA.length],
+        values:llista.map(k=>{ if(per.has(k)) darrer=per.get(k);
+          return k<neix ? null : darrer; })};
+    });
+    return el("div",{style:"margin-top:12px"},
+      linesChart(llista.map(k=>mLabel(k)),series,{h:200}),
+      el("div",{class:"legend"},series.map(q=>el("span",{},
+        el("i",{style:"background:"+q.color}),
+        q.label+" · "+eur0(q.values.filter(v=>v!=null).at(-1)||0)))));
+  })();
   return el("div",{class:"card"},
-    el("h2",{},"El que has anat posant, segons les ordres"),
-    linesChart(llista.map(k=>mLabel(k)),series,{h:200}),
-    el("div",{class:"legend"},series.map(q=>el("span",{},
-      el("i",{style:"background:"+q.color}),
-      q.label+" · "+eur0(q.values.filter(v=>v!=null).at(-1)||0)))),
-    el("p",{class:"note"},"L'import de cada ordre amb la seva data d'execució, acumulat; "+
-      "les vendes resten. Dins del període triat hi ha "+dins.length+
-      (dins.length===1?" ordre":" ordres")+
-      (fora?", i la línia arrenca amb el que ja hi havia posat abans":"")+
-      ". Només hi surten els actius amb ordres registrades: els fons no en tenen, "+
-      "que les seves compres van per l'informe de plusvàlues."));
+    el("div",{class:"bar",style:"margin:0 0 8px"},
+      el("h2",{style:"margin:0;flex:1;min-width:180px"},"El que has anat posant, segons les ordres"),
+      el("span",{class:"mut"},reg.length+(reg.length===1?" ordre":" ordres")+
+        " · "+dins.length+" dins del període")),
+    el("div",{class:"tw"},el("table",{},
+      el("thead",{},el("tr",{},["Actiu","Ordres","Compres","Vendes","Invertit",
+        "El teu aportat","Diferència","Última ordre"]
+        .map((h,i)=>el("th",{class:i&&i<7?"r":""},h)))),
+      el("tbody",{},[...perActiu].map(([id,l])=>{
+        const a=A.find(x=>x.id===id);
+        const compres=l.filter(o=>o.op!=="venda").reduce((t,o)=>t+o.net,0);
+        const vendes=l.filter(o=>o.op==="venda").reduce((t,o)=>t+o.net,0);
+        const net=Math.round((compres-vendes)*100)/100;
+        const dif=(Math.round((net-(a?a.contributed||0:0))*100)||0)/100;
+        return el("tr",{},
+          el("td",{},el("button",{class:"btn ghost",style:"padding:2px 6px",
+            title:"Veure'n les ordres",
+            onclick:()=>dialogOrdresActiu(id)},a?a.name:"(actiu esborrat)")),
+          el("td",{class:"r num mut"},l.length),
+          el("td",{class:"r num mut"},eur(compres)),
+          el("td",{class:"r num mut"},vendes?eur(-vendes):"—"),
+          el("td",{class:"r num"},eur(net)),
+          el("td",{class:"r num"},a?eur(a.contributed||0):"—"),
+          el("td",{class:"r num "+(Math.abs(dif)<1?"mut":dif>0?"pos":"neg")},eur(dif)),
+          el("td",{class:"mut"},dCa(l.map(o=>o.data).sort().at(-1))));
+      })))),
+    el("p",{class:"note"},"L'aportat d'aquests actius és la suma de les seves ordres: "+
+      "l'import net de cada una, comissió inclosa, amb la data d'execució. Les vendes "+
+      "resten. Una diferència vol dir que l'aportat s'ha tocat des de l'última "+
+      "importació. Pica el nom d'un actiu per veure'n les ordres una a una."),
+    grafica,
+    grafica?el("p",{class:"note"},"L'acumulat mes a mes dins del període triat; si ve "+
+      "carregat d'abans, la línia hi arrenca amb el que ja hi havia posat. Només hi "+
+      "surten els actius amb ordres registrades: els fons no en tenen, que les seves "+
+      "compres van per l'informe de plusvàlues."):null,
+    dins.length?el("div",{style:"margin-top:12px"},
+      el("div",{class:"tw"},el("table",{},
+        el("thead",{},el("tr",{},["Data","Actiu","Op.","Títols","Preu","Net"]
+          .map((h,i)=>el("th",{class:i>2?"r":""},h)))),
+        el("tbody",{},dins.slice().sort((x,y)=>x.data<y.data?1:-1).map(o=>{
+          const a=A.find(x=>x.id===o.assetId);
+          return el("tr",{},
+            el("td",{class:"mut"},dCa(o.data)),
+            el("td",{class:"wrap mut"},(a?a.name:o.isin||"—")),
+            el("td",{class:o.op==="venda"?"neg":"mut"},o.op),
+            el("td",{class:"r num mut"},o.titols??"—"),
+            el("td",{class:"r num mut"},o.preu==null?"—":eurRaw(o.preu)),
+            el("td",{class:"r num "+(o.op==="venda"?"neg":"")},eur(signe(o))));
+        }))))):null);
 }
 /** El cost fiscal, que és d'on surt l'aportat dels fons.
 
@@ -5851,8 +5899,6 @@ function renderCartera(root){
       card("Per classe d'actiu",breakdown(group("class"),value,"var(--inv)")),
       card("Per entitat",breakdown(group("entity"),value,"var(--accent)")),
     ),
-    renderValorAportat(),
-    renderMatriu(),
     el("div",{class:"card"},
       el("h2",{},"Actius"),
       el("div",{class:"tw"},el("table",{},
@@ -5880,6 +5926,7 @@ function renderCartera(root){
           .map(([t,c],i)=>el("td",{class:(i>3?"r ":"")+c},t)))),
       )),
     ),
+    renderMatriu(),
   );
 }
 /** La feina mensual: teclejar els valors de tots els actius d'una tirada. */
@@ -6094,12 +6141,6 @@ function assetCostAt(a,date){
 function portfolioCostAt(date,llista){
   const c=(llista||S.data.assets).map(a=>assetCostAt(a,date));
   return c.length && !c.some(v=>v==null) ? c.reduce((s,v)=>s+v,0) : null;
-}
-/** La primera data en què tenim l'aportat de tota la cartera, no d'uns quants. */
-function firstCostDate(){
-  for(const d of [...new Set(S.data.snapshots.map(s=>s.date))].sort())
-    if(portfolioCostAt(d)!=null) return d;
-  return null;
 }
 /** Valor d'un actiu tal com era en una data: l'última valoració que no la sobrepassa. */
 /* ---- Una inversió que només torna diners -------------------------------
@@ -6542,54 +6583,6 @@ function renderEvolucio(){
   );
 }
 /** Valor contra aportat al llarg del temps: el que hi has posat i el que val. */
-function renderValorAportat(){
-  const fcd=firstCostDate();
-  const A=S.data.assets;
-  const rec=new Map((S.data.portfolioTotals||[]).map(t=>[t.date,t.total]));
-  const valorA=d=>rec.has(d)?rec.get(d):A.reduce((s,a)=>s+assetValueAt(a,d),0);
-  if(!fcd) return el("div",{class:"card"},
-    el("h2",{},"El que hi has posat contra el que val"),
-    el("div",{class:"empty"},
-      el("p",{},"Encara no hi ha historial de l'aportat."),
-      el("p",{class:"note",style:"max-width:52ch;margin:0 auto"},
-        "L'aportat que ve d'abans és una xifra d'avui, sense dates, i el registre "+
-        "d'aportacions no hi quadra ("+
-        eur0(S.data.contributions.reduce((s,c)=>s+c.amount,0))+" registrats contra "+
-        eur0(A.reduce((s,a)=>s+(a.contributed||0),0))+" reals), o sigui que no es pot "+
-        "reconstruir enrere sense inventar-se-la. A partir de la propera valoració que "+
-        "desis, cada punt es guardarà amb l'aportat d'aquell moment i aquest gràfic "+
-        "es començarà a omplir.")));
-  const dates=snapshotDatesMes().filter(d=>d>=fcd && portfolioCostAt(d)!=null);
-  if(dates.length<2) return el("div",{class:"card"},
-    el("h2",{},"El que hi has posat contra el que val"),
-    el("div",{class:"empty"},
-      el("p",{},"Hi ha un punt amb l'aportat desat, del "+dCa(fcd)+"."),
-      el("p",{class:"note"},"A la propera valoració ja hi haurà línia.")));
-  const valor=dates.map(valorA);
-  const cost =dates.map(d=>portfolioCostAt(d));
-  const balanc=dates.map((_,i)=>valor[i]-cost[i]);
-  const labels=dateLabels(dates);
-  const i0=0;
-  return el("div",{class:"card"},
-    el("h2",{},"El que hi has posat contra el que val"),
-    linesChart(labels,[
-      {label:"Valor",color:"var(--inv)",values:valor},
-      {label:"Aportat",color:"var(--muted)",values:cost,dash:"5 4"},
-    ],{h:210}),
-    el("div",{class:"legend"},
-      el("span",{},el("i",{style:"background:var(--inv)"}),"Valor de la cartera"),
-      el("span",{},el("i",{style:"background:var(--muted)"}),"Diners aportats")),
-    el("h2",{style:"margin-top:20px"},"Balanç"),
-    barChart(dates.map((d,i)=>({month:d.slice(0,7),label:labels[i],v:balanc[i]})),
-      [{label:"Balanç",color:"var(--pos)",get:r=>r.v}],{h:150}),
-    el("p",{class:"note"},
-      "Avui: "+eur0(valor.at(-1))+" de valor sobre "+eur0(cost.at(-1))+" aportats, "+
-      "balanç de "+eur0(balanc.at(-1))+". El gràfic arrenca el "+dCa(fcd)+", que és la "+
-      "primera valoració desada amb l'aportat d'aquell moment; el que hi ha abans no "+
-      "portava data d'aportació i no es pot dibuixar sense inventar-se'l."),
-  );
-}
-/** La matriu de valoracions, com la del full: una fila per data i una columna per actiu. */
 function renderMatriu(){
   const dates=snapshotDates().slice().reverse();
   if(!dates.length) return null;
