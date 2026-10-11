@@ -636,6 +636,11 @@ function normalise(o){
        a rendiment de la cartera el dia que hi entra. Aquí s'hi suma perquè el
        benefici compti des del que valien els diners en arribar. */
     a.guanyExtern ??= 0;
+    /* Diners d'una ordre cursada que encara no s'ha executat. No són al
+       informe de plusvàlues —sense participacions no hi ha lot— però ja han
+       sortit del teu compte, i per això compten a l'aportat. Quan l'ordre es
+       liquidi, el pròxim informe ja la portarà i aquest camp s'ha de buidar. */
+    a.pendent ??= 0;
     a.retorn ??= (!a.include && !ambValor.has(a.id) && (a.contributed||0)>0);
   }
   o.fire = Object.assign({},FIRE_DEF,o.fire||{});
@@ -4842,13 +4847,13 @@ function blocCostFiscal(){
     reg.length?el("div",{},
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},["Actiu","Fons","Lots","Cost fiscal","+ guany de fora",
-          "Al mes","Valor dels informes","El teu aportat","Diferència","Últim informe"]
-          .map((h,i)=>el("th",{class:i&&i<9?"r":""},h)))),
+          "+ pendent","Al mes","Valor dels informes","El teu aportat","Diferència",
+          "Últim informe"].map((h,i)=>el("th",{class:i&&i<10?"r":""},h)))),
         el("tbody",{},[...perActiu].map(([id,l])=>{
           const a=A.find(x=>x.id===id);
           const cost=l.reduce((t,f)=>t+f.cost,0);
-          const gx=a?a.guanyExtern||0:0;
-          const dif=(Math.round((cost+gx-(a?a.contributed||0:0))*100)||0)/100;
+          const gx=a?a.guanyExtern||0:0, pe=a?a.pendent||0:0;
+          const dif=(Math.round((cost+gx+pe-(a?a.contributed||0:0))*100)||0)/100;
           return el("tr",{},
             el("td",{},el("button",{class:"btn ghost",style:"padding:2px 6px",
               title:"Veure'n els fons",
@@ -4857,6 +4862,7 @@ function blocCostFiscal(){
             el("td",{class:"r num mut"},l.reduce((t,f)=>t+(f.lots||0),0)),
             el("td",{class:"r num"},eur(cost)),
             el("td",{class:"r num mut"},gx?eur(gx):"—"),
+            el("td",{class:"r num mut"},pe?eur(pe):"—"),
             el("td",{class:"r num mut"},(()=>{ const n=a?mesosPosant(a):null;
               return n?eur((cost+gx)/n)+"/mes":"—"; })()),
             el("td",{class:"r num mut"},eur(l.reduce((t,f)=>t+(f.valor||0),0))),
@@ -4902,6 +4908,11 @@ function blocCostFiscal(){
                 el("td",{class:"r num "+sgn(g)},pct(f.cost?g/f.cost:null)));
             })))));
       })(),
+      (S.data.assets||[]).some(a=>a.pendent)?el("p",{class:"note"},
+        "«+ pendent» són ordres cursades que encara no s'han executat: ja han sortit "+
+        "del compte però no tenen participacions, així que a l'informe no hi són. Quan "+
+        "es liquidin, l'informe ja les portarà i el camp s'ha de buidar a la fitxa de "+
+        "l'actiu."):null,
       (S.data.assets||[]).some(a=>a.guanyExtern)?el("p",{class:"note"},
         "«+ guany de fora» és el que ja estava guanyat quan els diners van entrar a la "+
         "cartera: ve dels traspassos d'una altra entitat, que arriben amb el seu cost "+
@@ -5208,9 +5219,11 @@ function aplicaFiscal(rep,posar){
     const a=S.data.assets.find(x=>x.id===id); if(!a) continue;
     const l=reg.filter(f=>f.assetId===id);
     if(!l.length) continue;
-    a.contributed=Math.round((l.reduce((t,f)=>t+f.cost,0)+(a.guanyExtern||0))*100)/100;
+    // El cost fiscal, net; l'aportat hi suma el que no surt als informes.
+    const fis=Math.round(l.reduce((t,f)=>t+f.cost,0)*100)/100;
+    a.contributed=Math.round((fis+(a.guanyExtern||0)+(a.pendent||0))*100)/100;
     segellaAportat(a);        // la d'avui i les de més endavant
-    a.fiscal={date:TODAY,cost:a.contributed,
+    a.fiscal={date:TODAY,cost:fis,
       valor:Math.round(l.reduce((t,f)=>t+(f.valor||0),0)*100)/100,
       lots:l.reduce((t,f)=>t+(f.lots||0),0), fons:l.length};
     m++;
@@ -6372,6 +6385,8 @@ function assetDialog(a){
          ["1","Són retorn d'inversió — baixen l'aportat"]],v=>f.retorn.value=v)),
       lbl("Guany que venia de fora", f.gext=campImport(a.guanyExtern||null,
         {dreta:false,placeholder:"0,00 €"})),
+      lbl("Ordres pendents d'executar", f.pend=campImport(a.pendent||null,
+        {dreta:false,placeholder:"0,00 €"})),
       lbl("Total invertit", f.base=campImport((a.retornDe||{}).base??null,
         {dreta:false,placeholder:"— no es calcula —"})),
       lbl("Categoria del retorn", f.rcat=sel((a.retornDe||{}).cat||"",
@@ -6403,6 +6418,11 @@ function assetDialog(a){
       ", comptades el "+dCa(a.ordres.date)+". ",
       el("button",{class:"btn ghost",style:"padding:2px 6px",
         onclick:()=>{ closeDialog(); dialogOrdresActiu(a.id); }},"Veure-les")):null,
+    a.pendent?el("p",{class:"note"},"Hi ha "+eur(a.pendent)+" d'ordres cursades que "+
+      "encara no s'han executat. No surten a l'informe de plusvàlues —sense "+
+      "participacions no hi ha lot— però ja han sortit del compte, i per això se sumen "+
+      "a l'aportat. Quan es liquidin, el pròxim informe ja les portarà: aleshores "+
+      "buida aquest camp, que si no comptarien dues vegades."):null,
     a.guanyExtern?el("p",{class:"note"},"D'aquest actiu, "+eur(a.guanyExtern)+" són guany "+
       "que ja venia fet quan els diners hi van entrar —un traspàs d'una altra entitat "+
       "arriba amb el seu cost fiscal antic—, i per això se sumen a l'aportat: el "+
@@ -6425,6 +6445,7 @@ function assetDialog(a){
       a.wallet=f.wallet.value||null; a.include=f.include.value==="1";
       a.retorn=f.retorn.value==="1";
       a.guanyExtern=Math.round((f.gext.llegir()||0)*100)/100;
+      a.pendent=Math.round((f.pend.llegir()||0)*100)/100;
       // Amb un total invertit i algun filtre, el valor passa a sortir dels
       // moviments; sense, l'actiu torna a anar a mà com qualsevol altre.
       const base=f.base.llegir();
