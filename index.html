@@ -5123,6 +5123,7 @@ function previewFiscal(rep,mals){
     r.titol=titolFons(r.isin,ja?ja.titol:"");
   }
   const posar=new Set(), vistos=new Set();   // actius que s'aplicaran
+  const ambValor=new Set();                  // ...i a quins els posem també el valor
   const cos=el("div",{}), dalt=el("div",{style:"margin-bottom:10px"}), baix=el("div",{});
   const pinta=()=>{
     /* Per a cada actiu: el que ja hi ha registrat d'altres fons, més el que
@@ -5140,7 +5141,14 @@ function previewFiscal(rep,mals){
         lots:nous.reduce((t,r)=>t+r.lots.length,0)+resten.reduce((t,f)=>t+(f.lots||0),0),
       });
     }
-    for(const id of grups.keys()) if(!vistos.has(id)){ vistos.add(id); posar.add(id); }
+    for(const id of grups.keys()) if(!vistos.has(id)){
+      vistos.add(id); posar.add(id);
+      /* El valor de l'informe només val com a valoració si l'informe cobreix
+         tot l'actiu. Si no quadra amb el que ja hi tens, és que hi falten fons
+         i posar-lo faria baixar la cartera sense motiu: es deixa per a tu. */
+      const a=A.find(x=>x.id===id), g=grups.get(id), v=a?assetValue(a)||0:0;
+      if(a && Math.abs(g.valor-v)<=Math.max(5,v*0.01)) ambValor.add(id);
+    }
     posa(dalt,
       el("div",{class:"note",style:"margin-bottom:8px"},
         "Cada informe queda registrat sota el seu fons: si en tornes a pujar un, "+
@@ -5171,7 +5179,11 @@ function previewFiscal(rep,mals){
             el("td",{},el("label",{class:"mut",style:"font-size:12px;white-space:nowrap"},
               el("input",{type:"checkbox",checked:posar.has(id),
                 onchange:e=>{ e.target.checked?posar.add(id):posar.delete(id); pinta(); }}),
-              " posar-hi")));
+              " l'aportat"),
+              el("label",{class:"mut",style:"font-size:12px;white-space:nowrap;margin-left:8px"},
+                el("input",{type:"checkbox",checked:ambValor.has(id),
+                  onchange:e=>{ e.target.checked?ambValor.add(id):ambValor.delete(id); pinta(); }}),
+                " i el valor")));
         })))),
       mals&&mals.length?el("div",{class:"neg",style:"font-size:12px"},mals.join(" · ")):null);
     posa(baix,el("div",{class:"tw"},el("table",{},
@@ -5197,11 +5209,11 @@ function previewFiscal(rep,mals){
   posa(cos,dalt,baix);
   dialog("El cost fiscal dels teus fons",cos,[
     ["Cancel·lar","btn",closeDialog],
-    ["Registrar-los","btn primary",()=>aplicaFiscal(rep,posar)],
+    ["Registrar-los","btn primary",()=>aplicaFiscal(rep,posar,ambValor)],
   ]);
 }
 /** Desa cada informe sota el seu fons i refà l'aportat dels actius triats. */
-function aplicaFiscal(rep,posar){
+function aplicaFiscal(rep,posar,ambValor){
   const reg=(S.data.fiscalFons??=[]);
   let n=0;
   for(const r of rep){
@@ -5214,7 +5226,7 @@ function aplicaFiscal(rep,posar){
     if(i>=0) reg[i]=fila; else reg.push(fila);   // el mateix fons no hi entra dos cops
     n++;
   }
-  let m=0;
+  let m=0,nv=0;
   for(const id of posar){
     const a=S.data.assets.find(x=>x.id===id); if(!a) continue;
     const l=reg.filter(f=>f.assetId===id);
@@ -5223,6 +5235,12 @@ function aplicaFiscal(rep,posar){
     const fis=Math.round(l.reduce((t,f)=>t+f.cost,0)*100)/100;
     a.contributed=Math.round((fis+(a.guanyExtern||0)+(a.pendent||0))*100)/100;
     segellaAportat(a);        // la d'avui i les de més endavant
+    if(ambValor && ambValor.has(id)){
+      // El valor que diu l'informe, com a valoració del dia que toqui.
+      const v=Math.round(l.reduce((t,f)=>t+(f.valor||0),0)*100)/100;
+      const q=dataValoracio(a);
+      setAssetValue(a,q,v); ensureTotal(q); nv++;
+    }
     a.fiscal={date:TODAY,cost:fis,
       valor:Math.round(l.reduce((t,f)=>t+(f.valor||0),0)*100)/100,
       lots:l.reduce((t,f)=>t+(f.lots||0),0), fons:l.length};
@@ -5230,7 +5248,8 @@ function aplicaFiscal(rep,posar){
   }
   markDirty(); closeDialog(); render();
   flash(n+(n===1?" informe registrat":" informes registrats")+
-    (m?" · aportat refet a "+m+(m===1?" actiu":" actius"):""));
+    (m?" · aportat refet a "+m+(m===1?" actiu":" actius"):"")+
+    (nv?" · i el valor de "+nv:""));
 }
 /** Els informes registrats d'un actiu, per si cal treure'n algun. */
 function dialogFiscalActiu(id){
@@ -6241,6 +6260,16 @@ function valorRetorn(a,date){
     amb l'aportat vell, «Guany de la cartera, any per any», que agafa l'últim
     punt de l'any, seguia calculant amb la xifra d'abans encara que l'informe
     de plusvàlues o les ordres ja l'haguessin canviada. */
+/** La data que li toca a una valoració nova.
+
+    Normalment avui. Però si l'actiu ja té una valoració amb data posterior
+    —la de final de mes, que fas per avançat—, és aquella la que mana a tot
+    arreu, i escriure el valor d'avui per sota no es veuria enlloc: semblaria
+    que l'app t'ignorés. En aquest cas s'actualitza aquella. */
+function dataValoracio(a){
+  const u=lastSnapshotDate(a);
+  return (u && u>TODAY) ? u : TODAY;
+}
 function segellaAportat(a){
   for(const s of S.data.snapshots)
     if(s.assetId===a.id && s.date>=TODAY && s.cost!=null) s.cost=a.contributed||0;
@@ -6354,10 +6383,13 @@ function assetDialog(a){
   /* Si canvies el valor o l'aportat, això és una dada d'avui, no una correcció
      de la valoració antiga: la data salta a avui sola. Si la mous tu, mana la teva. */
   const avui=()=>{
-    if(!f.vdate || dataTocada || f.vdate.value===TODAY) return;
-    f.vdate.value=TODAY;
-    pista.textContent="data posada a avui";
-    setTimeout(()=>{ if(pista.textContent==="data posada a avui") pista.textContent=""; },2500);
+    const quan=dataValoracio(a);
+    if(!f.vdate || dataTocada || f.vdate.value===quan) return;
+    f.vdate.value=quan;
+    pista.textContent=quan===TODAY?"data posada a avui"
+      :"s'actualitza la valoració del "+dCa(quan);
+    setTimeout(()=>{ if(/^data posada|^s'actualitza/.test(pista.textContent))
+      pista.textContent=""; },2800);
   };
   const ambAvui=i=>{ i.addEventListener("input",avui); return i; };
   dialog("Actiu",el("div",{},
