@@ -253,7 +253,8 @@ const S = {
   period: { preset:"year", from:"", to:"" },
   real:   { card:"visa" },
   origen: null,          // d'on s'han carregat les dades
-  cartera:{ evol:"class", valor:"eur", liquid:"eur" },  // gràfiques en € o en %
+  cartera:{ evol:"class", valor:"eur", liquid:"eur",   // gràfiques en € o en %
+            detallFons:false, detallOrdres:false },   // els llistats, plegats
   rend:   { actius:null, carteres:null, metric:"valor" },  // que es dibuixa i com
   desp:   { mode:"cat", cat:null, tag:null, total:false, sumar:false },  // evolucio de la despesa
   // Ordre i filtres de les taules d'esdeveniments i de categories.
@@ -4834,8 +4835,10 @@ function grafiqueOrdres(){
       "carregat d'abans, la línia hi arrenca amb el que ja hi havia posat. Només hi "+
       "surten els actius amb ordres registrades: els fons no en tenen, que les seves "+
       "compres van per l'informe de plusvàlues."):null,
-    dins.length?el("div",{style:"margin-top:12px"},
-      el("div",{class:"tw"},el("table",{},
+    dins.length?el("div",{},
+      plegador("detallOrdres",dins.length,"ordre","ordres"),
+      !S.cartera.detallOrdres?null:
+      el("div",{class:"tw",style:"margin-top:6px"},el("table",{},
         el("thead",{},el("tr",{},["Data","Actiu","Op.","Títols","Preu","Net"]
           .map((h,i)=>el("th",{class:i>2?"r":""},h)))),
         el("tbody",{},dins.slice().sort((x,y)=>x.data<y.data?1:-1).map(o=>{
@@ -4849,6 +4852,19 @@ function grafiqueOrdres(){
             el("td",{class:"r num mut"},o.preu==null?"—":eurRaw(o.preu)),
             el("td",{class:"r num "+(o.op==="venda"?"neg":"")},eur(signe(o))));
         }))))):null);
+}
+/** El botó de plegar i desplegar un llistat llarg.
+
+    Els detalls —fons un per un, ordres una per una— no fan falta per mirar-se
+    la cartera i ocupen mitja pantalla: van plegats, i qui els vulgui veure hi
+    pica. Que estiguin oberts o tancats es recorda entre sessions, com la resta
+    de la vista. */
+function plegador(clau,quants,singular,plural){
+  const obert=!!S.cartera[clau];
+  return el("button",{class:"btn ghost",style:"margin-top:10px",
+    onclick:()=>{ S.cartera[clau]=!obert; render(); }},
+    (obert?"▾ Amagar ":"▸ Veure ")+(obert?"":quants+" ")+
+    (quants===1?singular:plural));
 }
 /** El cost fiscal, que és d'on surt l'aportat dels fons.
 
@@ -4933,6 +4949,8 @@ function blocCostFiscal(){
               eur0(l.reduce((t,f)=>t+f.cost,0))),
             el("span",{},el("i",{style:"background:var(--pos)"}),"Valor · "+
               eur0(l.reduce((t,f)=>t+(f.valor||0),0)))),
+          plegador("detallFons",l.length,"fons","fons"),
+          !S.cartera.detallFons?null:
           el("div",{class:"tw",style:"margin-top:6px"},el("table",{},
             el("thead",{},el("tr",{},["Fons","Cost","Valor","Guany","%"]
               .map((h,i)=>el("th",{class:i?"r":""},h)))),
