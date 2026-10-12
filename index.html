@@ -6119,6 +6119,19 @@ function renderCartera(root){
     renderMatriu(),
   );
 }
+/** D'on surt l'aportat d'un actiu, quan no el poses tu a mà.
+
+    Importa saber-ho aquí: en aquests actius l'aportat és una xifra derivada, i
+    escriure-hi una aportació del mes acaba malament de les dues maneres. Si
+    aquells diners ja són dins de l'informe —una ordre que s'ha executat—, hi
+    compten dues vegades; i si encara no hi són, la pròxima importació refà
+    l'aportat des de zero i se l'emporta. Per a una compra que l'informe encara
+    no porta, el lloc és «Ordres pendents d'executar», a la fitxa. */
+function fontAportat(a){
+  if(a&&a.fiscal) return "l'informe del "+dCa(a.fiscal.date);
+  if(a&&a.ordres) return "les ordres del "+dCa(a.ordres.date);
+  return null;
+}
 /** La feina mensual: teclejar els valors de tots els actius d'una tirada. */
 function valuationDialog(){
   const A=S.data.assets;
@@ -6148,7 +6161,9 @@ function valuationDialog(){
       l.length?el("div",{class:"mut",style:"font-size:11px"},
         l.length+(l.length===1?" apunt":" apunts")):null,
       nou?el("div",{style:"font-size:11px"},"quedarà ",
-        el("b",{class:(ja+nou)<0?"neg":"pos"},eur(ja+nou))):null);
+        el("b",{class:(ja+nou)<0?"neg":"pos"},eur(ja+nou))):null,
+      (nou&&fontAportat(a))?el("div",{class:"neg",style:"font-size:11px"},
+        "l'aportat ve de "+fontAportat(a)+": mira que no hi sigui ja"):null);
   };
   // Si tries una data anterior, els valors proposats han de ser els d'aquell moment,
   // no els d'avui: si no, escriuries les xifres d'ara al passat sense adonar-te'n.
@@ -6176,7 +6191,9 @@ function valuationDialog(){
     return el("tr",{},
       el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity),
         a.retorn?el("div",{class:"mut",style:"font-size:11px"},
-          auto?"el que queda per recuperar":"retorn d'inversió"):null),
+          auto?"el que queda per recuperar":"retorn d'inversió"):null,
+        fontAportat(a)?el("div",{class:"mut",style:"font-size:11px"},
+          "aportat de "+fontAportat(a)):null),
       cel, el("td",{},v), mes, el("td",{},c));
   });
   for(const a of A) pintaMes(a);
@@ -6196,6 +6213,13 @@ function valuationDialog(){
       "aportat compti al balanç del mes. L'aportació és opcional i va amb signe: positiva "+
       "si hi poses diners, negativa si en treus o si en deprecies el valor aportat. Se suma "+
       "amb el seu signe al que tens aportat en aquell actiu."),
+    A.some(a=>fontAportat(a))?el("p",{class:"note"},"Als actius que sota el nom diuen "+
+      "d'on ve l'aportat —un informe de plusvàlues o les ordres del bròker— aquella xifra "+
+      "no la poses tu: una aportació a mà o hi comptarà dues vegades, si aquells diners "+
+      "ja són dins de l'informe, o se la menjarà la pròxima importació, que refà l'aportat "+
+      "des de zero. Si has comprat i l'informe encara no ho porta, posa-ho a «Ordres "+
+      "pendents d'executar» a la fitxa de l'actiu: d'allà no es perd, i quan l'informe "+
+      "ja la porti la importació t'ofereix de buidar-ho."):null,
     el("p",{class:"note"},"«Ja apuntat al mes» és el que consta del mes de la data que hi "+
       "hagi a dalt, i el que escriguis s'hi suma: dues aportacions al mateix actiu el "+
       "mateix mes hi consten totes dues. Als actius marcats com a retorn d'inversió "+
