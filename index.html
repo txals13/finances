@@ -291,6 +291,7 @@ const el = (t,a={},...kids)=>{
 };
 const NF = new Intl.NumberFormat("ca-ES",{minimumFractionDigits:2,maximumFractionDigits:2});
 const NF0= new Intl.NumberFormat("ca-ES",{maximumFractionDigits:0});
+const NF1= new Intl.NumberFormat("ca-ES",{minimumFractionDigits:1,maximumFractionDigits:1});
 /* Mode discret: amaga els imports de la pantalla. És una preferència d'aquest
    aparell, no de les dades, així que va al navegador i no al fitxer. El que
    exportes (CSV, xlsx) no es toca mai: si l'amagués, el fitxer seria inútil. */
@@ -1242,6 +1243,51 @@ function renderResum(root){
   const perMonth=v=>span?v/span.days*365.25/12:null;
   const perYear=v=>span?v/span.days*365.25:null;
 
+  /* ---- Tendència: el període contra el que hi havia just abans ----------
+     El mes en curs no hi entra mai. A mig mes només hi ha mitja nòmina i
+     mitja despesa, i deixar-lo entrar faria dir «baixant» els primers dies de
+     cada mes, cosa que no vol dir res. Es comparen mitjanes mensuals, que és
+     l'única manera que dues finestres de llargada diferent es puguin mirar.
+
+     Si el període ja arrenca al primer mes que tens, al davant no hi ha res
+     amb què comparar-lo: aleshores es parteix pel mig i es compara la segona
+     meitat contra la primera, que és l'únic tall possible. */
+  const mCurs=TODAY.slice(0,7);
+  const tancats=all.filter(r=>!r.future && r.month<mCurs);
+  const dins=tancats.filter(r=>rows.some(x=>x.month===r.month));
+  const previs=dins.length ? tancats.filter(r=>r.month<dins[0].month).slice(-dins.length) : [];
+  const perMeitats=!previs.length && dins.length>=6;
+  const tA=perMeitats ? dins.slice(0,Math.floor(dins.length/2)) : previs;
+  const tB=perMeitats ? dins.slice(Math.ceil(dins.length/2))   : dins;
+  const hiHaTend=tA.length>=2 && tB.length>=2;
+  const mitjMes=(l,k)=>l.length?l.reduce((a,r)=>a+(r[k]||0),0)/l.length:null;
+  const taxaDe=l=>{ const i=l.reduce((a,r)=>a+r.income,0);
+    return i>=MIN_INCOME_FOR_RATE ? l.reduce((a,r)=>a+r.saving,0)/i : null; };
+  const tram=l=>l.length?(mLabel(l[0].month)+(l.length>1?" → "+mLabel(l.at(-1).month):"")):"";
+  const deTram=l=>{ const t=tram(l); return (/^[aeiouàèéíòóú]/i.test(t)?"d'":"de ")+t; };
+  /* Una cel·la de tendència. El color va per bo o dolent, no per amunt o
+     avall: uns pagaments que pugen són vermells encara que la fletxa miri cap
+     amunt. La taxa d'estalvi es compara en punts, que el percentatge d'un
+     percentatge no el sap llegir ningú. */
+  const tendencia=(k,boAmunt,punts)=>{
+    if(!hiHaTend) return "";
+    const b=punts?taxaDe(tB):mitjMes(tB,k), a=punts?taxaDe(tA):mitjMes(tA,k);
+    if(a==null||b==null||(!punts&&!a)) return "";
+    const dif=punts ? (b-a)*100 : (b-a)/Math.abs(a)*100;
+    const pla=Math.abs(dif)<(punts?1:2);
+    const cls=pla?"mut":((dif>0)===!!boAmunt?"pos":"neg");
+    /* Quan allo d'abans era quatre duros, el percentatge es inservible —de 100 a
+       4.475 son +4.375 %—: aleshores es diu quantes vegades, que es llegeix. */
+    const quant=punts ? NF1.format(Math.abs(dif))+" punts"
+      : (Math.abs(dif)>=300 && a ? NF1.format(Math.abs(b/a))+"×"
+                                 : Math.round(Math.abs(dif))+" %");
+    return el("div",{title:(punts?pct(b):eur0(b))+" "+deTram(tB)+", contra "+
+        (punts?pct(a):eur0(a))+" "+deTram(tA)},
+      el("div",{class:cls},(pla?"≈":(dif>0?"▲":"▼"))+" "+quant),
+      el("div",{class:"mut",style:"font-size:11px"},
+        (punts?pct(a):eur0(a))+" abans"));
+  };
+
   posa(root,
     el("div",{class:"card"},
       el("div",{class:"bar",style:"margin:0"},
@@ -1268,9 +1314,22 @@ function renderResum(root){
             [eur(perMonth(T.saving)),sgn(T.saving)],[eur(perMonth(T.invest)),"invc"],""],
           ["Per dia",[eur(perDay(T.income)),"pos"],[eur(perDay(T.expense)),"neg"],
             [eur(perDay(T.saving)),sgn(T.saving)],[eur(perDay(T.invest)),"invc"],""],
+          ...(hiHaTend?[["Tendència",
+            tendencia("income",true),tendencia("expense",false),
+            tendencia("saving",true),tendencia("invest",true),
+            tendencia(null,true,true)]]:[]),
         ])),
       el("p",{class:"note"},"Les mitjanes es reparteixen sobre els dies que realment tenen "+
         "moviments dins del període, no sobre l'interval demanat."),
+      hiHaTend?el("p",{class:"note"},"«Tendència» compara la mitjana mensual "+
+        (perMeitats
+          ? "de la segona meitat del que tens, "+tram(tB)+", amb la de la primera, "+tram(tA)+
+            ": amb tot l'històric al davant no hi ha cap període anterior amb què comparar-lo."
+          : "del període, "+tram(tB)+", amb la dels "+tA.length+" mesos "+
+            "immediatament anteriors, "+tram(tA)+".")+
+        " El mes en curs no hi compta, que va a mitges. El color va per bo o dolent i no per "+
+        "amunt o avall: uns pagaments que pugen surten en vermell. Per sota del 2 % es "+
+        "considera pla. Passa-hi el ratolí per sobre per veure les dues xifres."):null,
     ),
     card("Evolució del saldo",
       lineChart(past.filter(r=>r.lastBalance!=null).map(r=>({k:mLabel(r.month),v:r.lastBalance}))),
