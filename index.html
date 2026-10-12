@@ -1219,9 +1219,6 @@ function barChart(rows,series,{h=210,fmt=eur0}={}){
   });
   return s;
 }
-const legend=items=>el("div",{class:"legend"},
-  items.map(i=>el("span",{},el("i",{style:`background:${i.color};opacity:${i.faint?.42:.9}`}),i.label)));
-
 /* ================================================================== *
  *  Pestanya: Resum                                                   *
  * ================================================================== */
@@ -4127,25 +4124,6 @@ function renderReal(root){
         peuReal(rows,T,m0),
       )),
       resultatPeriode(rows,ccPer,m0,obj),
-    ),
-    card("Real contra previsió",
-      barChart(rows.slice(-18),[
-        {label:"Ingressos",color:"var(--pos)",get:r=>r.income},
-        {label:"Ingr. previstos",color:"var(--pos)",faint:true,get:r=>r.fIncome||0},
-        {label:"Despeses",color:"var(--neg)",get:r=>r.expense},
-        {label:"Desp. previstes",color:"var(--neg)",faint:true,get:r=>r.fExpense||0},
-      ],{h:190}),
-      legend([{label:"Real",color:"var(--accent)"},{label:"Previsió",color:"var(--muted)",faint:true}]),
-      el("p",{class:"note"},"Els últims 18 mesos del període, amb els futurs que tinguin previsió."),
-    ),
-    card("Ingressos, despeses i estalvi",
-      barChart(rows.slice(-36),[
-        {label:"Ingressos",color:"var(--pos)",get:r=>r.income},
-        {label:"Despeses",color:"var(--neg)",get:r=>r.expense},
-        {label:"Estalvi",color:"var(--accent)",get:r=>r.saving},
-      ]),
-      legend([{label:"Ingressos",color:"var(--pos)"},{label:"Despeses",color:"var(--neg)"},
-        {label:"Estalvi",color:"var(--accent)"}]),
     ),
     el("div",{class:"card"},
       el("h2",{},"Targeta: compres contra liquidació"),
