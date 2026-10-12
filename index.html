@@ -3978,6 +3978,17 @@ function renderReal(root){
 
   const gap=r=>r.buys&&r.visa?Math.abs(r.buys-r.visa)/Math.max(r.buys,r.visa):0;
   const dolentes=all.filter(r=>gap(r)>0.25 && (r.buys>200||r.visa>200));
+  /* Quant canviaria la xifra amb l'altra manera de comptar. La tria només mou
+     els mesos que ja tenen la liquidació cobrada i que no quadren amb
+     l'extracte: en un període curt pot no haver-n'hi cap, i llavors les dues
+     opcions donen el mateix número i sembla que el selector no faci res. */
+  const cardAltre=(()=>{
+    const v=S.real.card; S.real.card=v==="visa"?"buys":"visa";
+    const t=realTable().filter(r=>r.month>=pa.slice(0,7)&&r.month<=pb.slice(0,7))
+      .reduce((a,r)=>a+r.card,0);
+    S.real.card=v; return Math.round(t*100)/100;
+  })();
+  const cardDif=Math.round((cardAltre-T.card)*100)/100;
 
   posa(root,
     el("div",{class:"card"},
@@ -3988,7 +3999,10 @@ function renderReal(root){
         sel(S.real.card,[
           ["visa","Per liquidació VISA — l'import que surt del compte"],
           ["buys","Per compres del cicle — suma de l'extracte de la targeta"],
-        ],v=>{S.real.card=v;render();})),
+        ],v=>{S.real.card=v;render();}),
+        el("span",{class:"mut"},!cardDif
+          ? "En aquest període les dues maneres donen el mateix."
+          : "Amb l'altra: "+eur(cardAltre)+" ("+(cardDif>0?"+":"")+eur(cardDif)+")")),
       el("p",{class:"note"},
         "El cicle va del 20 al 20: el que aquí es diu «agost» són les compres del 20 de "+
         "juliol al 19 d'agost, que et carreguen l'1 de setembre. "+
@@ -3997,7 +4011,9 @@ function renderReal(root){
           : "Es sumen les compres de l'extracte de la targeta, que té més detall però "+
             "depèn que estigui complet.")+
         " El cicle que encara s'està acumulant surt sempre per compres, perquè encara "+
-        "no s'ha cobrat."),
+        "no s'ha cobrat. La tria només mou els mesos que ja tenen la liquidació cobrada "+
+        "i que no quadren amb l'extracte; si al període triat no n'hi ha cap, les dues "+
+        "opcions donen la mateixa xifra."),
     ),
     panellCompte(),
     openCyclePanel(all),
