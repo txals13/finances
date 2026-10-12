@@ -4999,8 +4999,9 @@ function blocCostFiscal(){
       (S.data.assets||[]).some(a=>a.pendent)?el("p",{class:"note"},
         "«+ pendent» són ordres cursades que encara no s'han executat: ja han sortit "+
         "del compte però no tenen participacions, així que a l'informe no hi són. Quan "+
-        "es liquidin, l'informe ja les portarà i el camp s'ha de buidar a la fitxa de "+
-        "l'actiu."):null,
+        "es liquidin, l'informe ja les portarà: la pròxima importació se n'adona i et "+
+        "marca la casella per buidar el camp, perquè si no, aquells diners hi comptarien "+
+        "dues vegades. També el pots buidar a mà a la fitxa de l'actiu."):null,
       (S.data.assets||[]).some(a=>a.guanyExtern)?el("p",{class:"note"},
         "«+ guany de fora» és el que ja estava guanyat quan els diners van entrar a la "+
         "cartera: ve dels traspassos d'una altra entitat, que arriben amb el seu cost "+
@@ -5212,6 +5213,7 @@ function previewFiscal(rep,mals){
   }
   const posar=new Set(), vistos=new Set();   // actius que s'aplicaran
   const ambValor=new Set();                  // ...i a quins els posem també el valor
+  const treuPend=new Set();                  // ...i a quins els buidem el pendent
   const cos=el("div",{}), dalt=el("div",{style:"margin-bottom:10px"}), baix=el("div",{});
   const pinta=()=>{
     /* Per a cada actiu: el que ja hi ha registrat d'altres fons, més el que
@@ -5224,6 +5226,8 @@ function previewFiscal(rep,mals){
       const resten=reg.filter(f=>f.assetId===id && !nous.some(r=>r.isin&&r.isin===f.isin));
       grups.set(id,{
         nous:nous.length, vells:resten.length,
+        // El que hi havia registrat abans d'aquesta pujada, per saber quant creix.
+        vell:reg.filter(f=>f.assetId===id).reduce((t,f)=>t+f.cost,0),
         cost:nous.reduce((t,r)=>t+r.cost,0)+resten.reduce((t,f)=>t+f.cost,0),
         valor:nous.reduce((t,r)=>t+r.valor,0)+resten.reduce((t,f)=>t+(f.valor||0),0),
         lots:nous.reduce((t,r)=>t+r.lots.length,0)+resten.reduce((t,f)=>t+(f.lots||0),0),
@@ -5236,6 +5240,11 @@ function previewFiscal(rep,mals){
          i posar-lo faria baixar la cartera sense motiu: es deixa per a tu. */
       const a=A.find(x=>x.id===id), g=grups.get(id), v=a?assetValue(a)||0:0;
       if(a && Math.abs(g.valor-v)<=Math.max(5,v*0.01)) ambValor.add(id);
+      /* Si el cost fiscal ha crescut com a mínim el que hi havia d'ordres
+         pendents, és que ja s'han executat i l'informe les porta a dins:
+         deixar-hi el camp les comptaria dues vegades. Es marca sol, però la
+         casella hi és per si encara no ha passat. */
+      if(a && a.pendent>0 && g.cost-g.vell >= a.pendent-1) treuPend.add(id);
     }
     posa(dalt,
       el("div",{class:"note",style:"margin-bottom:8px"},
@@ -5271,7 +5280,15 @@ function previewFiscal(rep,mals){
               el("label",{class:"mut",style:"font-size:12px;white-space:nowrap;margin-left:8px"},
                 el("input",{type:"checkbox",checked:ambValor.has(id),
                   onchange:e=>{ e.target.checked?ambValor.add(id):ambValor.delete(id); pinta(); }}),
-                " i el valor")));
+                " i el valor"),
+              !(a.pendent>0)?null:el("div",{},
+                el("label",{class:"mut",style:"font-size:12px;white-space:nowrap",
+                  title:"El cost fiscal d'aquest actiu creix "+eur(g.cost-g.vell)+" respecte "+
+                    "del que hi havia registrat. Si l'ordre pendent ja hi és a dins, treu-la "+
+                    "d'aquí: si no, la comptaries dues vegades."},
+                  el("input",{type:"checkbox",checked:treuPend.has(id),
+                    onchange:e=>{ e.target.checked?treuPend.add(id):treuPend.delete(id); pinta(); }}),
+                  " i treu els "+eur(a.pendent)+" pendents"))));
         })))),
       mals&&mals.length?el("div",{class:"neg",style:"font-size:12px"},mals.join(" · ")):null);
     posa(baix,el("div",{class:"tw"},el("table",{},
@@ -5297,11 +5314,11 @@ function previewFiscal(rep,mals){
   posa(cos,dalt,baix);
   dialog("El cost fiscal dels teus fons",cos,[
     ["Cancel·lar","btn",closeDialog],
-    ["Registrar-los","btn primary",()=>aplicaFiscal(rep,posar,ambValor)],
+    ["Registrar-los","btn primary",()=>aplicaFiscal(rep,posar,ambValor,treuPend)],
   ]);
 }
 /** Desa cada informe sota el seu fons i refà l'aportat dels actius triats. */
-function aplicaFiscal(rep,posar,ambValor){
+function aplicaFiscal(rep,posar,ambValor,treuPend){
   const reg=(S.data.fiscalFons??=[]);
   let n=0;
   for(const r of rep){
@@ -5314,11 +5331,14 @@ function aplicaFiscal(rep,posar,ambValor){
     if(i>=0) reg[i]=fila; else reg.push(fila);   // el mateix fons no hi entra dos cops
     n++;
   }
-  let m=0,nv=0;
+  let m=0,nv=0,np=0;
   for(const id of posar){
     const a=S.data.assets.find(x=>x.id===id); if(!a) continue;
     const l=reg.filter(f=>f.assetId===id);
     if(!l.length) continue;
+    // Si l'informe ja porta l'ordre que hi havia pendent, el camp es buida:
+    // el seu import ja viu dins del cost fiscal.
+    if(treuPend&&treuPend.has(id)&&a.pendent){ a.pendent=0; np++; }
     // El cost fiscal, net; l'aportat hi suma el que no surt als informes.
     const fis=Math.round(l.reduce((t,f)=>t+f.cost,0)*100)/100;
     a.contributed=Math.round((fis+(a.guanyExtern||0)+(a.pendent||0))*100)/100;
@@ -5337,7 +5357,8 @@ function aplicaFiscal(rep,posar,ambValor){
   markDirty(); closeDialog(); render();
   flash(n+(n===1?" informe registrat":" informes registrats")+
     (m?" · aportat refet a "+m+(m===1?" actiu":" actius"):"")+
-    (nv?" · i el valor de "+nv:""));
+    (nv?" · i el valor de "+nv:"")+
+    (np?" · pendent buidat a "+np:""));
 }
 /** Els informes registrats d'un actiu, per si cal treure'n algun. */
 function dialogFiscalActiu(id){
@@ -5465,7 +5486,7 @@ function previewOrdres(noves,mals){
     o.feta=/finalizada|ejecutada|liquidada/.test(o.estat||"");
     o.assetId=actiuDeIsin(o.isin);
   }
-  const posar=new Set(), vistos=new Set();
+  const posar=new Set(), vistos=new Set(), treuPend=new Set();
   const compta=o=>o.feta&&!o.jaHi&&o.assetId&&o.net;
   const signe=o=>o.op==="venda"?-o.net:o.net;
   const cos=el("div",{}), dalt=el("div",{style:"margin-bottom:10px"}), baix=el("div",{});
@@ -5477,7 +5498,12 @@ function previewOrdres(noves,mals){
       g.n++; if(!o.jaHi){ g.nou++; g.s+=signe(o); }
       grups.set(o.assetId,g);
     }
-    for(const id of grups.keys()) if(!vistos.has(id)){ vistos.add(id); posar.add(id); }
+    for(const id of grups.keys()) if(!vistos.has(id)){
+      vistos.add(id); posar.add(id);
+      // Si les ordres noves sumen el que hi havia pendent, ja s'han executat.
+      const a=A.find(x=>x.id===id), g=grups.get(id);
+      if(a && a.pendent>0 && g.s >= a.pendent-1) treuPend.add(id);
+    }
     posa(dalt,
       el("div",{class:"note",style:"margin-bottom:8px"},
         "L'aportat passarà a ser la suma de TOTES les ordres registrades de l'actiu, no "+
@@ -5489,7 +5515,9 @@ function previewOrdres(noves,mals){
         el("tbody",{},[...grups].map(([id,g])=>{
           const a=A.find(x=>x.id===id); if(!a) return null;
           const velles=reg.filter(o=>o.assetId===id);
-          const total=Math.round((velles.reduce((t,o)=>t+(o.op==="venda"?-o.net:o.net),0)+g.s)*100)/100;
+          const pe=treuPend.has(id)?0:(a.pendent||0);
+          const total=Math.round((velles.reduce((t,o)=>t+(o.op==="venda"?-o.net:o.net),0)
+            +g.s+(a.guanyExtern||0)+pe)*100)/100;
           return el("tr",{},
             el("td",{},a.name,el("span",{class:"mut"}," · "+a.entity)),
             el("td",{class:"r num mut"},g.nou),
@@ -5500,7 +5528,14 @@ function previewOrdres(noves,mals){
             el("td",{},el("label",{class:"mut",style:"font-size:12px;white-space:nowrap"},
               el("input",{type:"checkbox",checked:posar.has(id),
                 onchange:e=>{ e.target.checked?posar.add(id):posar.delete(id); pinta(); }}),
-              " posar-hi")));
+              " posar-hi"),
+            !(a.pendent>0)?null:el("div",{},
+              el("label",{class:"mut",style:"font-size:12px;white-space:nowrap",
+                title:"Les ordres noves sumen "+eur(g.s)+". Si entre elles hi ha la que "+
+                  "tenies pendent, treu-la d'aquí: si no, la comptaries dues vegades."},
+                el("input",{type:"checkbox",checked:treuPend.has(id),
+                  onchange:e=>{ e.target.checked?treuPend.add(id):treuPend.delete(id); pinta(); }}),
+                " i treu els "+eur(a.pendent)+" pendents"))));
         })))),
       mals&&mals.length?el("div",{class:"neg",style:"font-size:12px"},mals.join(" · ")):null);
     posa(baix,el("div",{class:"tw"},el("table",{},
@@ -5526,11 +5561,11 @@ function previewOrdres(noves,mals){
   posa(cos,dalt,baix);
   dialog("Les ordres del bròker",cos,[
     ["Cancel·lar","btn",closeDialog],
-    ["Registrar-les","btn primary",()=>aplicaOrdres(noves.filter(compta),posar)],
+    ["Registrar-les","btn primary",()=>aplicaOrdres(noves.filter(compta),posar,treuPend)],
   ]);
 }
 /** Les desa i, dels actius triats, en refà l'aportat. */
-function aplicaOrdres(noves,posar){
+function aplicaOrdres(noves,posar,treuPend){
   const reg=(S.data.ordres??=[]);
   const refs=new Set(reg.map(o=>o.ref));
   let n=0;
@@ -5541,19 +5576,22 @@ function aplicaOrdres(noves,posar){
       valor:o.valor,mercat:o.mercat,op:o.op,titols:o.titols,preu:o.preu,
       brut:o.brut,com:o.com,canons:o.canons,net:o.net});
   }
-  let m=0;
+  let m=0,np=0;
   for(const id of posar){
     const a=S.data.assets.find(x=>x.id===id); if(!a) continue;
+    if(treuPend&&treuPend.has(id)&&a.pendent){ a.pendent=0; np++; }
     const l=reg.filter(o=>o.assetId===id);
     const suma=l.reduce((t,o)=>t+(o.op==="venda"?-o.net:o.net),0);
-    a.contributed=Math.round(suma*100)/100;
+    // Com al cost fiscal: les ordres, més el que no hi surt.
+    a.contributed=Math.round((suma+(a.guanyExtern||0)+(a.pendent||0))*100)/100;
     a.ordres={date:TODAY,net:a.contributed,n:l.length};
     segellaAportat(a);        // com al cost fiscal
     m++;
   }
   markDirty(); closeDialog(); render();
   flash(n+(n===1?" ordre registrada":" ordres registrades")+
-    (m?" · aportat refet a "+m+(m===1?" actiu":" actius"):""));
+    (m?" · aportat refet a "+m+(m===1?" actiu":" actius"):"")+
+    (np?" · pendent buidat a "+np:""));
 }
 /** Les ordres registrades d'un actiu, per si cal treure'n alguna. */
 function dialogOrdresActiu(id){
@@ -6462,6 +6500,8 @@ function recomputeTotal(date,silenci){
 }
 function assetDialog(a){
   const retornAbans=JSON.stringify(a.retornDe||null), incloiaAbans=!!a.include;
+  // El que hi havia en obrir: l'aportat hi va lligat i s'ha de moure amb ells.
+  const apAbans=a.contributed||0, pendAbans=a.pendent||0, gextAbans=a.guanyExtern||0;
   /* Amb el valor calculat dels retorns, l'aportat i el valor no s'escriuen
      aquí: surten del total invertit i dels moviments. Deixar-hi els camps
      oberts era pitjor que no tenir-los —els omplies, desaves i no passava
@@ -6546,8 +6586,9 @@ function assetDialog(a){
     a.pendent?el("p",{class:"note"},"Hi ha "+eur(a.pendent)+" d'ordres cursades que "+
       "encara no s'han executat. No surten a l'informe de plusvàlues —sense "+
       "participacions no hi ha lot— però ja han sortit del compte, i per això se sumen "+
-      "a l'aportat. Quan es liquidin, el pròxim informe ja les portarà: aleshores "+
-      "buida aquest camp, que si no comptarien dues vegades."):null,
+      "a l'aportat. Quan es liquidin, el pròxim informe ja les portarà: si l'hi veu, "+
+      "la importació et marca sola la casella de buidar-lo. Si el buides aquí, "+
+      "l'aportat baixa amb ell."):null,
     a.guanyExtern?el("p",{class:"note"},"D'aquest actiu, "+eur(a.guanyExtern)+" són guany "+
       "que ja venia fet quan els diners hi van entrar —un traspàs d'una altra entitat "+
       "arriba amb el seu cost fiscal antic—, i per això se sumen a l'aportat: el "+
@@ -6571,6 +6612,15 @@ function assetDialog(a){
       a.retorn=f.retorn.value==="1";
       a.guanyExtern=Math.round((f.gext.llegir()||0)*100)/100;
       a.pendent=Math.round((f.pend.llegir()||0)*100)/100;
+      /* El pendent i el guany de fora se sumen a l'aportat, o sigui que tocar-los
+         l'ha de moure: buidar una ordre que ja s'ha executat ha de fer baixar
+         l'aportat pel seu import, que ara ja viu dins del cost fiscal. Si has
+         escrit l'aportat tu mateix, mana el teu i aquí no s'hi toca. */
+      const delta=Math.round(((a.pendent-pendAbans)+(a.guanyExtern-gextAbans))*100)/100;
+      if(delta && Math.abs((a.contributed||0)-apAbans)<0.005)
+        a.contributed=Math.round(((a.contributed||0)+delta)*100)/100;
+      // Les valoracions d'avui i de més endavant porten l'aportat del dia.
+      if(Math.abs((a.contributed||0)-apAbans)>=0.005) segellaAportat(a);
       // Amb un total invertit i algun filtre, el valor passa a sortir dels
       // moviments; sense, l'actiu torna a anar a mà com qualsevol altre.
       const base=f.base.llegir();
