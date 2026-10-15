@@ -3911,12 +3911,39 @@ function periodRangeReal(){
   const [a,b]=periodRange();
   return S.period.preset==="year" ? [a,TODAY.slice(0,4)+"-12-31"] : [a,b];
 }
+/** El període tal com acabarà si la previsió es compleix.
+
+    Cada mes hi compta una sola vegada: els tancats amb el que va passar de
+    debò —la previsió d'un mes acabat no val res, que allò ja se sap— i el mes
+    en curs i els que vénen amb la previsió. Al mes en curs es pren la xifra
+    més alta de les dues: si a mig mes ja has gastat més del que preveies, el
+    que ja ha passat no es pot desfer, i la previsió seria una mentida a la
+    baixa. Sumar la columna «Total» amb la de «previstos» comptaria dos cops
+    els mesos que tenen totes dues coses. */
+function projeccioReal(rows,m0){
+  let income=0,expense=0,invest=0,real=0,prev=0,nReal=0,nPrev=0,ambPrev=0;
+  for(const r of rows){
+    const ve=r.month>=m0;
+    const i=ve?Math.max(r.income||0,r.fIncome||0):(r.income||0);
+    const e=ve?Math.max(r.expense||0,r.fExpense||0):(r.expense||0);
+    const v=ve?Math.max(r.invest||0,r.fInvest||0):(r.invest||0);
+    income+=i; expense+=e; invest+=v;
+    const sob=i-e-v;
+    if(ve){ prev+=sob; nPrev++;
+      if(r.fIncome!=null||r.fExpense!=null||r.fInvest!=null) ambPrev++; }
+    else if(!r.buit){ real+=sob; nReal++; }
+  }
+  const n=x=>Math.round(x*100)/100;
+  return {income:n(income),expense:n(expense),invest:n(invest),
+    saving:n(income-expense),surplus:n(income-expense-invest),
+    real:n(real),prev:n(prev),tot:n(real+prev),nReal,nPrev,ambPrev};
+}
 /** Totals i mitjanes de la taula de Real, sobre les files que deixa el filtre.
     La mitjana del real es fa amb els mesos tancats: el mes en curs encara no ha
     cobrat la nomina ni la VISA, i fer-la entrar a la mitjana la rebaixaria sense
     motiu. La de cada columna de previsio, amb els mesos que en tenen, que son
     pocs i dividir pel total la faria inservible. */
-function peuReal(rows,T,m0){
+function peuReal(rows,T,m0,pro){
   const tancats=rows.filter(r=>!r.buit && r.month<m0), n=tancats.length;
   const s=k=>tancats.reduce((a,r)=>a+(r[k]||0),0);
   const mR=k=>n?s(k)/n:null;
@@ -3933,6 +3960,16 @@ function peuReal(rows,T,m0){
       pct(T.income?T.saving/T.income:null),[eur(T.surplus),sgn(T.surplus)],
       T.fIncome?eur(T.fIncome):"",T.fExpense?eur(T.fExpense):"",
       T.fInvest?eur(T.fInvest):"",[T.fSurplus?eur(T.fSurplus):"",sgn(T.fSurplus)],"",""]),
+    /* Només si al període hi ha algun mes amb previsió: si no, aquesta fila
+       diria exactament el mateix que la de dalt. */
+    pro&&pro.ambPrev?fila([el("span",{},"Amb la previsió",
+        el("div",{class:"mut",style:"font-size:11px;font-weight:400"},
+          pro.nReal+(pro.nReal===1?" mes real":" mesos reals")+" + "+
+          pro.ambPrev+" de previsió")),
+      [eur(pro.income),"pos"],"","",[eur(pro.expense),"neg"],[eur(pro.invest),"invc"],
+      [eur(pro.saving),sgn(pro.saving)],
+      pct(pro.income?pro.saving/pro.income:null),
+      [eur(pro.surplus),sgn(pro.surplus)],"","","","","",""]):null,
     fila([el("span",{},"Mitjana",el("div",{class:"mut",style:"font-size:11px;font-weight:400"},
         n ? "de "+n+(n===1?" mes tancat":" mesos tancats") : "cap mes tancat")),
       [e(mR("income")),"pos"],[e(mR("bank")),"neg"],[e(mR("card")),"neg"],
@@ -3948,15 +3985,16 @@ function peuReal(rows,T,m0){
     el de «Queda previst» comptaria dos cops els mesos que tenen totes dues coses
     (l'agost i el setembre, per exemple): cada mes compta una sola vegada, amb la
     millor xifra que se'n te. */
-function resultatPeriode(rows,ccPer,m0,obj){
+function resultatPeriode(rows,ccPer,m0,obj,pro){
   if(!rows.length) return null;
   const pas=rows.filter(r=>r.month<m0&&!r.buit), ve=rows.filter(r=>r.month>=m0);
   if(!ve.length && !pas.length) return null;
-  const real=pas.reduce((a,r)=>a+r.surplus,0);
-  const prev=ve.reduce((a,r)=>a+(r.fSurplus!=null?r.fSurplus:(r.buit?0:r.surplus)),0);
-  const tot=real+prev;
+  // La mateixa xifra que la fila «Amb la previsió» de la taula: es calcula un
+  // sol cop perquè les dues no puguin dir coses diferents.
+  const {real,prev,tot}=pro;
   const ultim=rows.at(-1), ccFi=ccPer.get(ultim.month);
   const tram=l=>l.length===1?mLabel(l[0].month):mLabel(l[0].month)+" a "+mLabel(l.at(-1).month);
+  const deTram=l=>{ const t=tram(l); return (/^[aeiouàèéíòóú]/i.test(t)?"d'":"de ")+t; };
   return el("div",{style:"margin-top:14px;padding:12px 14px;border-radius:var(--radius);"+
       "background:var(--bg);border:1px solid var(--line)"},
     // Negatiu no vol dir que perdis diners: vol dir que en passes a inversio mes
@@ -3971,9 +4009,9 @@ function resultatPeriode(rows,ccPer,m0,obj){
                 "que ja tenies")+
       " · de mitjana, "+eur(tot/(pas.length+ve.length))+" al mes."),
     el("div",{class:"mut",style:"font-size:12px;margin-top:4px"},
-      (pas.length?"real de "+tram(pas)+": "+eur(real):"")+
+      (pas.length?"real "+deTram(pas)+": "+eur(real):"")+
       (pas.length&&ve.length?" · ":"")+
-      (ve.length?"previst de "+tram(ve)+": "+eur(prev):"")),
+      (ve.length?"previst "+deTram(ve)+": "+eur(prev):"")),
     ccFi!=null ? el("div",{style:"font-size:13px;margin-top:6px"},
       "Al compte, a final de "+mLabel(ultim.month)+": ",el("b",{},eur(ccFi)),
       el("span",{class:sgn(ccFi-obj)},
@@ -4005,6 +4043,7 @@ function renderReal(root){
     fSurplus:a.fSurplus+(r.fSurplus||0)}),
     {income:0,bank:0,card:0,expense:0,invest:0,fIncome:0,fExpense:0,fInvest:0,fSurplus:0});
   T.saving=T.income-T.expense; T.surplus=T.saving-T.invest;
+  const pro=projeccioReal(rows,TODAY.slice(0,7));
   /* El compte previst a final de mes. Arrenca del que hi quedara despres de la
      propera nomina i la propera VISA —el mateix que el panell de dalt—, hi resta
      el que encara falti moure aquest mes segons la teva previsio d'inversio, i
@@ -4088,6 +4127,13 @@ function renderReal(root){
         "sobre de l'objectiu, el pla hi deixa diners que podries passar al DCA. Com el panell, "+
         "ja té descomptades les despeses fixes de principi del mes següent; la «Desp. "+
         "prevista» de cada mes les ha de portar a dins, com qualsevol altra despesa."),
+      pro.ambPrev?el("p",{class:"note",style:"margin:0 0 12px"},
+        "«Amb la previsió» és com acabarà el període si la previsió es compleix: dels "+
+        "mesos tancats hi va el que va passar de debò, i del mes en curs i dels que vénen, "+
+        "la previsió —o el real, si el mes ja l'ha superada, que el que ja has gastat no es "+
+        "pot desfer—. Cada mes hi compta una sola vegada, o sigui que no és «Total» més "+
+        "«previstos»: això sumaria dues vegades els mesos que tenen totes dues coses. El "+
+        "compte i la targeta hi van en blanc perquè la previsió de despesa no les separa."):null,
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},["Mes","Ingressos","Compte","Targeta","Despeses","Inversió",
           "Estalvi","% estalvi","Sobrant","Ingr. previstos","Desp. prevista","Inv. prevista",
@@ -4121,9 +4167,9 @@ function renderReal(root){
             title:"Esborrar la previsió que hi has escrit",
             onclick:()=>esborraPrevisio(r.month)},"✕"):""),
         ))),
-        peuReal(rows,T,m0),
+        peuReal(rows,T,m0,pro),
       )),
-      resultatPeriode(rows,ccPer,m0,obj),
+      resultatPeriode(rows,ccPer,m0,obj,pro),
     ),
     el("div",{class:"card"},
       el("h2",{},"Targeta: compres contra liquidació"),
