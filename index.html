@@ -3936,7 +3936,8 @@ function projeccioReal(rows,m0){
   const n=x=>Math.round(x*100)/100;
   return {income:n(income),expense:n(expense),invest:n(invest),
     saving:n(income-expense),surplus:n(income-expense-invest),
-    real:n(real),prev:n(prev),tot:n(real+prev),nReal,nPrev,ambPrev};
+    real:n(real),prev:n(prev),tot:n(real+prev),nReal,nPrev,ambPrev,
+    mesos:nReal+ambPrev};
 }
 /** Totals i mitjanes de la taula de Real, sobre les files que deixa el filtre.
     La mitjana del real es fa amb els mesos tancats: el mes en curs encara no ha
@@ -3962,7 +3963,7 @@ function peuReal(rows,T,m0,pro){
       T.fInvest?eur(T.fInvest):"",[T.fSurplus?eur(T.fSurplus):"",sgn(T.fSurplus)],"",""]),
     /* Només si al període hi ha algun mes amb previsió: si no, aquesta fila
        diria exactament el mateix que la de dalt. */
-    pro&&pro.ambPrev?fila([el("span",{},"Amb la previsió",
+    pro&&pro.ambPrev?fila([el("span",{},"Total amb la previsió",
         el("div",{class:"mut",style:"font-size:11px;font-weight:400"},
           pro.nReal+(pro.nReal===1?" mes real":" mesos reals")+" + "+
           pro.ambPrev+" de previsió")),
@@ -3978,7 +3979,20 @@ function peuReal(rows,T,m0,pro){
       pct(s("income")?s("saving")/s("income"):null),
       [e(mR("surplus")),sgn(s("surplus"))],
       e(mF("fIncome")),e(mF("fExpense")),e(mF("fInvest")),
-      [e(mF("fSurplus")),sgn(mF("fSurplus")||0)],"",""]));
+      [e(mF("fSurplus")),sgn(mF("fSurplus")||0)],"",""]),
+    /* La mitjana del mes tipus del període comptant-hi el que encara ha de
+       passar. El divisor són els mesos que hi aporten alguna xifra: els
+       tancats i els que porten previsió. Un mes futur buit no hi entra, que
+       dividir per ell abaixaria la mitjana sense que hi hagi passat res. */
+    (()=>{ if(!pro||!pro.ambPrev||!pro.mesos) return null;
+      const d=v=>v/pro.mesos;
+      return fila([el("span",{},"Mitjana amb la previsió",
+          el("div",{class:"mut",style:"font-size:11px;font-weight:400"},
+            "de "+pro.mesos+(pro.mesos===1?" mes":" mesos"))),
+        [eur(d(pro.income)),"pos"],"","",[eur(d(pro.expense)),"neg"],
+        [eur(d(pro.invest)),"invc"],[eur(d(pro.saving)),sgn(pro.saving)],
+        pct(pro.income?pro.saving/pro.income:null),
+        [eur(d(pro.surplus)),sgn(pro.surplus)],"","","","","",""]); })());
 }
 /** El que et sobra en el periode triat: el real dels mesos que ja han passat i
     la previsio del mes en curs i dels que vindran. Sumar el total de «Sobrant» i
@@ -4128,12 +4142,15 @@ function renderReal(root){
         "ja té descomptades les despeses fixes de principi del mes següent; la «Desp. "+
         "prevista» de cada mes les ha de portar a dins, com qualsevol altra despesa."),
       pro.ambPrev?el("p",{class:"note",style:"margin:0 0 12px"},
-        "«Amb la previsió» és com acabarà el període si la previsió es compleix: dels "+
+        "«Total amb la previsió» és com acabarà el període si la previsió es compleix: dels "+
         "mesos tancats hi va el que va passar de debò, i del mes en curs i dels que vénen, "+
         "la previsió —o el real, si el mes ja l'ha superada, que el que ja has gastat no es "+
         "pot desfer—. Cada mes hi compta una sola vegada, o sigui que no és «Total» més "+
-        "«previstos»: això sumaria dues vegades els mesos que tenen totes dues coses. El "+
-        "compte i la targeta hi van en blanc perquè la previsió de despesa no les separa."):null,
+        "«previstos»: això sumaria dues vegades els mesos que tenen totes dues coses. La "+
+        "«Mitjana amb la previsió» és aquest total repartit entre els mesos que hi aporten "+
+        "alguna xifra, els tancats i els que porten previsió; la «Mitjana» de sobre només "+
+        "mira els mesos ja tancats. El compte i la targeta hi van en blanc perquè la "+
+        "previsió de despesa no les separa."):null,
       el("div",{class:"tw"},el("table",{},
         el("thead",{},el("tr",{},["Mes","Ingressos","Compte","Targeta","Despeses","Inversió",
           "Estalvi","% estalvi","Sobrant","Ingr. previstos","Desp. prevista","Inv. prevista",
