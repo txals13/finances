@@ -245,7 +245,7 @@ const S = {
   handle: null,        // FileSystemFileHandle si el navegador ho suporta
   dirty: false,
   tab: "resum",
-  mov: { q:"", account:"", cats:[], catOpen:false, catQ:"", kind:"",
+  mov: { q:"", account:"", cats:[], catOpen:false, catQ:"", kind:"", importats:false,
          tags:[], tagOpen:false, tagQ:"", grups:[], grupsTags:[],
          sort:"date", dir:-1, limit:300, prov:10, provOrd:"import", provMode:"prov" },
   // En obrir, l'any en curs: és el que es mira el 90 % dels cops, i «Tot
@@ -308,7 +308,7 @@ const UI_PARTS=["tab","mov","period","real","cartera","rend","desp","ev","tcat"]
 /* El que no es guarda: si un desplegable es va quedar obert i fins on havies
    estirat les llistes. Això és el lloc on eres, no com vols mirar-t'ho. El que
    sí que es guarda és tot el que tries, cerques dels desplegables incloses. */
-const UI_FORA=new Set(["catOpen","tagOpen","limit"]);
+const UI_FORA=new Set(["catOpen","tagOpen","limit","importats"]);
 function desaVista(){
   try{
     const o={};
@@ -1441,6 +1441,17 @@ function addMonths(k,n){
 /* ================================================================== *
  *  Pestanya: Moviments                                               *
  * ================================================================== */
+/** Els moviments de l'última importació que encara existeixen.
+
+    Es guarden al fitxer i no només a la sessió: pots importar al vespre,
+    tancar, i l'endemà seguir repassant-los. Els que hagis esborrat mentre els
+    revisaves cauen sols de la llista. */
+function importatsPendents(){
+  const u=S.data&&S.data.ultimaImport;
+  if(!u||!u.ids||!u.ids.length) return [];
+  const per=new Set(u.ids);
+  return S.data.movements.filter(m=>per.has(m.id));
+}
 function filtered(){
   const f=S.mov, q=f.q.trim().toLowerCase();
   const [pa,pb]=periodRange();
@@ -1448,7 +1459,10 @@ function filtered(){
   // que és de categories o el que porta l'etiqueta, no només el que és de les
   // dues coses alhora. Sense grups, els filtres es creuen com sempre.
   const sumen=!!(grupsCatActius().length&&grupsTagActius().length);
-  let out=S.data.movements.filter(m=>{
+  /* En mode repàs manen els de la importació i prou: amb els filtres posats,
+     un extracte de l'any passat no hauria sortit i semblaria que no s'ha
+     importat res. Els altres filtres tornen quan en surts. */
+  let out=f.importats ? importatsPendents() : S.data.movements.filter(m=>{
     if(m.date<pa || m.date>pb) return false;
     if(f.account && m.account!==f.account) return false;
     if(sumen){
@@ -1503,7 +1517,7 @@ function renderMoviments(root){
       ["transfer","Traspassos"],["planned","Previstos"]],v=>set("kind",v)),
     el("button",{class:"btn ghost",onclick:()=>{
       S.mov={...S.mov,q:"",account:"",cats:[],catOpen:false,catQ:"",kind:"",
-        tags:[],tagOpen:false,tagQ:"",limit:300};
+        tags:[],tagOpen:false,tagQ:"",limit:300,importats:false};
       S.period={preset:"all",from:"",to:""}; render();}},"Netejar"),
     el("span",{style:"flex:1"}),
     el("button",{class:"btn primary",onclick:()=>movDialog()},"Afegir moviment"),
@@ -1520,7 +1534,38 @@ function renderMoviments(root){
       th("Import","amount",1),el("th",{class:"r"},"Saldo"),el("th",{},""))),
     el("tbody",{},show.map(m=>movRow(m,cats,tags))));
 
+  /* El repàs de l'última importació. Mentre n'hi hagi de pendents el cartell
+     hi és, perquè una importació a mitges revisar no es noti només el dia que
+     la fas. */
+  const pend=importatsPendents();
+  const quan=pend.length&&S.data.ultimaImport.quan
+    ? new Date(S.data.ultimaImport.quan) : null;
+  const diaHora=quan?dCa(quan.toISOString().slice(0,10))+" a les "+
+    String(quan.getHours()).padStart(2,"0")+":"+String(quan.getMinutes()).padStart(2,"0"):"";
+  const fet=el("button",{class:"btn",onclick:()=>{
+    delete S.data.ultimaImport; S.mov.importats=false; markDirty(); render();
+    flash("importació donada per revisada"); }},"Ja els he revisat");
+  const cartell = !pend.length ? null
+    : f.importats
+    ? el("div",{class:"warnbox",style:"margin-bottom:14px"},
+        el("div",{},el("b",{},pend.length+(pend.length===1?" moviment importat":
+          " moviments importats")+" "+diaHora),
+          el("span",{},". Aquí només hi surten aquests: canvia'ls la categoria o "+
+            "l'etiqueta a la mateixa fila, i amb el ⋯ obre'n el detall per editar-los "+
+            "o esborrar-los. Mentre estiguis repassant, la resta de filtres no hi "+
+            "compten.")),
+        el("div",{style:"margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"},
+          el("button",{class:"btn",onclick:()=>{ S.mov.importats=false; render(); }},
+            "Veure tots els moviments"), fet))
+    : el("div",{class:"warnbox",style:"margin-bottom:14px"},
+        el("span",{},pend.length+(pend.length===1?" moviment importat":
+          " moviments importats")+" "+diaHora+" que encara no has repassat. "),
+        el("button",{class:"btn",style:"margin-left:8px",
+          onclick:()=>{ S.mov.importats=true; render(); }},"Repassar-los"),
+        el("span",{style:"margin-left:8px"},fet));
+
   posa(root,
+    cartell,
     el("div",{class:"grid kpis",style:"margin-bottom:14px"},
       kpi("Moviments",NF0.format(all.length),all.length!==S.data.movements.length
         ?"de "+NF0.format(S.data.movements.length):"tots"),
@@ -3611,8 +3656,12 @@ function stepPreview(){
       S.data.movements.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
       for(const c of new Set(nous.map(m=>m.category)))
         if(!S.data.categories.some(x=>x.id===c)) S.data.categories.push({id:c,kind:"expense"});
+      // Queden apuntats perquè els puguis repassar un per un: la categoria que
+      // ha endevinat la regla no sempre és la bona, i hi ha files que sobren.
+      S.data.ultimaImport={quan:new Date().toISOString(),ids:nous.map(m=>m.id)};
+      S.mov.importats=nous.length>0;
       markDirty(); closeDialog(); S.tab="moviments"; render();
-      flash(nous.length+" moviments importats");
+      flash(nous.length+" moviments importats · repassa'ls");
     }],
   ]);
 }
