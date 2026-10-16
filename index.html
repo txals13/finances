@@ -250,7 +250,7 @@ const S = {
          sort:"date", dir:-1, limit:300, prov:10, provOrd:"import", provMode:"prov" },
   // En obrir, l'any en curs: és el que es mira el 90 % dels cops, i «Tot
   // l'històric» a Moviments vol dir dibuixar-los tots des del primer dia.
-  period: { preset:"year", from:"", to:"" },
+  period: { preset:"y"+new Date().getFullYear(), from:"", to:"" },
   real:   { card:"visa" },
   origen: null,          // d'on s'han carregat les dades
   cartera:{ evol:"class", valor:"eur", liquid:"eur",   // gràfiques en € o en %
@@ -344,6 +344,15 @@ function llegeixVista(){
     existeix no filtra res i et deixa mirant una taula buida sense saber per
     què. En carregar les dades es treuen els que han quedat orfes. */
 function netejaVista(){
+  /* El filtre de període era «Aquest any» i «L'any passat»; ara són els anys
+     de debò. Una vista desada d'abans porta els noms vells, i un any que ja no
+     té dades deixaria el desplegable ensenyant una cosa i filtrant-ne una
+     altra: en tots dos casos es tria l'any que li tocaria. */
+  const y=+TODAY.slice(0,4);
+  if(S.period.preset==="year")     S.period.preset="y"+y;
+  if(S.period.preset==="prevyear") S.period.preset="y"+(y-1);
+  if(/^y\d{4}$/.test(S.period.preset) && !anysAmbDades().includes(S.period.preset.slice(1)))
+    S.period.preset="y"+y;
   const cats=new Set(totesCats()), tags=new Set(totesTags());
   const gc=new Set((S.data.conjunts||[]).map(x=>x.id));
   const gt=new Set((S.data.conjuntsTags||[]).map(x=>x.id));
@@ -1075,25 +1084,51 @@ function currentBalance(){ return lastClosing(S.data.movements); }
 /* ================================================================== *
  *  Període: un sol interval de dates que governa Resum i Moviments    *
  * ================================================================== */
-const PERIODES=[
-  ["all","Tot l'històric"],
-  ["month","Aquest mes"],
-  ["3m","Últims 3 mesos"],
-  ["6m","Últims 6 mesos"],
-  ["12m","Últims 12 mesos"],
-  ["year","Aquest any"],
-  ["prevyear","L'any passat"],
-  ["custom","Dates concretes…"],
-];
+/** Els anys que tens, del més nou al més vell.
+
+    Hi compten els que tenen moviments i els que tenen previsió escrita —el pla
+    arriba més enllà de l'últim moviment, i a Real aquell any ja es pot mirar—,
+    més l'any en curs, que hi ha de ser encara que tot just comenci. Si un dia
+    importes moviments més vells, l'any els apareix aquí tot sol. */
+function anysAmbDades(){
+  const a=new Set([TODAY.slice(0,4)]);
+  const d=S.data;
+  if(d){
+    for(const m of d.movements||[]) if(m.date) a.add(m.date.slice(0,4));
+    for(const m of d.months||[])
+      if(m.month && (m.forecastIncome!=null||m.forecastExpense!=null||
+                     m.forecastInvestment!=null)) a.add(m.month.slice(0,4));
+  }
+  return [...a].sort().reverse();
+}
+function periodes(){
+  return [
+    ["all","Tot l'històric"],
+    ["month","Aquest mes"],
+    ["3m","Últims 3 mesos"],
+    ["6m","Últims 6 mesos"],
+    ["12m","Últims 12 mesos"],
+    ...anysAmbDades().map(y=>["y"+y,y]),
+    ["custom","Dates concretes…"],
+  ];
+}
 /** Retorna [des, fins] en ISO. Els presets acaben avui: no compten el que no ha passat. */
 function periodRange(){
   const p=S.period, m=TODAY.slice(0,7), y=+TODAY.slice(0,4);
+  /* Un any sencer, de l'1 de gener al 31 de desembre. L'any en curs també hi
+     va sencer i no fins avui: «2026» vol dir el 2026, i a Real és el que
+     deixa veure com acabarà amb la previsió. Els mesos que encara no han
+     passat no tenen moviments, o sigui que a la resta de pestanyes no hi
+     sumen res. */
+  const any=/^y(\d{4})$/.exec(p.preset);
+  if(any) return [any[1]+"-01-01", any[1]+"-12-31"];
   switch(p.preset){
     case "month":    return [m+"-01", TODAY];
     case "3m":       return [addMonths(m,-2)+"-01", TODAY];
     case "6m":       return [addMonths(m,-5)+"-01", TODAY];
     case "12m":      return [addMonths(m,-11)+"-01", TODAY];
-    case "year":     return [y+"-01-01", TODAY];
+    // Noms vells, per si queda una vista desada d'abans dels anys.
+    case "year":     return [y+"-01-01", y+"-12-31"];
     case "prevyear": return [(y-1)+"-01-01", (y-1)+"-12-31"];
     case "custom":   return [p.from||"0000-01-01", p.to||"9999-12-31"];
     default:         return ["0000-01-01","9999-12-31"];
@@ -1108,7 +1143,7 @@ function periodBar(){
     el("span",{class:"mut"},"→"),
     el("input",{type:"date",value:p.to,onchange:e=>{p.to=e.target.value;render();}}));
   return el("span",{style:"display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap"},
-    sel(p.preset,PERIODES,v=>{
+    sel(p.preset,periodes(),v=>{
       p.preset=v;
       if(v==="custom" && !p.from){            // arrenca amb el que ja es veia
         const s=periodSpan(); if(s){ p.from=s.from; p.to=s.to; }
@@ -3904,13 +3939,10 @@ function panellCompte(){
   );
 }
 /** A Real el futur compta: la previsio es justament del que encara no ha passat.
-    "Aquest any" hi va fins al 31 de desembre en comptes d'aturar-se avui, que es
-    el que fan les altres pestanyes per no comptar mesos buits. "Tot l'historic" ja
-    no te sostre, i a "Dates concretes" manen les teves. */
-function periodRangeReal(){
-  const [a,b]=periodRange();
-  return S.period.preset==="year" ? [a,TODAY.slice(0,4)+"-12-31"] : [a,b];
-}
+    Triant un any hi va sencer, fins al 31 de desembre, que es d'on surten les
+    files «amb la previsio»; «Tot l'historic» no te sostre, i a «Dates
+    concretes» manen les teves. */
+function periodRangeReal(){ return periodRange(); }
 /** El període tal com acabarà si la previsió es compleix.
 
     Cada mes hi compta una sola vegada: els tancats amb el que va passar de
