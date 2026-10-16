@@ -1491,7 +1491,17 @@ function filtered(){
 }
 function renderMoviments(root){
   const cats=totesCats(), tags=totesTags();
-  const f=S.mov, all=filtered(), show=all.slice(0,f.limit);
+  const f=S.mov;
+  /* Del repàs no en queda res: o els has repassat tots o els has esborrat. Si
+     el mode es quedés encès, la taula sortiria buida i sense cap cartell que
+     ho expliqui —el cartell només hi és mentre queden moviments per mirar—, i
+     allò sembla que s'hagin esborrat tots els moviments de cop. */
+  if(f.importats && !importatsPendents().length){
+    f.importats=false;
+    if(S.data.ultimaImport){ delete S.data.ultimaImport; markDirty(); }
+    flash("de la importació no en queda res per repassar");
+  }
+  const all=filtered(), show=all.slice(0,f.limit);
   const real=all.filter(m=>!m.planned), flow=real.filter(m=>m.kind!=="transfer");
   const inc=flow.filter(m=>m.amount>0).reduce((a,m)=>a+m.amount,0);
   const exp=flow.filter(m=>m.amount<0).reduce((a,m)=>a-m.amount,0);
