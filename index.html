@@ -210,6 +210,7 @@ td input[list]{padding-right:12px;background-position:right 2px center}
     <button class="btn" id="bImport" title="Importar un extracte del banc">Importar</button>
     <button class="btn primary" id="bSave" disabled>Desar</button>
     <button class="btn" id="bDrive" title="Google Drive">Drive</button>
+    <button class="btn ghost" id="bAjuda" title="Manual d'instruccions">?</button>
     <button class="btn ghost" id="bHide" title="Amagar els imports">•••</button>
     <button class="btn ghost" id="bTheme" title="Tema">◐</button>
   </div>
@@ -7874,6 +7875,115 @@ function dialog(title,body,buttons){
 const closeDialog=()=>$("#dlg").close();
 
 /* ================================================================== *
+ *  Manual                                                            *
+ *  Viu aquí dins i no en un fitxer a part: així va amb l'app a tot    *
+ *  arreu —al mòbil, sense internet— i no es pot quedar enrere en una  *
+ *  carpeta que ningú obre. Cada bloc és "tipus|text": p = paràgraf,   *
+ *  h = subtítol, l = llista amb els punts separats per |, n = nota.   *
+ * ================================================================== */
+const MANUAL=[
+["Què és i on viuen les dades",[
+ "p|Aquesta app és el teu llibre de comptes: els moviments del banc i de la targeta, la cartera d'inversió i la projecció d'independència financera. Tot surt d'un sol fitxer, el finances.json, i no es publica enlloc.",
+ "h|Les tres maneres de desar",
+ "l|Drive · si l'has connectat, mana sempre: és el que et deixa fer servir el PC i el mòbil amb les mateixes dades.|Servidor · obrint-la amb el servir.cmd, el botó Desar escriu directament al fitxer del PC i en deixa una còpia datada a copies/ (les vint últimes).|Fitxer · si l'obres amb doble clic, el navegador no pot escriure i els canvis et cauen a la carpeta de baixades.",
+ "p|A dalt, al costat del nombre de moviments, hi diu sempre d'on s'han carregat les dades. Si hi veus «canvis sense desar», el botó Desar està encès i tens feina per guardar.",
+ "n|Amb dos aparells, recarrega abans de tocar res. Abans de desar, l'app mira si el fitxer del Drive ha canviat des que el vas obrir i t'avisa amb la data; no fusiona res, decideixes tu."]],
+
+["Els botons de dalt",[
+ "l|Obrir · carregar un finances.json.|Importar · l'extracte del banc o de la targeta (.xls, .xlsx o .csv).|Desar · s'encén quan hi ha canvis. També amb Ctrl+S.|Drive · connectar o desconnectar el Google Drive.|? · aquest manual.|••• · amaga tots els imports de la pantalla, per obrir l'app on et poden llegir per sobre l'espatlla. Queda desat en aquell aparell, i el que exportes no s'amaga mai.|◐ · fosc o clar."]],
+
+["El període",[
+ "p|El desplegable de període governa gairebé tota l'app: Resum, Moviments, Real, Cartera i Rendiment. A banda dels relatius —aquest mes, últims 3, 6 o 12 mesos— hi surten els anys que tens dades, i si un dia importes moviments més vells, l'any hi apareix tot sol.",
+ "p|Triar un any vol dir l'any sencer, de l'1 de gener al 31 de desembre, també el que corre. Els mesos que encara no han passat no tenen moviments, o sigui que només ho notaràs a Real, que és on la previsió compta.",
+ "n|Tot el que tries —període, filtres, cerques, desplegables— es recorda en aquell aparell. Per això el mòbil pot anar amb un filtre posat que al PC no hi és: si una xifra et surt a zero sense motiu, mira la barra de filtres i prem Netejar."]],
+
+["Moviments",[
+ "p|La llista de tot el que entra i surt. La categoria i l'etiqueta s'editen a la mateixa fila, i el botó ⋯ obre el detall, que és on pots canviar-ho tot o esborrar el moviment.",
+ "h|Importar l'extracte",
+ "l|Prem Importar i arrossega-hi el fitxer que et baixes del banc.|Digues quina columna és la data, el concepte, l'import i el saldo. Dels extractes de Mediolanum ja en sap els formats.|A la revisió veuràs quantes files són noves i quantes ja hi són: els duplicats s'ometen sols. Dos moviments són el mateix si coincideixen la data, l'import i el començament del concepte.",
+ "p|En acabar, la taula et deixa veient només els que acabes d'importar, perquè els repassis: la categoria l'endevina una regla i no sempre l'encerta, i hi ha files que sobren. Mentre hi siguis, la resta de filtres no hi compten —si no, un extracte vell no sortiria—. Quan acabis, «Ja els he revisat» treu el cartell; si el deixes a mitges, l'avís t'espera, també si tanques l'app.",
+ "h|On van les despeses",
+ "p|Sota la taula, els teus proveïdors agrupats pel concepte del banc: quant t'hi has deixat, quantes vegades i el tiquet mitjà. És la manera de trobar la fuita que no veus mirant categories."]],
+
+["Categories i etiquetes",[
+ "p|La categoria diu QUÈ és —restaurant, benzina, lloguer— i l'etiqueta PER A QUÈ era —un viatge, una obra, un esdeveniment—. Per això pots mirar-te la despesa d'un viatge sencer sense espatllar l'anàlisi per categories.",
+ "p|A la pestanya Categories hi tens les tres coses: les categories amb la seva mena (despesa, ingrés o traspàs), els esdeveniments i les regles d'autocategorització. Una regla és un tros de text que ha de sortir al concepte —o una expressió regular entre barres— i la categoria que li toca. El que no encaixa enlloc queda com a SENSE CATEGORIA.",
+ "n|Els traspassos no són ni ingrés ni despesa: moure diners a inversió, pagar la VISA o cobrar un retorn no et fa ni més ric ni més pobre, i per això queden fora dels totals d'ingressos i pagaments."]],
+
+["Resum",[
+ "p|La foto del període: saldo, ingressos, pagaments, estalvi i inversió, amb la seva mitjana per any, per mes i per dia. Les mitjanes es reparteixen sobre els dies que de debò tenen moviments, no sobre l'interval que has demanat.",
+ "h|Tendència",
+ "p|L'última fila compara la mitjana mensual del període amb la dels mesos immediatament anteriors, tants com en té el període. El mes en curs no hi compta, que va a mitges. El color va per bo o dolent i no per amunt o avall: uns pagaments que pugen surten en vermell. Per sota del 2 % es considera pla. Passa-hi el ratolí per sobre i et dirà les dues xifres."]],
+
+["Real · el mes que de debò vius",[
+ "p|Moviments imputa cada cosa al dia que passa pel banc. Real la imputa al mes al qual pertany, que és el que et deixa comparar amb la previsió.",
+ "l|La nòmina va al mes de la feina que la paga, no al del cobrament.|La targeta va al seu cicle, del 20 al 20: el que aquí es diu «agost» són les compres del 20 de juliol al 19 d'agost, que et carreguen l'1 de setembre.",
+ "h|Les dues maneres de comptar la targeta",
+ "p|Per liquidació VISA és l'import que surt del compte; per compres del cicle és la suma de l'extracte de la targeta. El selector et diu quant canviaria amb l'altra, i si al període triat les dues donen el mateix, també t'ho diu. Només es mouen els mesos que ja tenen la liquidació cobrada i que no quadren amb l'extracte.",
+ "h|El peu de la taula",
+ "l|Total · el que ha passat de debò.|Total amb la previsió · com acabarà el període si la previsió es compleix. Cada mes hi compta una sola vegada: els tancats amb el que va passar i els que vénen amb la previsió, o amb el real si el mes ja l'ha superada. No és «Total» més «previstos»: això sumaria dos cops els mesos que tenen totes dues coses.|Mitjana · dels mesos ja tancats.|Mitjana amb la previsió · el mateix total repartit entre els mesos que hi aporten alguna xifra.",
+ "h|El compte corrent",
+ "p|El panell de dalt diu què et quedarà al compte després de la propera nòmina i la propera VISA, descomptades les despeses fixes de principi de mes. El valor de les fixes el suggereix l'app amb la mitjana dels últims mesos i tu el pots canviar. L'objectiu és el matalàs que tinguis posat a FIRE."]],
+
+["Mesos",[
+ "p|Els moviments del compte mes a mes, en brut, per quan vols veure un mes sencer sense filtres ni imputacions."]],
+
+["Cartera",[
+ "p|Els teus actius, el que hi has posat i el que valen. La xifra clau és l'aportat: sense ella no hi ha guany que valgui.",
+ "h|D'on surt l'aportat",
+ "l|A mà · l'escrius tu a la fitxa de l'actiu (⋯) i la Valoració del mes hi va sumant el que hi posis.|Del cost fiscal · importes l'informe de plusvàlues i minusvàlues del fons i l'aportat passa a ser el seu cost fiscal. És la xifra bona per als fons, perquè els traspassos hi arriben amb el seu cost antic.|De les ordres · per als ETP i ETC, la suma de les ordres del bròker: import net, comissió inclosa, i les vendes resten.",
+ "p|Dos afegits que l'informe no porta i se sumen a l'aportat: el guany que venia de fora —el que ja estava guanyat quan els diners van arribar d'una altra entitat, perquè no surti com a rendiment teu— i les ordres pendents d'executar, que ja han sortit del compte però encara no tenen participacions. Quan la importació següent ja les porti, l'app t'ho detecta i et marca la casella per buidar-les.",
+ "n|En aquests actius no escriguis una aportació a mà a la Valoració del mes: si aquells diners ja són dins de l'informe hi comptaran dues vegades, i si encara no hi són, la pròxima importació refarà l'aportat i se l'emportarà. El lloc és «Ordres pendents d'executar», a la fitxa.",
+ "h|La valoració del mes",
+ "p|El botó Valoració del mes obre tots els actius de cop amb el valor que tenien: canvia només el que s'hagi mogut. La data ve posada a avui. L'aportació del mes va amb signe i se suma a la que ja hi hagi d'aquell mes.",
+ "h|Actius il·líquids",
+ "p|Els que no cotitzen —BEV, Wind— poden anar pel total invertit: hi escrius el que hi vas posar i els moviments de retorn el van descomptant; el que queda és el seu valor. No se sumen als totals de la cartera ni al càlcul FIRE mentre no en recuperis més del que hi vas posar, perquè recuperar no és guanyar.",
+ "h|Els importadors",
+ "l|Importar aportacions · els extractes del bròker, que queden en un registre al costat per comparar-hi. No toquen mai l'aportat.|Importar cost fiscal · els informes de plusvàlues, un per fons. Tornar a pujar-ne un substitueix el que n'hi havia i no se sumen.|Importar ordres · el text de les ordres de MyInvestor.|Importar .xlsx · les taules carteraDDMmmAAAA.xlsx, per reconstruir l'historial."]],
+
+["Rendiment",[
+ "p|El guany és valor menys aportat, i prou. Per això l'aportat ha d'estar bé: si hi comptes dues vegades uns diners, el guany baixa exactament en aquella xifra.",
+ "l|Guany de la cartera, any per any · quant has guanyat cada any. La suma dels anys ha de donar el benefici total; si no, hi ha una valoració o un aportat mal datat.|Per actiu i per cartera · amb el seu CAGR. Les carteres es ponderen pels diners de cada actiu, no fent la mitjana dels percentatges.|Variació mensual · el que ha pujat o baixat cada mes."]],
+
+["FIRE",[
+ "p|La projecció, connectada a les dades reals: el capital surt de la Cartera i el cost d'adquisició de l'aportat de cada actiu.",
+ "l|Fase 1 · acumules aportant cada mes fins a l'any de Coast.|Fase 2 · ja no aportes i el capital es capitalitza sol fins a l'edat de renda.|Fase 3 · vius del capital.",
+ "p|L'objectiu de Coast es calcula: el capital que et caldrà a la fase 3 descomptat enrere fins a l'any de Coast. Hi ha tres models de retirada —capital invertit, regla del 4 % i híbrid— i els impostos surten dels trams de l'estalvi sobre la part del capital que és guany.",
+ "p|La projecció es recalcula sempre des d'avui i del capital real d'ara: canviar un paràmetre no reescriu el passat. Al gràfic, el tram continu és el teu historial i el discontinu la projecció. Cada canvi queda anotat a «Canvis de pla»."]],
+
+["La feina de cada mes",[
+ "l|Baixa't els extractes del banc i de la targeta i importa'ls. Repassa els que surtin marcats.|Cartera → Valoració del mes: canvia el que s'hagi mogut i escriu les aportacions.|Si has rebut informes de plusvàlues o ordres noves, importa'ls.|Desa (Ctrl+S) i, si vas amb dos aparells, recarrega abans de tocar res a l'altre."]],
+
+["Quan una xifra no et quadra",[
+ "l|Ingressos o traspassos a zero · és el filtre de tipus de la barra de Moviments. L'app t'ho diu amb un «—» i la raó, i la vista es recorda per aparell.|L'aportat d'un fons ha pujat sol · mira si hi tens una ordre pendent que l'informe ja porta, o una aportació del mes escrita a mà en un actiu que va per cost fiscal.|El guany per any no suma el benefici · busca una valoració amb data futura o un aportat desat amb data d'un altre dia.|La cartera val menys del que esperaves · els il·líquids no hi sumen fins que no donen benefici; el balanç sense ells surt a part.|Una importació sembla que no ha fet res · mira el període: si l'extracte és d'un any que el filtre deixa fora, el repàs te'ls ensenya igualment."]],
+];
+function manualDialog(){
+  const cos=el("div",{});
+  const seccions=MANUAL.map(([titol,blocs],i)=>{
+    const cont=el("div",{id:"man-"+i,style:"margin-bottom:22px;scroll-margin-top:8px"},
+      el("h2",{style:"margin:0 0 8px;font-size:17px"},titol),
+      blocs.map(b=>{
+        const t=b.slice(0,1), txt=b.slice(2);
+        if(t==="h") return el("div",{style:"font-weight:640;margin:12px 0 4px"},txt);
+        if(t==="n") return el("p",{class:"note",style:"margin:8px 0"},txt);
+        if(t==="l") return el("ul",{style:"margin:6px 0 6px 18px;padding:0;line-height:1.55"},
+          txt.split("|").map(x=>el("li",{style:"margin:3px 0"},x)));
+        return el("p",{style:"margin:6px 0;line-height:1.55"},txt);
+      }));
+    return cont;
+  });
+  posa(cos,
+    el("p",{class:"note",style:"margin:0 0 10px"},
+      "Pica un títol per saltar-hi. El manual va amb l'app: també el tens al mòbil i sense internet."),
+    el("div",{style:"display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px"},
+      MANUAL.map(([titol],i)=>el("button",{class:"btn ghost",style:"padding:3px 8px;font-size:12px",
+        onclick:()=>{ const d=document.getElementById("man-"+i);
+          if(d) d.scrollIntoView({behavior:"smooth",block:"start"}); }},titol))),
+    seccions);
+  dialog("Manual",cos,[["Tancar","btn primary",closeDialog]]);
+}
+
+/* ================================================================== *
  *  Render                                                            *
  * ================================================================== */
 function render(){
@@ -7951,6 +8061,7 @@ function pintaOcult(){
   b.classList.toggle("ghost",!ocult);
   b.title=ocult?"Tornar a mostrar els imports":"Amagar els imports";
 }
+$("#bAjuda").onclick=manualDialog;
 $("#bTheme").onclick=()=>{
   const cur=document.documentElement.getAttribute("data-theme");
   const nxt=cur==="dark"?"light":cur==="light"?null:"dark";
