@@ -1453,6 +1453,36 @@ function importatsPendents(){
   const per=new Set(u.ids);
   return S.data.movements.filter(m=>per.has(m.id));
 }
+/** Quin lloc ocupa cada moviment dins del seu dia.
+
+    De base, l'ordre amb què van entrar, que és el de l'extracte. Però quan el
+    dia porta saldos i es poden encadenar —cada moviment arrenca del saldo del
+    d'abans, i el que no arrenca de cap altre és el primer— aquella cadena és
+    l'ordre de debò, i mana. Si no es resol sencera i sense ambigüitats no
+    s'inventa res: es queda l'ordre d'entrada. */
+function ordreDinsDelDia(){
+  const r=new Map(), per=new Map();
+  for(const m of S.data.movements){
+    const k=(m.account||"")+"|"+m.date;
+    const l=per.get(k); if(l) l.push(m); else per.set(k,[m]);
+  }
+  const c=v=>Math.round(v*100);
+  for(const l of per.values()){
+    l.forEach((m,i)=>r.set(m,i));
+    if(l.length<2 || l.some(m=>m.planned||m.balance==null)) continue;
+    // Dos saldos iguals o dos que arrenquin del mateix punt no es poden encadenar.
+    const acaba=new Map(), arrenca=new Map();
+    for(const m of l){ acaba.set(c(m.balance),m); arrenca.set(c(m.balance-m.amount),m); }
+    if(acaba.size!==l.length || arrenca.size!==l.length) continue;
+    const primers=l.filter(m=>!acaba.has(c(m.balance-m.amount)));
+    if(primers.length!==1) continue;
+    const ordre=[]; let x=primers[0];
+    while(x && !ordre.includes(x)){ ordre.push(x); x=arrenca.get(c(x.balance)); }
+    if(ordre.length!==l.length) continue;
+    ordre.forEach((m,i)=>r.set(m,i));
+  }
+  return r;
+}
 function filtered(){
   const f=S.mov, q=f.q.trim().toLowerCase();
   const [pa,pb]=periodRange();
@@ -1479,12 +1509,18 @@ function filtered(){
     return true;
   });
   const k=f.sort;
+  /* Dins d'un mateix dia mana l'ordre de l'extracte, que és l'ordre amb què
+     van entrar a la llista. Abans s'empataven i es quedaven com estaven, o
+     sigui que mirant de nou a vell la fila de dalt del dia era la PRIMERA
+     operació i ensenyava el saldo més vell de tots. Ara el dia també es gira,
+     i a dalt de la llista hi ha l'última operació amb el saldo al dia. */
+  const pos=ordreDinsDelDia();
   out.sort((a,b)=>{
     let r = k==="amount" ? a.amount-b.amount
           : k==="tag" ? (a.tags||[]).join(" ").localeCompare((b.tags||[]).join(" "))
           : k==="category" ? a.category.localeCompare(b.category)
           : k==="concept" ? (a.concept||"").localeCompare(b.concept||"")
-          : a.date<b.date?-1:a.date>b.date?1:0;
+          : a.date<b.date?-1:a.date>b.date?1:((pos.get(a)||0)-(pos.get(b)||0));
     return r*f.dir;
   });
   return out;
@@ -3607,6 +3643,14 @@ function guessSign(){
   }
   return (n>=3 && neg===0) ? "neg" : "auto";
 }
+/** Un extracte pot venir del més nou al més vell. Es mira la primera fila
+    amb data contra l'última: si la primera és posterior, el fitxer va del
+    revés. Es guarda sempre del més antic al més nou —com la resta de la
+    llista— i així, dins d'un mateix dia, l'ordre de l'extracte es manté. */
+function extracteInvertit(l){
+  if(l.length<2) return false;
+  return l[0].date>l[l.length-1].date;
+}
 function stepPreview(){
   const {rows,cfg}=S.imp;
   const col=(r,k)=>cfg[k]===""?null:r[+cfg[k]];
@@ -3663,13 +3707,17 @@ function stepPreview(){
   dialog("Importar · revisió",body,[
     ["Enrere","btn",()=>{closeDialog();stepMap();}],
     [`Importar ${nous.length} moviments`,"btn primary",()=>{
-      for(const m of nous){ delete m.dup; S.data.movements.push(m); }
+      // Del més antic al més nou, sigui com sigui que vingui el fitxer.
+      const ordenats=extracteInvertit(parsed) ? nous.slice().reverse() : nous;
+      for(const m of ordenats){ delete m.dup; S.data.movements.push(m); }
+      // Ordenar per data no desfà això: l'ordenació de JavaScript és estable i
+      // els del mateix dia es queden tal com han entrat.
       S.data.movements.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
       for(const c of new Set(nous.map(m=>m.category)))
         if(!S.data.categories.some(x=>x.id===c)) S.data.categories.push({id:c,kind:"expense"});
       // Queden apuntats perquè els puguis repassar un per un: la categoria que
       // ha endevinat la regla no sempre és la bona, i hi ha files que sobren.
-      S.data.ultimaImport={quan:new Date().toISOString(),ids:nous.map(m=>m.id)};
+      S.data.ultimaImport={quan:new Date().toISOString(),ids:ordenats.map(m=>m.id)};
       S.mov.importats=nous.length>0;
       markDirty(); closeDialog(); S.tab="moviments"; render();
       flash(nous.length+" moviments importats · repassa'ls");
